@@ -132,28 +132,41 @@ const canAutoPan = (g: Gesture | null) =>
 /**
  * Does the canvas get to act on this keystroke?
  *
- * Radix renders its menus and listboxes into portals outside the panel's DOM
- * subtree, so a plain `contains(activeElement)` check reads an open dropdown as
- * "the canvas has focus" and letter keys hit both the typeahead and the tool
- * hotkeys at once.
+ * Only two things take the keyboard away: somewhere you're typing, and an open
+ * menu/listbox/dialog whose own typeahead would otherwise fire alongside the
+ * tool hotkeys. Radix portals those outside the panel's DOM subtree, so this
+ * looks for their roles document-wide rather than walking up from the target.
+ *
+ * Deliberately NOT here: chrome buttons, which keep DOM focus after a click —
+ * gating on those meant one tap on the rail silently killed every shortcut.
+ * Tooltips are excluded too: they're `role="tooltip"`, and hovering the button
+ * that advertises a hotkey must not be what stops the hotkey working.
  */
+// NOT `[role=combobox]`: that is Radix's Select *trigger*, which sits in the
+// inspector permanently and keeps focus after use — matching it would kill the
+// keyboard for good. The open listbox it portals in is what matters.
+const KEYBOARD_OWNERS = "[role=dialog],[role=menu],[role=listbox]"
+
 function canvasOwnsKeyboard(target: EventTarget | null): boolean {
   const el = target as HTMLElement | null
   if (el && el !== document.body) {
     const tag = el.tagName
     if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return false
     if (el.isContentEditable) return false
-    if (el.closest?.("[data-squig-chrome],[role=dialog],[role=menu],[role=listbox]")) return false
+    if (el.closest?.(KEYBOARD_OWNERS)) return false
   }
-  if (document.querySelector("[data-radix-popper-content-wrapper]")) return false
-  return true
+  return !document.querySelector(KEYBOARD_OWNERS)
 }
 
 export function Canvas() {
   const containerRef = useRef<HTMLDivElement>(null)
   const gestureRef = useRef<Gesture | null>(null)
   const gestureAbort = useRef<AbortController | null>(null)
-  const nudgeRef = useRef<{ timer: ReturnType<typeof setTimeout> | null; sel: string }>({ timer: null, sel: "" })
+  const nudgeRef = useRef<{ timer: ReturnType<typeof setTimeout> | null; sel: string; pastLen: number }>({
+    timer: null,
+    sel: "",
+    pastLen: -1,
+  })
   const modsRef = useRef<Mods>(NO_MODS)
   const lastPointRef = useRef<{ clientX: number; clientY: number } | null>(null)
   const autoPanRef = useRef<number | null>(null)
@@ -583,14 +596,44 @@ export function Canvas() {
     }
 
     if (g.kind === "create") {
-      if (g.id) {
-        const n = st().nodes[g.id]
-        if (n && (n.w < 10 || n.h < 10) && n.type === "shape") {
-          // a click, not a drag — give it a friendly default size
-          s.updateNode(g.id, { w: 140, h: 90 })
+      // a press with no drag at all never reached the create branch, so make
+      // the thing here — otherwise clicking with the rect tool silently does
+      // nothing AND drops you back to the select tool
+      let id = g.id
+      if (!id) {
+        const [w, h] = [140, 90]
+        id =
+          g.what === "shape"
+            ? s.addNode(
+                { type: "shape", shape: s.shapeKind, fill: false, x: g.wx, y: g.wy, w, h } as Omit<SquigNode, "id" | "seed">,
+                { select: false }
+              )
+            : s.addNode(
+                {
+                  type: "arrow",
+                  head: true,
+                  x: g.wx,
+                  y: g.wy,
+                  w,
+                  h,
+                  points: [
+                    [0, 0],
+                    [w, h],
+                  ],
+                } as Omit<SquigNode, "id" | "seed">,
+                { select: false }
+              )
+      } else {
+        const n = st().nodes[id]
+        if (n && (n.w < 10 || n.h < 10)) {
+          // a stub from a twitchy drag — give it the same friendly default
+          if (n.type === "shape") s.updateNode(id, { w: 140, h: 90 })
+          else if (n.type === "arrow") {
+            s.updateNode(id, { w: 140, h: 90, points: [[0, 0], [140, 90]] } as Partial<SquigNode>)
+          }
         }
-        s.setSelection([g.id])
       }
+      s.setSelection([id])
       s.setTool("select")
     }
 
@@ -925,14 +968,12 @@ export function Canvas() {
   // -- keyboard -------------------------------------------------------------
 
   useEffect(() => {
+    const ac = new AbortController()
     const onAlt = (e: KeyboardEvent) => setAltHeld(e.altKey)
-    window.addEventListener("keydown", onAlt)
-    window.addEventListener("keyup", onAlt)
-    window.addEventListener("blur", () => setAltHeld(false))
-    return () => {
-      window.removeEventListener("keydown", onAlt)
-      window.removeEventListener("keyup", onAlt)
-    }
+    window.addEventListener("keydown", onAlt, { signal: ac.signal })
+    window.addEventListener("keyup", onAlt, { signal: ac.signal })
+    window.addEventListener("blur", () => setAltHeld(false), { signal: ac.signal })
+    return () => ac.abort()
   }, [])
 
   useEffect(() => {
@@ -941,48 +982,53 @@ export function Canvas() {
       const s = st()
       // AltGr reports as ctrl+alt on several layouts — don't eat those keys
       const mod = (e.metaKey || e.ctrlKey) && !e.altKey
+      // match the letter the user actually sees on the key: `e.code` is a
+      // physical position, so on AZERTY it fires the tool printed elsewhere
+      const key = e.key.length === 1 ? e.key.toLowerCase() : e.key
 
-      if (mod && e.code === "KeyK") {
+      // a gesture in flight owns the keyboard — including ⌘K, or the palette
+      // opens over a drag that is still moving nodes underneath it, and the
+      // Escape meant to close it gets eaten cancelling the drag instead
+      if (gestureRef.current) {
+        if (e.key !== "Escape" && e.key !== "Shift" && e.key !== "Alt") e.preventDefault()
+        return
+      }
+
+      if (mod && key === "k") {
         e.preventDefault()
         s.setCommandOpen(!s.commandOpen)
         return
       }
       if (s.commandOpen) return
 
-      // a gesture in flight owns the keyboard; it handles Escape itself
-      if (gestureRef.current) {
-        if (e.key !== "Escape" && e.key !== "Shift" && e.key !== "Alt") e.preventDefault()
-        return
-      }
-
       if (mod) {
-        switch (e.code) {
-          case "KeyZ":
+        switch (key) {
+          case "z":
             e.preventDefault()
             if (e.shiftKey) s.redo()
             else s.undo()
             return
-          case "KeyD":
+          case "d":
             e.preventDefault()
             s.duplicateSelected()
             return
-          case "KeyA":
+          case "a":
             e.preventDefault()
             s.selectAll()
             return
-          case "KeyC":
+          case "c":
             e.preventDefault()
             s.copySelection()
             return
-          case "KeyX":
+          case "x":
             e.preventDefault()
             s.cutSelection()
             return
-          case "KeyV":
+          case "v":
             e.preventDefault()
             s.paste()
             return
-          case "Digit0":
+          case "0":
             e.preventDefault()
             s.setViewport({ x: 0, y: 0, zoom: 1 })
             return
@@ -991,23 +1037,25 @@ export function Canvas() {
           case "ArrowRight":
           case "ArrowUp":
           case "ArrowDown":
-          case "BracketLeft":
-          case "BracketRight":
+          case "[":
+          case "]":
             e.preventDefault()
             return
         }
         return
       }
 
-      if (e.shiftKey && (e.code === "Digit1" || e.code === "Digit2")) {
+      // shift+1/2: the printed character depends entirely on the layout, so
+      // accept the physical number-row key as well
+      if (e.shiftKey && (e.code === "Digit1" || e.code === "Digit2" || key === "!" || key === "@")) {
         e.preventDefault()
-        if (e.code === "Digit1") s.zoomTo()
+        if (e.code === "Digit1" || key === "!") s.zoomTo()
         else if (s.selection.length) s.zoomTo(s.selection)
         return
       }
       if (e.altKey) return
 
-      switch (e.code) {
+      switch (key) {
         case "Backspace":
         case "Delete":
           // backspace with nothing selected would navigate back in old browsers
@@ -1029,16 +1077,16 @@ export function Canvas() {
           e.preventDefault()
           s.cycleSelection(e.shiftKey ? -1 : 1)
           break
-        case "KeyV": s.setTool("select"); break
-        case "KeyR": s.setShapeKind("rect"); s.setTool("shape"); break
-        case "KeyO": s.setShapeKind("ellipse"); s.setTool("shape"); break
-        case "KeyP": s.setTool("draw"); break
-        case "KeyT": s.setTool("text"); break
-        case "KeyA": s.setTool("arrow"); break
-        case "KeyC": s.setPanel("components"); break
-        case "KeyB": s.setPanel("blocks"); break
-        case "BracketLeft": s.sendToBack(s.selection); break
-        case "BracketRight": s.bringToFront(s.selection); break
+        case "v": s.setTool("select"); break
+        case "r": s.setShapeKind("rect"); s.setTool("shape"); break
+        case "o": s.setShapeKind("ellipse"); s.setTool("shape"); break
+        case "p": s.setTool("draw"); break
+        case "t": s.setTool("text"); break
+        case "a": s.setTool("arrow"); break
+        case "c": s.setPanel("components"); break
+        case "b": s.setPanel("blocks"); break
+        case "[": s.sendToBack(s.selection); break
+        case "]": s.bringToFront(s.selection); break
         case "ArrowLeft":
         case "ArrowRight":
         case "ArrowUp":
@@ -1049,16 +1097,20 @@ export function Canvas() {
           // the same selection — otherwise ⌘Z reverts a move to another object
           const sig = s.selection.join(",")
           const nudge = nudgeRef.current
-          if (nudge.timer === null || nudge.sel !== sig) {
+          // the burst also has to still be writing against its own checkpoint:
+          // an undo in the middle pops it, and coalescing onto whatever is now
+          // on top would bury this edit in someone else's history entry
+          if (nudge.timer === null || nudge.sel !== sig || nudge.pastLen !== s.past.length) {
             s.checkpoint()
             nudge.sel = sig
+            nudge.pastLen = st().past.length
           } else {
             clearTimeout(nudge.timer)
           }
           nudge.timer = setTimeout(() => (nudge.timer = null), 900)
           const d = e.shiftKey ? 10 : 1
-          const dx = e.code === "ArrowLeft" ? -d : e.code === "ArrowRight" ? d : 0
-          const dy = e.code === "ArrowUp" ? -d : e.code === "ArrowDown" ? d : 0
+          const dx = key === "ArrowLeft" ? -d : key === "ArrowRight" ? d : 0
+          const dy = key === "ArrowUp" ? -d : key === "ArrowDown" ? d : 0
           const patches: Record<string, Partial<SquigNode>> = {}
           for (const id of s.selection) {
             const n = s.nodes[id]

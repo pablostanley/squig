@@ -64,8 +64,12 @@ export function resizeBounds(orig: Bounds, handle: Handle, dx: number, dy: numbe
     const cy = orig.y + orig.h / 2
 
     if (isCorner) {
-      // uniform scale driven by whichever axis the user pulled harder
-      const s = Math.max(Math.abs(right - left) / orig.w, Math.abs(bottom - top) / orig.h)
+      // uniform scale driven by whichever axis the user pulled harder.
+      // Inverted spans floor at zero rather than going through Math.abs: an
+      // absolute value turns "dragged 250px past the anchor" into "250px wide
+      // again", so the box would shrink, bottom out, then grow back the other
+      // way — the exact mirroring this function promises not to do.
+      const s = Math.max(Math.max(0, right - left) / orig.w, Math.max(0, bottom - top) / orig.h)
       const w = orig.w * s
       const h = orig.h * s
       if (opts.fromCenter) {
@@ -92,11 +96,11 @@ export function resizeBounds(orig: Bounds, handle: Handle, dx: number, dy: numbe
       }
     } else if (movesE || movesW) {
       // side handle: the perpendicular axis grows about the centre
-      const h = (Math.abs(right - left) * orig.h) / orig.w
+      const h = (Math.max(0, right - left) * orig.h) / orig.w
       top = cy - h / 2
       bottom = cy + h / 2
     } else {
-      const w = (Math.abs(bottom - top) * orig.w) / orig.h
+      const w = (Math.max(0, bottom - top) * orig.w) / orig.h
       left = cx - w / 2
       right = cx + w / 2
     }

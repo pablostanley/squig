@@ -8,7 +8,7 @@
 // quick controls the whole selection has in common.
 // ---------------------------------------------------------------------------
 
-import { useLayoutEffect, useRef, useState } from "react"
+import { useCallback, useState } from "react"
 
 import { useSquig } from "@/lib/store"
 import type { SquigNode, Viewport, ComponentNode, ShapeNode, ArrowNode } from "@/lib/types"
@@ -35,17 +35,20 @@ export function ContextRow({
   const editingId = useSquig((s) => s.editingId)
   const st = useSquig.getState
 
-  const ref = useRef<HTMLDivElement>(null)
   const [size, setSize] = useState({ w: 0, h: 36 })
 
-  // the row's own size decides whether it fits above the selection, so measure
-  // it rather than guessing — the control set changes with the selection
-  useLayoutEffect(() => {
-    const el = ref.current
+  // The row's own size decides whether it fits above the selection and whether
+  // it needs pulling in from the edge, so it has to be measured — the control
+  // set changes with what's selected. A ref callback rather than an effect,
+  // because this component returns null when nothing is selected: a mount-time
+  // effect would run once, with no element, and never observe anything.
+  const measure = useCallback((el: HTMLDivElement | null) => {
     if (!el || typeof ResizeObserver === "undefined") return
+    const r = el.getBoundingClientRect()
+    setSize((prev) => (prev.w === r.width && prev.h === r.height ? prev : { w: r.width, h: r.height }))
     const ro = new ResizeObserver(([entry]) => {
-      const r = entry.contentRect
-      setSize((prev) => (prev.w === r.width && prev.h === r.height ? prev : { w: r.width, h: r.height }))
+      const box = entry.contentRect
+      setSize((prev) => (prev.w === box.width && prev.h === box.height ? prev : { w: box.width, h: box.height }))
     })
     ro.observe(el)
     return () => ro.disconnect()
@@ -101,7 +104,7 @@ export function ContextRow({
 
   return (
     <div
-      ref={ref}
+      ref={measure}
       data-squig-chrome
       className="absolute z-20 flex items-center gap-3 rounded-lg border bg-background px-2.5 py-1.5 shadow-md"
       style={style}

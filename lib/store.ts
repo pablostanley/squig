@@ -18,6 +18,8 @@ interface DocSnapshot {
   selection: string[]
   /** selection the edit ended with — what redo puts you back to */
   selAfter?: string[]
+  /** the redo stack this checkpoint displaced, so a cancel can hand it back */
+  displacedFuture?: DocSnapshot[]
 }
 
 export type PanelKind = "components" | "blocks" | null
@@ -82,6 +84,8 @@ interface SquigState {
   duplicateSelected: () => void
   /** clone the selection in place and select the clones — the alt-drag primitive */
   cloneSelectionInPlace: () => string[]
+  /** swap a set of nodes for another set in one step, keeping z-order slots */
+  replaceNodes: (spec: { remove: string[]; insert: Record<string, SquigNode[]>; select?: string[] }) => void
   bringToFront: (ids: string[]) => void
   sendToBack: (ids: string[]) => void
   undo: () => void
@@ -237,7 +241,10 @@ export const useSquig = create<SquigState>((set, get) => ({
   setContextMenu: (m) => set({ contextMenu: m }),
 
   checkpoint: () => {
-    set((s) => ({ past: [...s.past.slice(-MAX_HISTORY + 1), snapshot(s)], future: [] }))
+    set((s) => ({
+      past: [...s.past.slice(-MAX_HISTORY + 1), { ...snapshot(s), displacedFuture: s.future }],
+      future: [],
+    }))
   },
 
   /**
@@ -254,6 +261,9 @@ export const useSquig = create<SquigState>((set, get) => ({
       order: prev.order,
       selection: prev.selection.filter((id) => prev.nodes[id]),
       past: past.slice(0, -1),
+      // the checkpoint wiped `future` on the way in; a cancelled gesture left
+      // the document untouched, so redo has to survive it
+      future: prev.displacedFuture ?? get().future,
     })
     scheduleSave(get)
   },
@@ -380,6 +390,43 @@ export const useSquig = create<SquigState>((set, get) => ({
     }))
     scheduleSave(get)
     return ids
+  },
+
+  replaceNodes: ({ remove, insert, select }) => {
+    const s = get()
+    const gone = new Set(remove)
+    const nodes = { ...s.nodes }
+    const order: string[] = []
+    const produced: string[] = []
+
+    for (const id of s.order) {
+      const parts = insert[id]
+      if (parts) {
+        // splice the replacements into the slot the original occupied, so a
+        // broken-apart block doesn't leap in front of whatever covered it
+        delete nodes[id]
+        for (const part of parts) {
+          nodes[part.id] = part
+          order.push(part.id)
+          produced.push(part.id)
+        }
+        continue
+      }
+      if (gone.has(id)) {
+        delete nodes[id]
+        continue
+      }
+      order.push(id)
+    }
+
+    get().checkpoint()
+    const wanted = new Set(select ?? produced)
+    set((st) => {
+      const selection = order.filter((id) => wanted.has(id))
+      stampSelAfter(st.past, selection)
+      return { nodes, order, selection, editingId: null }
+    })
+    scheduleSave(get)
   },
 
   bringToFront: (ids) => {
@@ -522,8 +569,10 @@ export const useSquig = create<SquigState>((set, get) => ({
     const rank = new Map(get().order.map((id, i) => [id, i]))
     // ties resolve by z-order so the result doesn't depend on click sequence
     const sorted = [...sel].sort((a, b) => pos(a) - pos(b) || (rank.get(a.id) ?? 0) - (rank.get(b.id) ?? 0))
-    const start = pos(sorted[0])
-    const end = pos(sorted[sorted.length - 1]) + size(sorted[sorted.length - 1])
+    const start = Math.min(...sorted.map(pos))
+    // the widest node may start early and still end last, so take the real
+    // maximum trailing edge rather than the last one in leading-edge order
+    const end = Math.max(...sorted.map((n) => pos(n) + size(n)))
     const used = sorted.reduce((sum, n) => sum + size(n), 0)
     const gap = (end - start - used) / (sorted.length - 1)
     get().checkpoint()
@@ -572,16 +621,19 @@ export const useSquig = create<SquigState>((set, get) => ({
       const [vx1, vy1] = screenToWorld(viewport, 0, 0)
       const [vx2, vy2] = screenToWorld(viewport, window.innerWidth, window.innerHeight)
       const onScreen = minX < vx2 && maxX > vx1 && minY < vy2 && maxY > vy1
+      // the clipboard never moves, so the cascade has to come from a counter —
+      // without it, repeated pastes of an off-screen source land on the exact
+      // same spot and look like one paste
+      const step = get().pasteStep + 1
+      set({ pasteStep: step })
       if (onScreen) {
-        // cascade off the original so repeated pastes don't stack invisibly
-        const step = get().pasteStep + 1
-        set({ pasteStep: step })
         dx = 16 * step
         dy = 16 * step
       } else {
-        // the source is off-screen — put the paste where the user is looking
-        dx = (vx1 + vx2) / 2 - (minX + maxX) / 2
-        dy = (vy1 + vy2) / 2 - (minY + maxY) / 2
+        // the source is off-screen — put the first paste where the user is
+        // looking, and step subsequent ones off it
+        dx = (vx1 + vx2) / 2 - (minX + maxX) / 2 + 16 * (step - 1)
+        dy = (vy1 + vy2) / 2 - (minY + maxY) / 2 + 16 * (step - 1)
       }
     }
 

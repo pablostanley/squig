@@ -46,6 +46,11 @@ function CommitInput({
 }) {
   const [draft, setDraft] = useState<string | null>(null)
   const ref = useRef<HTMLInputElement>(null)
+  // blur() fires focusout synchronously, so the onBlur that runs is the one
+  // from the CURRENT render — it still sees the pre-setDraft value. Without
+  // this latch, Escape's blur commits the draft it just threw away, and
+  // Enter's blur commits a second time on top of its own commit.
+  const handledRef = useRef(false)
   const stateRef = useRef({ draft, value, onCommit })
   // the outside-press listener reads the latest draft without being rebuilt on
   // every keystroke; refreshing after render keeps it out of the render pass
@@ -72,6 +77,14 @@ function CommitInput({
     setDraft(null)
   }
 
+  /** Finish the edit and stop the imminent blur from finishing it again. */
+  const settle = (commit: boolean) => {
+    handledRef.current = true
+    if (commit) flush(draft)
+    else setDraft(null)
+    ref.current?.blur()
+  }
+
   return (
     <Input
       ref={ref}
@@ -83,17 +96,21 @@ function CommitInput({
       placeholder={placeholder}
       onChange={(e) => setDraft(e.target.value)}
       onFocus={() => setDraft(value)}
-      onBlur={() => flush(draft)}
+      onBlur={() => {
+        if (handledRef.current) {
+          handledRef.current = false
+          return
+        }
+        flush(draft)
+      }}
       onKeyDown={(e) => {
         // the canvas ignores keys from inputs, but stop them regardless so no
         // future global handler starts eating characters mid-word
         e.stopPropagation()
         if (e.key === "Enter") {
-          flush(draft)
-          e.currentTarget.blur()
+          settle(true)
         } else if (e.key === "Escape") {
-          setDraft(null)
-          e.currentTarget.blur()
+          settle(false)
         } else if (onStep && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
           // step each node from its own value, so a mixed field stays mixed
           // instead of silently flattening the whole selection to one number

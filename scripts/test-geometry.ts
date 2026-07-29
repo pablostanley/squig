@@ -8,7 +8,7 @@
 // ---------------------------------------------------------------------------
 
 import { resizeBounds, scaleNodes, MIN_SIZE, type Handle } from "../lib/canvas/transform.ts"
-import { hitsPoint, hitsRect, pickAt, pickInRect } from "../lib/canvas/hit-test.ts"
+import { hitsPoint, hitsRect, pickAt, pickInRect, pickTolerance } from "../lib/canvas/hit-test.ts"
 import type { SquigNode } from "../lib/types.ts"
 
 let passed = 0
@@ -115,6 +115,29 @@ const apply = (ns: SquigNode[], patches: Record<string, Partial<SquigNode>>): Sq
     if (!close(back.x, b.x) || !close(back.y, b.y) || !close(back.w, b.w) || !close(back.h, b.h)) reversible = false
   }
   check("out-and-back on every handle restores the original box", reversible)
+
+  // dragging a corner back THROUGH the anchor used to mirror the box and start
+  // growing it again, because the aspect branch took Math.abs of a negative span
+  const past = resizeBounds(b, "se", -350, -350, { aspect: true })
+  check(
+    "shift+resize past the anchor clamps instead of rebounding",
+    past.w === MIN_SIZE && past.h === MIN_SIZE,
+    JSON.stringify(past)
+  )
+  const pastSide = resizeBounds(b, "e", -300, 0, { aspect: true })
+  check(
+    "shift+resize past the anchor on a side handle clamps too",
+    pastSide.w === MIN_SIZE && pastSide.h <= b.h,
+    JSON.stringify(pastSide)
+  )
+  let monotone = true
+  let prev = Infinity
+  for (const dx of [-40, -80, -120, -200, -300, -400]) {
+    const r = resizeBounds(b, "se", dx, dx, { aspect: true })
+    if (r.w > prev + 1e-9) monotone = false
+    prev = r.w
+  }
+  check("width never grows again as you keep dragging inward", monotone)
 }
 
 // -- scaleNodes -------------------------------------------------------------
@@ -214,6 +237,18 @@ const apply = (ns: SquigNode[], patches: Record<string, Partial<SquigNode>>): Sq
   // overlaps its neighbour's and there is no gap left to marquee from
   const n = rect("n", 0, 0, 100, 100, true)
   check("the pick halo stays bounded at very low zoom", !hitsPoint(n, -20, 50, 0.1))
+}
+
+{
+  // a horizontal arrow is ~2 units tall; clamping its collar to a quarter of
+  // that leaves a target nobody can hit
+  const flat: SquigNode = {
+    id: "flat", type: "arrow", head: true, x: 0, y: 0, w: 300, h: 2,
+    points: [[0, 0], [300, 2]], seed: 1,
+  }
+  check("a near-horizontal arrow is grabbable a few px off its line", hitsPoint(flat, 150, 4, 1))
+  check("but not from far away", !hitsPoint(flat, 150, 40, 1))
+  check("tolerance for lines ignores their thickness", pickTolerance(1, flat) === pickTolerance(1))
 }
 
 // ---------------------------------------------------------------------------

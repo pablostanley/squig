@@ -22,7 +22,11 @@ import type { Bounds } from "../selection"
 export function pickTolerance(zoom: number, n?: SquigNode): number {
   const base = Math.min(4 / Math.max(zoom, 0.01), 8)
   if (!n) return base
-  // never let the collar swallow the node it belongs to
+  // Lines are thin on purpose. A horizontal arrow is ~2 units tall, and
+  // shrinking its collar to match would leave a 2px-tall target you can
+  // basically never hit — the collar exists precisely for this case.
+  if (n.type === "arrow" || n.type === "draw") return base
+  // for areas, never let the collar swallow the node it belongs to
   return Math.min(base, Math.max(1, 0.25 * Math.min(n.w, n.h)))
 }
 

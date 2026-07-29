@@ -22,52 +22,33 @@ const PIECE_CEILING = 4000
 /**
  * Replace each component with its primitives, in one undo step.
  *
- * Pieces are spliced in at the component's own place in the z-order, so a
- * broken-apart block doesn't leap in front of everything that used to cover it.
- * Non-component nodes in the selection are left completely alone.
+ * The actual swap goes through the store's `replaceNodes`, which keeps each
+ * component's place in the z-order, takes a single checkpoint, and — the part
+ * a raw `setState` here quietly skipped — schedules the save, so the result
+ * survives a reload.
  */
 export function breakApartAll(ids: string[]): void {
   const s = useSquig.getState()
   const targets = ids.map((id) => s.nodes[id]).filter(canBreakApart)
   if (!targets.length) return
 
-  const pieces = new Map<string, SquigNode[]>()
+  const insert: Record<string, SquigNode[]> = {}
   let total = 0
   for (const c of targets) {
     const out = breakApart(c)
     total += out.length
     if (total > PIECE_CEILING) break
-    pieces.set(c.id, out)
+    insert[c.id] = out
   }
-  if (!pieces.size) return
-
-  const nodes = { ...s.nodes }
-  const order: string[] = []
-  const produced: string[] = []
-
-  s.checkpoint()
-
-  for (const id of s.order) {
-    const parts = pieces.get(id)
-    if (!parts) {
-      order.push(id)
-      continue
-    }
-    delete nodes[id]
-    for (const part of parts) {
-      nodes[part.id] = part
-      order.push(part.id)
-      produced.push(part.id)
-    }
-  }
+  if (!Object.keys(insert).length) return
 
   // whatever wasn't a component stays selected alongside the new pieces
-  const untouched = s.selection.filter((id) => !pieces.has(id) && nodes[id])
+  const untouched = s.selection.filter((id) => !insert[id] && s.nodes[id])
+  const produced = Object.values(insert).flatMap((parts) => parts.map((p) => p.id))
 
-  useSquig.setState({
-    nodes,
-    order,
-    selection: order.filter((id) => produced.includes(id) || untouched.includes(id)),
-    editingId: null,
+  useSquig.getState().replaceNodes({
+    remove: [],
+    insert,
+    select: [...produced, ...untouched],
   })
 }

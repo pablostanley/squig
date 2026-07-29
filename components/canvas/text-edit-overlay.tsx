@@ -42,6 +42,14 @@ function Editor({ node }: { node: SquigNode }) {
   const commit = () => {
     const s = st()
     if (s.editingId !== node.id) return
+    // an empty text node draws nothing and can never be clicked again, so it
+    // goes even when the draft is unchanged — that's the just-placed-then-
+    // dismissed case
+    if (isText && !value.trim()) {
+      s.removeNodes([node.id])
+      s.setEditing(null)
+      return
+    }
     if (value === initial) {
       // nothing changed — don't spend an undo step saying so
       s.setEditing(null)
