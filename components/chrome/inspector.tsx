@@ -62,7 +62,7 @@ export function Inspector() {
               <Separator />
               <div className="flex items-center justify-between">
                 <div>
-                  <Label className="text-xs font-normal">Context row</Label>
+                  <Label className="text-xs font-normal">Context menu</Label>
                   <p className="text-[11px] text-muted-foreground">quick controls above selection</p>
                 </div>
                 <Switch checked={contextRow} onCheckedChange={(on) => st().setContextRow(on)} className="scale-90" />

@@ -116,7 +116,7 @@ export function CanvasContextMenu() {
       { label: "Undo", hint: "⌘Z", run: () => st().undo() },
       { label: "Redo", hint: "⇧⌘Z", run: () => st().redo() },
       { separator: true },
-      { label: contextRow ? "Hide context row" : "Show context row", run: () => st().setContextRow(!contextRow) },
+      { label: contextRow ? "Hide context menu" : "Show context menu", run: () => st().setContextRow(!contextRow) },
       { label: "Reset zoom", hint: "⌘0", run: () => st().setViewport({ x: 0, y: 0, zoom: 1 }) },
       { separator: true },
       { label: "Clear canvas", danger: true, run: () => st().clearCanvas() },

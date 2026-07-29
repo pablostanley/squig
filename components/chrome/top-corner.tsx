@@ -125,7 +125,7 @@ export function TopCorner() {
             {font === "hand" ? "Use clean lettering" : "Use hand lettering"}
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => st().setContextRow(!contextRow)}>
-            {contextRow ? "Hide context row" : "Show context row"}
+            {contextRow ? "Hide context menu" : "Show context menu"}
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => st().setViewport({ x: 0, y: 0, zoom: 1 })}>
             Reset zoom
