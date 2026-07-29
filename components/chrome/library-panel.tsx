@@ -90,8 +90,10 @@ function Panel({ panel }: { panel: Exclude<PanelKind, null> }) {
         />
       </div>
 
-      {/* min-h-0 — without it the flex item won't shrink below its content. */}
-      <ScrollArea className="min-h-0 flex-1 overscroll-contain">
+      {/* min-h-0 — without it the flex item won't shrink below its content.
+          type="scroll" flashes the bar while scrolling, so a list this long
+          doesn't look like it ends at the fold. */}
+      <ScrollArea type="scroll" className="min-h-0 flex-1 overscroll-contain">
         <div className="p-2.5 pt-1">
           {sections.map((section) => (
             <div key={section.group} className="mb-2">
