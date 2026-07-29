@@ -8,7 +8,7 @@
 import { useRef } from "react"
 import { useSquig } from "@/lib/store"
 import { exportDoc, importDoc } from "@/lib/file-io"
-import { CaretDownIcon } from "@phosphor-icons/react"
+import { CaretDownIcon, CheckIcon } from "@phosphor-icons/react"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -129,7 +129,7 @@ export function TopCorner() {
                     <Swatch name={name} />
                     {THEMES[name].label}
                   </span>
-                  {theme === name && <DropdownMenuShortcut>✓</DropdownMenuShortcut>}
+                  {theme === name && <CheckIcon className="ml-auto size-3.5 text-muted-foreground" weight="bold" />}
                 </DropdownMenuItem>
               ))}
             </DropdownMenuSubContent>

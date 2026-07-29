@@ -9,10 +9,48 @@ import { useSquig } from "@/lib/store"
 import { screenToWorld } from "@/lib/types"
 import { getDef } from "@/lib/library/registry"
 import { kbd } from "@/lib/shortcuts"
+import {
+  AlignBottomSimpleIcon,
+  AlignCenterHorizontalSimpleIcon,
+  AlignCenterVerticalSimpleIcon,
+  AlignLeftSimpleIcon,
+  AlignRightSimpleIcon,
+  AlignTopSimpleIcon,
+  ArrowCounterClockwiseIcon,
+  ArrowDownIcon,
+  ArrowLineDownIcon,
+  ArrowLineUpIcon,
+  ArrowUUpLeftIcon,
+  ArrowUUpRightIcon,
+  ArrowUpIcon,
+  ArrowsOutIcon,
+  BoundingBoxIcon,
+  BroomIcon,
+  ClipboardTextIcon,
+  CopyIcon,
+  CopySimpleIcon,
+  EyeSlashIcon,
+  FlipHorizontalIcon,
+  FlipVerticalIcon,
+  KeyboardIcon,
+  LinkBreakIcon,
+  LinkSimpleIcon,
+  MagnifyingGlassIcon,
+  NumberSquareOneIcon,
+  SelectionAllIcon,
+  SelectionIcon,
+  SlidersHorizontalIcon,
+  SquaresFourIcon,
+  StackIcon,
+  TextTIcon,
+  TrashIcon,
+  type Icon as PhosphorIcon,
+} from "@phosphor-icons/react"
 
 interface Item {
   label: string
   hint?: string
+  icon: PhosphorIcon
   run?: () => void
   danger?: boolean
   separator?: never
@@ -73,70 +111,83 @@ export function CanvasContextMenu() {
 
   if (menu.nodeId) {
     entries = [
-      { label: "Duplicate", hint: kbd("mod+d"), run: () => st().duplicateSelected() },
-      { label: "Copy", hint: kbd("mod+c"), run: () => st().copySelected() },
-      ...(targets.length > 1 ? [{ label: "Group", hint: kbd("mod+g"), run: () => st().groupSelected() } as Entry] : []),
-      ...(hasGroup ? [{ label: "Ungroup", hint: kbd("mod+shift+g"), run: () => st().ungroupSelected() } as Entry] : []),
+      { label: "Duplicate", hint: kbd("mod+d"), icon: CopyIcon, run: () => st().duplicateSelected() },
+      { label: "Copy", hint: kbd("mod+c"), icon: CopySimpleIcon, run: () => st().copySelected() },
+      ...(targets.length > 1
+        ? [{ label: "Group", hint: kbd("mod+g"), icon: BoundingBoxIcon, run: () => st().groupSelected() } as Entry]
+        : []),
+      ...(hasGroup
+        ? [{ label: "Ungroup", hint: kbd("mod+shift+g"), icon: SelectionIcon, run: () => st().ungroupSelected() } as Entry]
+        : []),
       ...(hasComponent
-        ? [{ label: "Detach instance", hint: kbd("alt+mod+b"), run: () => st().detachSelected() } as Entry]
+        ? [{ label: "Detach instance", hint: kbd("alt+mod+b"), icon: LinkBreakIcon, run: () => st().detachSelected() } as Entry]
         : []),
       ...(hasText
-        ? [{ label: "Link text…", hint: kbd("mod+k"), run: () => st().setLinkOpen(true) } as Entry]
+        ? [{ label: "Link text…", hint: kbd("mod+k"), icon: LinkSimpleIcon, run: () => st().setLinkOpen(true) } as Entry]
         : []),
       ...(one?.type === "text" || (one?.type === "component" && getDef(one.kind)?.controls.some((c) => c.type === "text"))
-        ? [{ label: "Edit text", hint: "double-click", run: () => st().setEditing(one.id) } as Entry]
+        ? [{ label: "Edit text", hint: "double-click", icon: TextTIcon, run: () => st().setEditing(one.id) } as Entry]
         : []),
       { separator: true },
-      { label: "Bring to front", hint: kbd("far+]"), run: () => st().bringToFront(targets) },
-      { label: "Bring forward", hint: kbd("mod+]"), run: () => st().bringForward(targets) },
-      { label: "Send backward", hint: kbd("mod+["), run: () => st().sendBackward(targets) },
-      { label: "Send to back", hint: kbd("far+["), run: () => st().sendToBack(targets) },
+      { label: "Bring to front", hint: kbd("far+]"), icon: ArrowLineUpIcon, run: () => st().bringToFront(targets) },
+      { label: "Bring forward", hint: kbd("mod+]"), icon: ArrowUpIcon, run: () => st().bringForward(targets) },
+      { label: "Send backward", hint: kbd("mod+["), icon: ArrowDownIcon, run: () => st().sendBackward(targets) },
+      { label: "Send to back", hint: kbd("far+["), icon: ArrowLineDownIcon, run: () => st().sendToBack(targets) },
       { separator: true },
-      { label: "Flip horizontal", hint: kbd("shift+h"), run: () => st().flipSelected("x") },
-      { label: "Flip vertical", hint: kbd("shift+v"), run: () => st().flipSelected("y") },
+      { label: "Flip horizontal", hint: kbd("shift+h"), icon: FlipHorizontalIcon, run: () => st().flipSelected("x") },
+      { label: "Flip vertical", hint: kbd("shift+v"), icon: FlipVerticalIcon, run: () => st().flipSelected("y") },
       ...(selection.length > 1
         ? ([
             { separator: true },
-            { label: "Align left", run: () => st().alignSelected("left") },
-            { label: "Align centres", run: () => st().alignSelected("hcenter") },
-            { label: "Align right", run: () => st().alignSelected("right") },
-            { label: "Align top", run: () => st().alignSelected("top") },
-            { label: "Align middles", run: () => st().alignSelected("vcenter") },
-            { label: "Align bottom", run: () => st().alignSelected("bottom") },
+            { label: "Align left", icon: AlignLeftSimpleIcon, run: () => st().alignSelected("left") },
+            { label: "Align centres", icon: AlignCenterVerticalSimpleIcon, run: () => st().alignSelected("hcenter") },
+            { label: "Align right", icon: AlignRightSimpleIcon, run: () => st().alignSelected("right") },
+            { label: "Align top", icon: AlignTopSimpleIcon, run: () => st().alignSelected("top") },
+            { label: "Align middles", icon: AlignCenterHorizontalSimpleIcon, run: () => st().alignSelected("vcenter") },
+            { label: "Align bottom", icon: AlignBottomSimpleIcon, run: () => st().alignSelected("bottom") },
           ] as Entry[])
         : []),
       { separator: true },
-      { label: "Delete", hint: kbd("del"), danger: true, run: () => st().removeNodes(targets) },
+      { label: "Delete", hint: kbd("del"), icon: TrashIcon, danger: true, run: () => st().removeNodes(targets) },
     ]
   } else {
     entries = [
-      { label: "Search everything", hint: kbd("mod+k"), run: () => st().setCommandOpen(true) },
-      { label: "Components", hint: kbd("c"), run: () => st().setPanel("components") },
-      { label: "Blocks", hint: kbd("b"), run: () => st().setPanel("blocks") },
+      { label: "Search everything", hint: kbd("mod+k"), icon: MagnifyingGlassIcon, run: () => st().setCommandOpen(true) },
+      { label: "Components", hint: kbd("c"), icon: SquaresFourIcon, run: () => st().setPanel("components") },
+      { label: "Blocks", hint: kbd("b"), icon: StackIcon, run: () => st().setPanel("blocks") },
       { separator: true },
-      { label: "Select all", hint: kbd("mod+a"), run: () => st().setSelection([...st().order]) },
+      { label: "Select all", hint: kbd("mod+a"), icon: SelectionAllIcon, run: () => st().setSelection([...st().order]) },
       ...(clipboard.length
-        ? [{ label: "Paste here", hint: kbd("mod+v"), run: () => pasteAt(menu.x, menu.y) } as Entry]
+        ? [{ label: "Paste here", hint: kbd("mod+v"), icon: ClipboardTextIcon, run: () => pasteAt(menu.x, menu.y) } as Entry]
         : []),
       { separator: true },
-      { label: "Undo", hint: kbd("mod+z"), run: () => st().undo() },
-      { label: "Redo", hint: kbd("mod+shift+z"), run: () => st().redo() },
+      { label: "Undo", hint: kbd("mod+z"), icon: ArrowUUpLeftIcon, run: () => st().undo() },
+      { label: "Redo", hint: kbd("mod+shift+z"), icon: ArrowUUpRightIcon, run: () => st().redo() },
       { separator: true },
-      { label: "Zoom to fit", hint: kbd("shift+1"), run: () => st().zoomToFit() },
-      { label: "Zoom to 100%", hint: kbd("shift+0"), run: () => st().zoomTo100() },
-      { label: "Reset zoom", hint: kbd("mod+0"), run: () => st().setViewport({ x: 0, y: 0, zoom: 1 }) },
-      { label: contextRow ? "Hide context menu" : "Show context menu", run: () => st().setContextRow(!contextRow) },
-      { label: "Hide the interface", hint: kbd("mod+\\"), run: () => st().setUiHidden(true) },
-      { label: "Keyboard shortcuts", hint: kbd("shift+/"), run: () => st().setShortcutsOpen(true) },
+      { label: "Zoom to fit", hint: kbd("shift+1"), icon: ArrowsOutIcon, run: () => st().zoomToFit() },
+      { label: "Zoom to 100%", hint: kbd("shift+0"), icon: NumberSquareOneIcon, run: () => st().zoomTo100() },
+      {
+        label: "Reset zoom",
+        hint: kbd("mod+0"),
+        icon: ArrowCounterClockwiseIcon,
+        run: () => st().setViewport({ x: 0, y: 0, zoom: 1 }),
+      },
+      {
+        label: contextRow ? "Hide context menu" : "Show context menu",
+        icon: SlidersHorizontalIcon,
+        run: () => st().setContextRow(!contextRow),
+      },
+      { label: "Hide the interface", hint: kbd("mod+\\"), icon: EyeSlashIcon, run: () => st().setUiHidden(true) },
+      { label: "Keyboard shortcuts", hint: kbd("shift+/"), icon: KeyboardIcon, run: () => st().setShortcutsOpen(true) },
       { separator: true },
-      { label: "Clear canvas", danger: true, run: () => st().clearCanvas() },
+      { label: "Clear canvas", icon: BroomIcon, danger: true, run: () => st().clearCanvas() },
     ]
   }
 
   return (
     <div
       ref={ref}
-      className="fixed z-50 min-w-[196px] rounded-xl border bg-background p-1 shadow-lg"
+      className="fixed z-50 min-w-[220px] rounded-xl border bg-background p-1 shadow-lg"
       style={{ left: pos.x, top: pos.y }}
       onPointerDown={(e) => e.stopPropagation()}
       onContextMenu={(e) => e.preventDefault()}
@@ -152,12 +203,16 @@ export function CanvasContextMenu() {
               entry.run?.()
               close()
             }}
-            className={`flex w-full items-center gap-6 rounded-lg px-2.5 py-1.5 text-left text-[13px] hover:bg-accent ${
+            className={`group flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-[13px] hover:bg-accent ${
               entry.danger ? "text-muted-foreground hover:text-destructive" : ""
             }`}
           >
+            <entry.icon
+              className={`size-4 shrink-0 ${entry.danger ? "" : "text-muted-foreground group-hover:text-foreground"}`}
+              weight="fill"
+            />
             <span className="flex-1 truncate">{entry.label}</span>
-            {entry.hint && <span className="font-mono text-[10px] text-muted-foreground">{entry.hint}</span>}
+            {entry.hint && <span className="pl-4 font-mono text-[10px] text-muted-foreground">{entry.hint}</span>}
           </button>
         )
       )}

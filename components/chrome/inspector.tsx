@@ -21,7 +21,7 @@ import { Switch } from "@/components/ui/switch"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Unlink, Trash2, Link as LinkIcon } from "lucide-react"
+import { LinkBreakIcon, LinkSimpleIcon, TrashIcon } from "@phosphor-icons/react"
 import { kbd } from "@/lib/shortcuts"
 
 export function Inspector() {
@@ -243,7 +243,7 @@ function SelectionEditor({ selected }: { selected: SquigNode[] }) {
               mixed={shared(texts.map((n) => !!n.link)).mixed}
               onClick={() => st().setLinkOpen(true)}
             >
-              <LinkIcon className="size-3.5" />
+              <LinkSimpleIcon className="size-3.5" />
             </StyleToggle>
           </div>
 
@@ -281,7 +281,7 @@ function Footer({ selected }: { selected: SquigNode[] }) {
     <div className="flex shrink-0 gap-1.5 border-t p-2.5">
       {components.length > 0 && (
         <Button variant="outline" size="sm" className="h-7 flex-1 text-xs" onClick={() => st().detachSelected()}>
-          <Unlink className="size-3" /> Detach
+          <LinkBreakIcon className="size-3" /> Detach
           {components.length > 1 && <span className="tabular-nums">({components.length})</span>}
         </Button>
       )}
@@ -291,7 +291,7 @@ function Footer({ selected }: { selected: SquigNode[] }) {
         className="h-7 flex-1 text-xs text-muted-foreground hover:text-destructive"
         onClick={() => st().deleteSelected()}
       >
-        <Trash2 className="size-3" /> Delete
+        <TrashIcon className="size-3" /> Delete
       </Button>
     </div>
   )
