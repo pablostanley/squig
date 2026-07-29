@@ -33,7 +33,7 @@ export const buttonDef: ComponentDef = {
     const fontSize = size === "sm" ? 13 : size === "lg" ? 18 : 15
     const prims: Prim[] = []
     if (variant === "filled") {
-      prims.push(rect(0, 0, w, h, { fill: "hachure", fillColor: "ink" }))
+      prims.push(rect(0, 0, w, h, { fill: "shade", fillColor: "ink" }))
     } else if (variant === "outline") {
       prims.push(rect(0, 0, w, h))
     } else {
@@ -75,7 +75,7 @@ export const badgeDef: ComponentDef = {
   render(p, w, h) {
     const prims: Prim[] = [
       str(p, "variant") === "filled"
-        ? pill(0, 0, w, h, { fill: "hachure", fillColor: "ink" })
+        ? pill(0, 0, w, h, { fill: "shade", fillColor: "ink" })
         : pill(0, 0, w, h),
     ]
     prims.push(text(w / 2, h / 2 + 4, truncate(str(p, "label", "New"), 12, w - 12), 12, { align: "center" }))
@@ -286,7 +286,7 @@ export const switchDef: ComponentDef = {
     const th = Math.min(24, h)
     const ty = (h - th) / 2
     const prims: Prim[] = [
-      rect(0, ty, tw, th, on ? { fill: "hachure", fillColor: "ink" } : { stroke: "muted" }),
+      rect(0, ty, tw, th, on ? { fill: "shade", fillColor: "ink" } : { stroke: "muted" }),
     ]
     const knob = th - 6
     prims.push(
@@ -345,7 +345,7 @@ export const progressDef: ComponentDef = {
   render(p, w, h) {
     const v = Math.max(0, Math.min(100, num(p, "value", 40))) / 100
     const prims: Prim[] = [rect(0, 0, w, h)]
-    if (v > 0.02) prims.push(rect(2, 2, (w - 4) * v, h - 4, { fill: "hachure", fillColor: "ink", strokeWidth: 1 }))
+    if (v > 0.02) prims.push(rect(2, 2, (w - 4) * v, h - 4, { fill: "shade", fillColor: "ink", strokeWidth: 1 }))
     return prims
   },
 }

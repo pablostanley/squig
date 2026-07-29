@@ -43,7 +43,7 @@ export const navbarDef: ComponentDef = {
       rx -= 44
     }
     if (bool(p, "cta")) {
-      prims.push(rect(rx - 84, cy - 15, 84, 30, { fill: "hachure", fillColor: "ink" }))
+      prims.push(rect(rx - 84, cy - 15, 84, 30, { fill: "shade", fillColor: "ink" }))
       prims.push(text(rx - 42, cy + 5, "Sign up", 13, { align: "center" }))
       rx -= 96
     }
@@ -83,14 +83,14 @@ export const sidebarDef: ComponentDef = {
     const prims: Prim[] = [rect(0, 0, w, h)]
     // logo row
     prims.push(...icon("logo", 24, 26, 20))
-    prims.push(rect(44, 18, w * 0.4, 14, { fill: "hachure", fillColor: "muted", stroke: "faint", strokeWidth: 0.8 }))
+    prims.push(rect(44, 18, w * 0.4, 14, { fill: "shade", fillColor: "muted", stroke: "faint", strokeWidth: 0.8 }))
     prims.push(line(0, 50, w, 50, { stroke: "faint" }))
     const rowH = 40
     items.forEach((item, i) => {
       const y = 60 + i * rowH
       if (y + rowH > h - (bool(p, "user") ? 60 : 10)) return
       if (i === active) {
-        prims.push(rect(8, y, w - 16, rowH - 8, { fill: "hachure", fillColor: "faint", stroke: "faint" }))
+        prims.push(rect(8, y, w - 16, rowH - 8, { fill: "shade", fillColor: "faint", stroke: "faint" }))
       }
       let tx = 18
       if (icons) {

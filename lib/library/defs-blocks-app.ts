@@ -687,12 +687,12 @@ export const calendarBlockDef: ComponentDef = {
           const y = gridY + r * rowH
           const isToday = dnum === 14
           if (isToday) {
-            prims.push(ellipse(x + 6, y + 4, 20, 20, { fill: "hachure", fillColor: "faint", stroke: "faint" }))
+            prims.push(ellipse(x + 6, y + 4, 20, 20, { fill: "shade", fillColor: "faint", stroke: "faint" }))
           }
           prims.push(text(x + 16, y + 18, String(dnum), 11, { align: "center", color: isToday ? "ink" : "muted", bold: isToday }))
           if (withEvents && rowH > 40 && [3, 9, 14, 15, 22, 27].includes(dnum)) {
             const eh = Math.min(14, rowH - 26)
-            prims.push(rect(x + 6, y + 24, colW - 12, eh, { fill: "hachure", fillColor: "faint", stroke: "faint", strokeWidth: 0.8 }))
+            prims.push(rect(x + 6, y + 24, colW - 12, eh, { fill: "shade", fillColor: "faint", stroke: "faint", strokeWidth: 0.8 }))
           }
           dnum++
         }
@@ -727,7 +727,7 @@ export const calendarBlockDef: ComponentDef = {
         const y = gridY + s * slotH + 4
         const eh = Math.min(len * slotH - 8, gridY + gridH - y - 4)
         if (eh < 14) continue
-        prims.push(rect(c * colW + 5, y, colW - 10, eh, { fill: "hachure", fillColor: "faint", stroke: "muted", strokeWidth: 1 }))
+        prims.push(rect(c * colW + 5, y, colW - 10, eh, { fill: "shade", fillColor: "faint", stroke: "muted", strokeWidth: 1 }))
         if (colW > 62) prims.push(text(c * colW + 11, y + 15, truncate(label, 11, colW - 20), 11))
       }
     }
@@ -1061,7 +1061,7 @@ export const profileHeaderDef: ComponentDef = {
     const pad = clamp(w * 0.05, 16, 28)
     const coverH = bool(p, "cover") ? clamp(h * 0.36, 40, 92) : 0
     if (coverH) {
-      prims.push(rect(0, 0, w, coverH, { fill: "hachure", fillColor: "faint", stroke: "faint", strokeWidth: 0.8 }))
+      prims.push(rect(0, 0, w, coverH, { fill: "shade", fillColor: "faint" }))
       prims.push(...icon("image", w / 2, coverH / 2, Math.min(26, coverH * 0.4), { stroke: "faint" }))
     }
     const d = clamp(h * 0.31, 48, 78)
@@ -1139,7 +1139,7 @@ export const commandPaletteBlockDef: ComponentDef = {
         y += 22
       }
       if (y + rowH > h - 4) break
-      if (i === 0) prims.push(rect(6, y, w - 12, rowH - 2, { fill: "hachure", fillColor: "faint", stroke: "faint", strokeWidth: 0.8 }))
+      if (i === 0) prims.push(rect(6, y, w - 12, rowH - 2, { fill: "shade", fillColor: "faint", stroke: "faint", strokeWidth: 0.8 }))
       const cy = y + (rowH - 2) / 2
       prims.push(...icon(names[i], 26, cy, 15, { stroke: i === 0 ? "ink" : "muted" }))
       const hw = bool(p, "hints") && hints[i] ? kbdW(hints[i]) + 16 : 0
@@ -1197,7 +1197,7 @@ export const aiInputDef: ComponentDef = {
     }
     if (bool(p, "send")) {
       const d = Math.min(36, barH - 12)
-      prims.push(ellipse(w - 12 - d, cy - d / 2, d, d, { fill: "hachure", fillColor: "ink" }))
+      prims.push(ellipse(w - 12 - d, cy - d / 2, d, d, { fill: "shade", fillColor: "ink" }))
       prims.push(...icon("paper-plane-tilt", w - 12 - d / 2, cy, d * 0.5))
     }
     return prims
@@ -1235,7 +1235,7 @@ export const aiChatDef: ComponentDef = {
       const uw = cw * 0.6
       const uh = 50
       if (y + uh > bottom) break
-      prims.push(rect(w - pad - uw, y, uw, uh, { fill: "hachure", fillColor: "faint", stroke: "faint", strokeWidth: 0.8 }))
+      prims.push(rect(w - pad - uw, y, uw, uh, { fill: "shade", fillColor: "faint", stroke: "faint", strokeWidth: 0.8 }))
       prims.push(rect(w - pad - uw, y, uw, uh))
       prims.push(...loremLines(w - pad - uw + 14, y + 20, uw - 28, 2, 15))
       y += uh + 14
@@ -1264,7 +1264,7 @@ export const aiChatDef: ComponentDef = {
       prims.push(rect(pad, cy0, cw, 48))
       prims.push(...icon("paperclip", pad + 22, cy0 + 24, 15, { stroke: "muted" }))
       prims.push(text(pad + 40, cy0 + 29, truncate("Ask anything, even the dumb one", 14, cw - 96), 14, { color: "muted" }))
-      prims.push(ellipse(pad + cw - 42, cy0 + 8, 32, 32, { fill: "hachure", fillColor: "ink" }))
+      prims.push(ellipse(pad + cw - 42, cy0 + 8, 32, 32, { fill: "shade", fillColor: "ink" }))
       prims.push(...icon("paper-plane-tilt", pad + cw - 26, cy0 + 24, 15))
     }
     return prims
@@ -1361,7 +1361,7 @@ export const aiResponseDef: ComponentDef = {
     if (bool(p, "code")) {
       const ch = (actions ? h - 26 : h - 6) - y
       if (ch > 44) {
-        prims.push(rect(0, y, w, ch, { fill: "hachure", fillColor: "faint", stroke: "faint", strokeWidth: 0.8 }))
+        prims.push(rect(0, y, w, ch, { fill: "shade", fillColor: "faint", stroke: "faint", strokeWidth: 0.8 }))
         prims.push(...icon("code", 20, y + 16, 13, { stroke: "muted" }))
         prims.push(...icon("copy", w - 20, y + 16, 13, { stroke: "muted" }))
         const codeLines = [0.5, 0.72, 0.34, 0.6, 0.44, 0.66, 0.3, 0.55]
@@ -1584,7 +1584,7 @@ export const cartDef: ComponentDef = {
       const cy = ry + rowH / 2
       if (i > 0) prims.push(hair(pad, ry, cw))
       const td = clamp(rowH - 18, 22, 56)
-      prims.push(rect(pad, cy - td / 2, td, td, { stroke: "faint" }))
+      prims.push(rect(pad, cy - td / 2, td, td, { fill: "shade", fillColor: "faint" }))
       prims.push(...icon("image", pad + td / 2, cy, td * 0.44, { stroke: "faint" }))
       const tx = pad + td + 14
       const rightEdge = w - pad - 22
@@ -1702,14 +1702,14 @@ export const productDetailDef: ComponentDef = {
     const imgW = clamp(w * 0.44, Math.min(150, w * 0.4), w * 0.5)
     const thumbH = thumbs ? 72 : 0
     const imgH = h - pad * 2 - thumbH
-    prims.push(rect(pad, pad, imgW, imgH, { stroke: "faint" }))
+    prims.push(rect(pad, pad, imgW, imgH, { fill: "shade", fillColor: "faint" }))
     prims.push(...icon("image", pad + imgW / 2, pad + imgH / 2, Math.min(56, imgH * 0.3), { stroke: "faint" }))
     if (thumbs) {
       const td = 60
       const cols = Math.max(1, Math.floor((imgW + 10) / (td + 10)))
       for (let i = 0; i < Math.min(4, cols); i++) {
         const tx = pad + i * (td + 10)
-        prims.push(rect(tx, pad + imgH + 12, td, td, i === 0 ? {} : { stroke: "faint" }))
+        prims.push(rect(tx, pad + imgH + 12, td, td, i === 0 ? { fill: "shade", fillColor: "ink", strokeWidth: 2 } : { fill: "shade", fillColor: "faint" }))
         prims.push(...icon("image", tx + td / 2, pad + imgH + 12 + td / 2, 20, { stroke: "faint" }))
       }
     }
@@ -1743,7 +1743,7 @@ export const productDetailDef: ComponentDef = {
         const ow = 52
         const ox = x + i * (ow + 10)
         if (ox + ow > x + rw) return
-        prims.push(pill(ox, y + 10, ow, 30, i === 1 ? { fill: "hachure", fillColor: "ink" } : { stroke: "muted" }))
+        prims.push(pill(ox, y + 10, ow, 30, i === 1 ? { fill: "shade", fillColor: "ink" } : { stroke: "muted" }))
         prims.push(text(ox + ow / 2, y + 30, o, 13, { align: "center" }))
       })
       y += 54
@@ -1809,7 +1809,7 @@ export const productGridDef: ComponentDef = {
         const y = r * (ch + gap)
         prims.push(rect(x, y, cw, ch))
         const imgH = ch * (ch > 140 ? 0.62 : 0.55)
-        prims.push(line(x, y + imgH, x + cw, y + imgH, { stroke: "faint" }))
+        prims.push(rect(x, y, cw, imgH, { fill: "shade", fillColor: "faint" }))
         prims.push(...icon("image", x + cw / 2, y + imgH / 2, Math.min(36, imgH * 0.34), { stroke: "faint" }))
         if (imgH + 28 < ch) prims.push(text(x + 12, y + imgH + 22, truncate(names[i % names.length], 13, cw - 24), 13))
         if (showPrice && imgH + 50 < ch) prims.push(text(x + 12, y + imgH + 42, prices[i % prices.length], 15, { bold: true }))
@@ -1973,7 +1973,7 @@ export const landingPageDef: ComponentDef = {
       const ix = pad + colW + 32
       const iw = w - pad - ix
       const ih = Math.min(heroH - 60, 280)
-      prims.push(rect(ix, navH + Math.min(48, heroH * 0.16) - 8, iw, ih, { stroke: "faint" }))
+      prims.push(rect(ix, navH + Math.min(48, heroH * 0.16) - 8, iw, ih, { fill: "shade", fillColor: "faint" }))
       prims.push(...icon("image", ix + iw / 2, navH + Math.min(48, heroH * 0.16) - 8 + ih / 2, 54, { stroke: "faint" }))
     } else {
       for (const l of wrap("Wireframes that look like you meant it", 32, cw * 0.72, 2)) {
@@ -1987,7 +1987,7 @@ export const landingPageDef: ComponentDef = {
       prims.push(...sub(buttonDef, { label: "See examples", variant: "outline" }, w / 2 + 8, y, 168, 44))
       y += 62
       const ih = Math.max(40, navH + heroH - y - 10)
-      prims.push(rect(pad + cw * 0.1, y, cw * 0.8, ih, { stroke: "faint" }))
+      prims.push(rect(pad + cw * 0.1, y, cw * 0.8, ih, { fill: "shade", fillColor: "faint" }))
       prims.push(...icon("image", w / 2, y + ih / 2, Math.min(50, ih * 0.4), { stroke: "faint" }))
     }
 
@@ -2010,7 +2010,7 @@ export const landingPageDef: ComponentDef = {
 
     // cta band
     const cy0 = navH + heroH + featH
-    prims.push(rect(0, cy0, w, ctaH, { fill: "hachure", fillColor: "faint", stroke: "faint", strokeWidth: 0.8 }))
+    prims.push(rect(0, cy0, w, ctaH, { fill: "shade", fillColor: "faint", stroke: "faint", strokeWidth: 0.8 }))
     prims.push(text(w / 2, cy0 + ctaH * 0.36, truncate("Go on, draw a box", 24, cw), 24, { align: "center", bold: true }))
     prims.push(...sub(buttonDef, { label: "It's free, mostly", variant: "filled" }, w / 2 - 92, cy0 + ctaH * 0.48, 184, Math.min(42, ctaH * 0.36)))
 
@@ -2078,7 +2078,7 @@ export const chatScreenDef: ComponentDef = {
       for (let i = 0; i < n; i++) {
         const y = 96 + i * rowH
         const cy = y + rowH / 2
-        if (i === 0) prims.push(rect(6, y + 3, lw - 12, rowH - 6, { fill: "hachure", fillColor: "faint", stroke: "faint", strokeWidth: 0.8 }))
+        if (i === 0) prims.push(rect(6, y + 3, lw - 12, rowH - 6, { fill: "shade", fillColor: "faint", stroke: "faint", strokeWidth: 0.8 }))
         const d = Math.min(38, rowH - 22)
         prims.push(...sub(avatarDef, { content: "initials", initials: names[i].slice(0, 2), status: i < 2 }, 16, cy - d / 2, d, d))
         const tx = 16 + d + 12
@@ -2116,7 +2116,7 @@ export const chatScreenDef: ComponentDef = {
       if (!mine) {
         prims.push(...sub(avatarDef, { content: "initials", initials: "MA" }, cx + pad, y + bh - 32, 32, 32))
       }
-      if (mine) prims.push(rect(bx, y, bw, bh, { fill: "hachure", fillColor: "faint", stroke: "faint", strokeWidth: 0.8 }))
+      if (mine) prims.push(rect(bx, y, bw, bh, { fill: "shade", fillColor: "faint", stroke: "faint", strokeWidth: 0.8 }))
       prims.push(rect(bx, y, bw, bh))
       prims.push(...loremLines(bx + 16, y + 22, bw - 32, bh > 66 ? 3 : 2, 17))
       prims.push(text(mine ? bx + bw : bx, y + bh + 14, mine ? "9:42" : "9:41", 10, { align: mine ? "right" : "left", color: "muted" }))
@@ -2128,7 +2128,7 @@ export const chatScreenDef: ComponentDef = {
       prims.push(rect(cx + pad, fy, cw - pad * 2, 46))
       prims.push(...icon("paperclip", cx + pad + 22, fy + 23, 15, { stroke: "muted" }))
       prims.push(text(cx + pad + 42, fy + 28, truncate("Write something regrettable", 14, cw - pad * 2 - 110), 14, { color: "muted" }))
-      prims.push(ellipse(cx + cw - pad - 40, fy + 7, 32, 32, { fill: "hachure", fillColor: "ink" }))
+      prims.push(ellipse(cx + cw - pad - 40, fy + 7, 32, 32, { fill: "shade", fillColor: "ink" }))
       prims.push(...icon("paper-plane-tilt", cx + cw - pad - 24, fy + 23, 15))
     }
     return prims
@@ -2165,7 +2165,7 @@ export const inboxScreenDef: ComponentDef = {
       for (let i = 0; i < folders.length; i++) {
         const y = 76 + i * 40
         if (y + 32 > h - 20) break
-        if (i === 0) prims.push(rect(8, y, fw - 16, 32, { fill: "hachure", fillColor: "faint", stroke: "faint", strokeWidth: 0.8 }))
+        if (i === 0) prims.push(rect(8, y, fw - 16, 32, { fill: "shade", fillColor: "faint", stroke: "faint", strokeWidth: 0.8 }))
         prims.push(...icon(names[i], 26, y + 16, 15, { stroke: i === 0 ? "ink" : "muted" }))
         prims.push(text(44, y + 21, folders[i], 13, { bold: i === 0, color: i === 0 ? "ink" : "muted" }))
         if (counts[i]) prims.push(text(fw - 16, y + 21, counts[i], 11, { align: "right", color: "muted" }))

@@ -74,12 +74,12 @@ export const stickyDef: ComponentDef = {
             [0, h],
           ],
           true,
-          { fill: "hachure", fillColor: "muted" }
+          { fill: "shade", fillColor: "muted" }
         )
       )
       prims.push(poly([[w - f, h], [w - f, h - f], [w, h - f]], false, { stroke: "muted" }))
     } else {
-      prims.push(rect(0, 0, w, h, { fill: "hachure", fillColor: "muted", r: 2 }))
+      prims.push(rect(0, 0, w, h, { fill: "shade", fillColor: "muted", r: 2 }))
     }
     // wrap the note text by hand — sticky notes are always a bit cramped
     const size = 14

@@ -127,7 +127,7 @@ export const settingsDef: ComponentDef = {
       items.forEach((item, i) => {
         const y = 30 + i * 36
         if (y > h - 20) return
-        if (i === 0) prims.push(rect(10, y - 18, left - 20, 30, { fill: "hachure", fillColor: "faint", stroke: "faint" }))
+        if (i === 0) prims.push(rect(10, y - 18, left - 20, 30, { fill: "shade", fillColor: "faint", stroke: "faint" }))
         prims.push(text(22, y + 2, item, 14, { color: i === 0 ? "ink" : "muted", bold: i === 0 }))
       })
     }
@@ -243,7 +243,7 @@ export const pricingDef: ComponentDef = {
       const ch = h - y0 - (isHi ? 0 : 14)
       prims.push(rect(x, y0, cardW, ch, isHi ? { strokeWidth: 2.2 } : {}))
       if (isHi) {
-        prims.push(rect(x, y0, cardW, 26, { fill: "hachure", fillColor: "ink" }))
+        prims.push(rect(x, y0, cardW, 26, { fill: "shade", fillColor: "ink" }))
         prims.push(text(x + cardW / 2, y0 + 18, "most popular", 12, { align: "center" }))
       }
       let y = y0 + (isHi ? 50 : 34)
@@ -296,7 +296,7 @@ export const feedDef: ComponentDef = {
       y += 30
       if (withImg && postH > 180) {
         const imgH = postH - (y - y0) - 42
-        prims.push(rect(14, y, w - 28, imgH, { stroke: "faint" }))
+        prims.push(rect(14, y, w - 28, imgH, { fill: "shade", fillColor: "faint" }))
         prims.push(...icon("image", w / 2, y + imgH / 2, Math.min(36, imgH * 0.5), { stroke: "muted" }))
         y += imgH + 10
       }
@@ -327,7 +327,7 @@ export const emptyStateDef: ComponentDef = {
   render(p, w, h) {
     const prims: Prim[] = [rect(0, 0, w, h, { stroke: "faint", dashed: true })]
     const cy = h * 0.34
-    prims.push(ellipse(w / 2 - 44, cy - 44, 88, 88, { stroke: "faint", fill: "hachure", fillColor: "faint", texture: "halftone" }))
+    prims.push(ellipse(w / 2 - 44, cy - 44, 88, 88, { fill: "shade", fillColor: "faint" }))
     prims.push(...icon(str(p, "icon", "image") as "image", w / 2, cy, 40, { stroke: "muted" }))
     prims.push(text(w / 2, cy + 76, str(p, "title", "Nothing here yet"), 19, { align: "center", bold: true }))
     prims.push(line(w / 2 - w * 0.28, cy + 96, w / 2 + w * 0.28, cy + 96, { stroke: "muted", strokeWidth: 1.2 }))
