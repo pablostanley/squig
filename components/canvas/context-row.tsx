@@ -20,9 +20,11 @@ export function ContextRow({ selectedNodes, viewport }: { selectedNodes: SquigNo
   if (!enabled || editingId || selectedNodes.length !== 1) return null
   const node = selectedNodes[0]
 
-  const left = node.x * viewport.zoom + viewport.x
+  // Centered on the selection: anchor at its horizontal midpoint, then pull
+  // back by half the row's own width.
+  const left = (node.x + node.w / 2) * viewport.zoom + viewport.x
   const top = node.y * viewport.zoom + viewport.y - 46
-  const style = { left, top: Math.max(top, 8) }
+  const style = { left, top: Math.max(top, 8), transform: "translateX(-50%)" }
 
   if (node.type === "component") {
     const def = getDef(node.kind)

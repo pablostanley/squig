@@ -47,7 +47,7 @@ export const THEMES = {
     shade: "#EDEFFF",
     shadeStrong: "#D3D7FF",
     grid: "#E6E1D3",
-    select: "#FF5A24",
+    select: "#A200FF",
   },
   "riso-red": {
     label: "Riso red",
