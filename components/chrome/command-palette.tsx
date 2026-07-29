@@ -9,9 +9,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useSquig } from "@/lib/store"
 import { ALL_DEFS, matches, type ComponentDef } from "@/lib/library/registry"
 import { SketchPrims } from "@/components/canvas/sketch"
-import { breakApart } from "@/lib/library/break-apart"
 import { exportDoc, importDoc } from "@/lib/file-io"
-import type { ComponentNode } from "@/lib/types"
+import { kbd } from "@/lib/shortcuts"
 import {
   MagnifyingGlassIcon,
   CursorIcon,
@@ -20,16 +19,32 @@ import {
   PencilSimpleIcon,
   TextTIcon,
   ArrowUpRightIcon,
+  LineSegmentIcon,
   ArrowUUpLeftIcon,
   ArrowUUpRightIcon,
   CopyIcon,
+  ClipboardIcon,
+  ScissorsIcon,
   TrashIcon,
   StackIcon,
+  StackSimpleIcon,
   CornersOutIcon,
+  CornersInIcon,
   FileIcon,
   DownloadSimpleIcon,
   UploadSimpleIcon,
   LinkBreakIcon,
+  LinkIcon,
+  BoundingBoxIcon,
+  FlipHorizontalIcon,
+  FlipVerticalIcon,
+  TextBIcon,
+  TextItalicIcon,
+  TextUnderlineIcon,
+  MagnifyingGlassPlusIcon,
+  MagnifyingGlassMinusIcon,
+  EyeSlashIcon,
+  KeyboardIcon,
   type Icon as PhosphorIcon,
 } from "@phosphor-icons/react"
 
@@ -46,7 +61,7 @@ interface Action {
 
 type Row = { kind: "action"; action: Action } | { kind: "def"; def: ComponentDef }
 
-const SECTION_ORDER = ["Tools", "Edit", "Arrange", "File", "Components", "Blocks"]
+const SECTION_ORDER = ["Tools", "Edit", "Arrange", "Text", "View", "File", "Components", "Blocks"]
 
 /** Mount only while open, so every ⌘K starts from a blank box with no reset dance. */
 export function CommandPalette() {
@@ -72,49 +87,69 @@ function Palette() {
   }, [])
 
   const hasSel = selection.length > 0
-  const oneComponent = selection.length === 1 && nodes[selection[0]]?.type === "component"
+  const hasComponent = selection.some((id) => nodes[id]?.type === "component")
+  const hasText = selection.some((id) => nodes[id]?.type === "text")
+  const hasGroup = selection.some((id) => nodes[id]?.groupIds?.length)
 
   const actions = useMemo<Action[]>(
     () => [
-      { id: "select", label: "Select tool", hint: "V", section: "Tools", icon: CursorIcon, run: () => st().setTool("select") },
-      { id: "rect", label: "Rectangle", hint: "R", section: "Tools", keywords: "shape box square", icon: SquareIcon, run: () => { st().setShapeKind("rect"); st().setTool("shape") } },
-      { id: "ellipse", label: "Ellipse", hint: "O", section: "Tools", keywords: "circle oval shape", icon: CircleIcon, run: () => { st().setShapeKind("ellipse"); st().setTool("shape") } },
-      { id: "draw", label: "Draw", hint: "P", section: "Tools", keywords: "pencil pen freehand scribble", icon: PencilSimpleIcon, run: () => st().setTool("draw") },
-      { id: "text", label: "Text", hint: "T", section: "Tools", keywords: "type label", icon: TextTIcon, run: () => st().setTool("text") },
-      { id: "arrow", label: "Arrow", hint: "A", section: "Tools", keywords: "line connector point", icon: ArrowUpRightIcon, run: () => st().setTool("arrow") },
+      { id: "select", label: "Select tool", hint: kbd("v"), section: "Tools", icon: CursorIcon, run: () => st().setTool("select") },
+      { id: "rect", label: "Rectangle", hint: kbd("r"), section: "Tools", keywords: "shape box square", icon: SquareIcon, run: () => { st().setShapeKind("rect"); st().setTool("shape") } },
+      { id: "ellipse", label: "Ellipse", hint: kbd("o"), section: "Tools", keywords: "circle oval shape", icon: CircleIcon, run: () => { st().setShapeKind("ellipse"); st().setTool("shape") } },
+      { id: "draw", label: "Draw", hint: kbd("p"), section: "Tools", keywords: "pencil pen freehand scribble", icon: PencilSimpleIcon, run: () => st().setTool("draw") },
+      { id: "text", label: "Text", hint: kbd("t"), section: "Tools", keywords: "type label", icon: TextTIcon, run: () => st().setTool("text") },
+      { id: "line", label: "Line", hint: kbd("l"), section: "Tools", keywords: "rule divider stroke", icon: LineSegmentIcon, run: () => { st().setArrowHead(false); st().setTool("arrow") } },
+      { id: "arrow", label: "Arrow", hint: kbd("shift+l"), section: "Tools", keywords: "line connector point", icon: ArrowUpRightIcon, run: () => { st().setArrowHead(true); st().setTool("arrow") } },
 
-      { id: "undo", label: "Undo", hint: "⌘Z", section: "Edit", icon: ArrowUUpLeftIcon, run: () => st().undo() },
-      { id: "redo", label: "Redo", hint: "⇧⌘Z", section: "Edit", icon: ArrowUUpRightIcon, run: () => st().redo() },
-      { id: "dup", label: "Duplicate", hint: "⌘D", section: "Edit", icon: CopyIcon, disabled: !hasSel, run: () => st().duplicateSelected() },
-      { id: "del", label: "Delete", hint: "⌫", section: "Edit", icon: TrashIcon, disabled: !hasSel, run: () => st().deleteSelected() },
+      { id: "undo", label: "Undo", hint: kbd("mod+z"), section: "Edit", icon: ArrowUUpLeftIcon, run: () => st().undo() },
+      { id: "redo", label: "Redo", hint: kbd("mod+shift+z"), section: "Edit", icon: ArrowUUpRightIcon, run: () => st().redo() },
+      { id: "dup", label: "Duplicate", hint: kbd("mod+d"), section: "Edit", icon: CopyIcon, disabled: !hasSel, run: () => st().duplicateSelected() },
+      { id: "copy", label: "Copy", hint: kbd("mod+c"), section: "Edit", icon: CopyIcon, disabled: !hasSel, run: () => st().copySelected() },
+      { id: "cut", label: "Cut", hint: kbd("mod+x"), section: "Edit", icon: ScissorsIcon, disabled: !hasSel, run: () => st().cutSelected() },
+      { id: "paste", label: "Paste", hint: kbd("mod+v"), section: "Edit", icon: ClipboardIcon, run: () => st().pasteClipboard() },
+      { id: "del", label: "Delete", hint: kbd("del"), section: "Edit", icon: TrashIcon, disabled: !hasSel, run: () => st().deleteSelected() },
+      { id: "group", label: "Group", hint: kbd("mod+g"), section: "Edit", keywords: "combine bundle", icon: BoundingBoxIcon, disabled: selection.length < 2, run: () => st().groupSelected() },
+      { id: "ungroup", label: "Ungroup", hint: kbd("mod+shift+g"), section: "Edit", keywords: "split apart", icon: LinkBreakIcon, disabled: !hasGroup, run: () => st().ungroupSelected() },
       {
-        id: "break", label: "Break apart", section: "Edit", keywords: "detach explode ungroup",
-        icon: LinkBreakIcon, disabled: !oneComponent,
-        run: () => {
-          const n = st().nodes[st().selection[0]]
-          if (n?.type !== "component") return
-          const pieces = breakApart(n as ComponentNode)
-          st().removeNodes([n.id])
-          st().addNodes(pieces)
-        },
+        id: "break", label: "Detach instance", hint: kbd("alt+mod+b"), section: "Edit",
+        keywords: "break apart explode ungroup component",
+        icon: LinkBreakIcon, disabled: !hasComponent,
+        run: () => st().detachSelected(),
       },
-      { id: "selectall", label: "Select all", hint: "⌘A", section: "Edit", icon: StackIcon, run: () => st().setSelection([...st().order]) },
+      { id: "selectall", label: "Select all", hint: kbd("mod+a"), section: "Edit", icon: StackIcon, run: () => st().setSelection([...st().order]) },
 
-      { id: "front", label: "Bring to front", hint: "]", section: "Arrange", icon: StackIcon, disabled: !hasSel, run: () => st().bringToFront(st().selection) },
-      { id: "back", label: "Send to back", hint: "[", section: "Arrange", icon: StackIcon, disabled: !hasSel, run: () => st().sendToBack(st().selection) },
+      { id: "forward", label: "Bring forward", hint: kbd("mod+]"), section: "Arrange", icon: StackSimpleIcon, disabled: !hasSel, run: () => st().bringForward(st().selection) },
+      { id: "backward", label: "Send backward", hint: kbd("mod+["), section: "Arrange", icon: StackSimpleIcon, disabled: !hasSel, run: () => st().sendBackward(st().selection) },
+      { id: "front", label: "Bring to front", hint: kbd("far+]"), section: "Arrange", icon: StackIcon, disabled: !hasSel, run: () => st().bringToFront(st().selection) },
+      { id: "back", label: "Send to back", hint: kbd("far+["), section: "Arrange", icon: StackIcon, disabled: !hasSel, run: () => st().sendToBack(st().selection) },
+      { id: "flip-h", label: "Flip horizontal", hint: kbd("shift+h"), section: "Arrange", keywords: "mirror reverse", icon: FlipHorizontalIcon, disabled: !hasSel, run: () => st().flipSelected("x") },
+      { id: "flip-v", label: "Flip vertical", hint: kbd("shift+v"), section: "Arrange", keywords: "mirror reverse", icon: FlipVerticalIcon, disabled: !hasSel, run: () => st().flipSelected("y") },
       { id: "align-l", label: "Align left", section: "Arrange", icon: CornersOutIcon, disabled: selection.length < 2, run: () => st().alignSelected("left") },
       { id: "align-hc", label: "Align centres horizontally", section: "Arrange", icon: CornersOutIcon, disabled: selection.length < 2, run: () => st().alignSelected("hcenter") },
       { id: "align-r", label: "Align right", section: "Arrange", icon: CornersOutIcon, disabled: selection.length < 2, run: () => st().alignSelected("right") },
       { id: "align-t", label: "Align top", section: "Arrange", icon: CornersOutIcon, disabled: selection.length < 2, run: () => st().alignSelected("top") },
       { id: "align-vc", label: "Align middles vertically", section: "Arrange", icon: CornersOutIcon, disabled: selection.length < 2, run: () => st().alignSelected("vcenter") },
       { id: "align-b", label: "Align bottom", section: "Arrange", icon: CornersOutIcon, disabled: selection.length < 2, run: () => st().alignSelected("bottom") },
-      { id: "zoom-reset", label: "Reset zoom", hint: "⌘0", section: "Arrange", keywords: "100% fit view", icon: CornersOutIcon, run: () => st().setViewport({ x: 0, y: 0, zoom: 1 }) },
+
+      { id: "bold", label: "Bold", hint: kbd("mod+b"), section: "Text", icon: TextBIcon, disabled: !hasText, run: () => st().toggleTextStyle("bold") },
+      { id: "italic", label: "Italic", hint: kbd("mod+i"), section: "Text", icon: TextItalicIcon, disabled: !hasText, run: () => st().toggleTextStyle("italic") },
+      { id: "underline", label: "Underline", hint: kbd("mod+u"), section: "Text", icon: TextUnderlineIcon, disabled: !hasText, run: () => st().toggleTextStyle("underline") },
+      { id: "link", label: "Link selection", hint: kbd("mod+k"), section: "Text", keywords: "url href", icon: LinkIcon, disabled: !hasText, run: () => st().setLinkOpen(true) },
+
+      { id: "zoom-in", label: "Zoom in", hint: kbd("mod+plus"), section: "View", icon: MagnifyingGlassPlusIcon, run: () => st().zoomBy(1.25) },
+      { id: "zoom-out", label: "Zoom out", hint: kbd("mod+-"), section: "View", icon: MagnifyingGlassMinusIcon, run: () => st().zoomBy(1 / 1.25) },
+      { id: "zoom-100", label: "Zoom to 100%", hint: kbd("shift+0"), section: "View", keywords: "actual size", icon: MagnifyingGlassIcon, run: () => st().zoomTo100() },
+      { id: "zoom-fit", label: "Zoom to fit", hint: kbd("shift+1"), section: "View", keywords: "everything overview", icon: CornersOutIcon, run: () => st().zoomToFit() },
+      { id: "zoom-sel", label: "Zoom to selection", hint: kbd("shift+2"), section: "View", icon: CornersInIcon, disabled: !hasSel, run: () => st().zoomToSelection() },
+      { id: "zoom-reset", label: "Reset view", hint: kbd("mod+0"), section: "View", keywords: "origin home", icon: CornersOutIcon, run: () => st().setViewport({ x: 0, y: 0, zoom: 1 }) },
+      { id: "hide-ui", label: "Hide the interface", hint: kbd("mod+\\"), section: "View", keywords: "clean present chrome", icon: EyeSlashIcon, run: () => st().setUiHidden(true) },
+      { id: "keys", label: "Keyboard shortcuts", hint: kbd("shift+/"), section: "View", keywords: "hotkeys help cheat sheet", icon: KeyboardIcon, run: () => st().setShortcutsOpen(true) },
 
       { id: "new", label: "New file", section: "File", keywords: "blank clear reset", icon: FileIcon, run: () => st().newFile() },
       { id: "export", label: "Export .squig", section: "File", keywords: "save download json", icon: DownloadSimpleIcon, run: exportDoc },
       { id: "import", label: "Import .squig", section: "File", keywords: "open load json", icon: UploadSimpleIcon, run: importDoc },
     ],
-    [st, hasSel, oneComponent, selection.length]
+    [st, hasSel, hasComponent, hasText, hasGroup, selection.length]
   )
 
   const rows = useMemo<Row[]>(() => {
@@ -178,7 +213,11 @@ function Palette() {
               className="w-full bg-transparent py-4 pr-4 pl-11 text-[15px] outline-none placeholder:text-muted-foreground"
               onKeyDown={(e) => {
                 e.stopPropagation()
-                if (e.key === "Escape") close()
+                // the keys that opened the sheet also close it
+                if ((e.metaKey || e.ctrlKey) && (e.code === "KeyK" || e.code === "Slash")) {
+                  e.preventDefault()
+                  close()
+                } else if (e.key === "Escape") close()
                 else if (e.key === "ArrowDown") {
                   e.preventDefault()
                   setActive((i) => (rows.length ? (i + 1) % rows.length : 0))

@@ -21,6 +21,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { THEMES, THEME_NAMES, type ThemeName } from "@/lib/theme"
+import { kbd } from "@/lib/shortcuts"
 
 /** Two-tone chip showing a palette's paper and ink. */
 function Swatch({ name }: { name: ThemeName }) {
@@ -90,7 +91,11 @@ export function TopCorner() {
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => st().setCommandOpen(true)}>
             Find anything
-            <DropdownMenuShortcut>⌘K</DropdownMenuShortcut>
+            <DropdownMenuShortcut>{kbd("mod+k")}</DropdownMenuShortcut>
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => st().setShortcutsOpen(true)}>
+            Keyboard shortcuts
+            <DropdownMenuShortcut>{kbd("shift+/")}</DropdownMenuShortcut>
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem onSelect={() => st().undo()}>
@@ -129,7 +134,7 @@ export function TopCorner() {
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => st().setViewport({ x: 0, y: 0, zoom: 1 })}>
             Reset zoom
-            <DropdownMenuShortcut>⌘0</DropdownMenuShortcut>
+            <DropdownMenuShortcut>{kbd("mod+0")}</DropdownMenuShortcut>
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem variant="destructive" onSelect={() => st().clearCanvas()}>

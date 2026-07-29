@@ -15,9 +15,10 @@ import { Label } from "@/components/ui/label"
 export function ContextRow({ selectedNodes, viewport }: { selectedNodes: SquigNode[]; viewport: Viewport }) {
   const enabled = useSquig((s) => s.contextRow)
   const editingId = useSquig((s) => s.editingId)
+  const uiHidden = useSquig((s) => s.uiHidden)
   const st = useSquig.getState
 
-  if (!enabled || editingId || selectedNodes.length !== 1) return null
+  if (!enabled || uiHidden || editingId || selectedNodes.length !== 1) return null
   const node = selectedNodes[0]
 
   // Centered on the selection: anchor at its horizontal midpoint, then pull

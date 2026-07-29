@@ -59,24 +59,35 @@ box of height `h`, use `y = h / 2 + size * 0.35`.
 ### opts (`PrimOpts`)
 
 ```ts
-{ stroke: "ink" | "muted" | "faint",     // default "ink"
+{ stroke: "ink" | "muted" | "faint",     // pen PRESSURE, not colour — default "ink"
   strokeWidth: 1.25,
-  fill: "none" | "hachure" | "solid",
+  fill: "none" | "shade" | "solid",
   fillColor: "ink" | "muted" | "faint" | "paper",
   dashed: true,
   roughness: 0.5 }                        // leave unset unless you mean it
 ```
+
+`stroke` does not change the colour of anything. Every line in a squig prints
+in the one ink; `stroke` picks how hard the pen presses — `"ink"` a full
+stroke, `"muted"` an ordinary one, `"faint"` a hairline.
 
 ## Style rules
 
 The look is **refined hand-drawn** — closer to FigJam/tldraw than to a napkin.
 
 - Monochrome only. No color props, no color controls, ever.
-- `fill: "solid", fillColor: "faint"` for a filled/primary surface;
-  `fill: "solid", fillColor: "paper"` for anything that floats over other
-  content (dialogs, menus, popovers) so it occludes properly — draw the
+- Area fills come from exactly three tones, and there is no fourth:
+  `fill: "shade", fillColor: "faint"` is the light wash for inert areas (image
+  placeholders, tracks, empty states, alternating rows);
+  `fill: "shade", fillColor: "ink"` is one step darker, for the single thing on
+  a surface that should come forward (primary button, selected chip, chart
+  bars); `fill: "solid", fillColor: "paper"` is for anything that floats over
+  other content (dialogs, menus, popovers) so it occludes properly — draw the
   paper-filled rect FIRST, then the outline, then contents.
-- `hachure` is heavy; use it sparingly, for at most one emphasis area per item.
+- Reserve the darker shade for one emphasis area per item. If a second thing
+  wants it, the layout is doing too little work.
+- `fill: "solid"` at full ink strength is only for small opaque marks — a
+  toggle knob, a status dot — where a tint would vanish at that size.
 - Real text for real labels (buttons, nav, headings, table headers). Use
   `loremLines` / plain `line` for body copy and filler — a wireframe shouldn't
   pretend to have final copy.

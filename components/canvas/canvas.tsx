@@ -23,7 +23,15 @@ type Handle = (typeof HANDLES)[number]
 
 type Gesture =
   | { kind: "pan"; sx: number; sy: number; ox: number; oy: number }
-  | { kind: "move"; sx: number; sy: number; orig: Record<string, { x: number; y: number }>; moved: boolean }
+  | {
+      kind: "move"
+      sx: number
+      sy: number
+      orig: Record<string, { x: number; y: number }>
+      moved: boolean
+      /** set when the gesture already pushed history (⌥-drag duplicates first) */
+      checkpointed?: boolean
+    }
   | { kind: "marquee"; sx: number; sy: number }
   | { kind: "draw"; points: [number, number][] }
   | { kind: "create"; sx: number; sy: number; id: string | null; what: "shape" | "arrow" }
@@ -34,6 +42,8 @@ export function Canvas() {
   const gestureRef = useRef<Gesture | null>(null)
   const gestureAbort = useRef<AbortController | null>(null)
   const nudgeCheckpointed = useRef(false)
+  /** last cursor position in world space — where ⌘V drops things */
+  const pointerWorld = useRef<[number, number] | null>(null)
 
   const nodes = useSquig((s) => s.nodes)
   const order = useSquig((s) => s.order)
@@ -164,7 +174,8 @@ export function Canvas() {
           const n = s.nodes[id]
           return n && n.x < wx2 && n.x + n.w > wx1 && n.y < wy2 && n.y + n.h > wy1
         })
-        s.setSelection(hits)
+        // grazing one member of a group takes the whole group
+        s.setSelection(s.expandSelection(hits))
         return
       }
 
@@ -173,7 +184,7 @@ export function Canvas() {
         const dys = e.clientY - g.sy
         if (!g.moved && Math.abs(dxs) < 3 && Math.abs(dys) < 3) return
         if (!g.moved) {
-          s.checkpoint()
+          if (!g.checkpointed) s.checkpoint()
           g.moved = true
         }
         // union bbox of the dragged nodes at their would-be position (screen space)
@@ -265,7 +276,7 @@ export function Canvas() {
             )
           } else {
             g.id = s.addNode(
-              { type: "arrow", head: true, x, y, w: Math.max(w, 2), h: Math.max(h, 2), points: [[0, 0], [Math.max(w, 2), Math.max(h, 2)]] } as Omit<SquigNode, "id" | "seed">,
+              { type: "arrow", head: s.arrowHead, x, y, w: Math.max(w, 2), h: Math.max(h, 2), points: [[0, 0], [Math.max(w, 2), Math.max(h, 2)]] } as Omit<SquigNode, "id" | "seed">,
               { select: false }
             )
           }
@@ -367,22 +378,31 @@ export function Canvas() {
       const hitEl = (e.target as Element).closest?.("[data-node-id]")
       const hitId = hitEl?.getAttribute("data-node-id") ?? null
       if (hitId) {
+        // ⌘-click reaches past the group to the one thing under the cursor
+        const deep = e.metaKey || e.ctrlKey
+        const hitSet = deep ? [hitId] : s.expandSelection([hitId])
         let sel = s.selection
         if (e.shiftKey) {
-          sel = sel.includes(hitId) ? sel.filter((i) => i !== hitId) : [...sel, hitId]
+          const already = hitSet.every((id) => sel.includes(id))
+          sel = already ? sel.filter((i) => !hitSet.includes(i)) : [...new Set([...sel, ...hitSet])]
           s.setSelection(sel)
           return // shift-click adjusts selection, no drag
         }
-        if (!sel.includes(hitId)) {
-          sel = [hitId]
+        // clicking inside an existing selection keeps it (so it can be dragged
+        // whole) — unless ⌘ asked to narrow down to this one piece
+        if (deep || !hitSet.every((id) => sel.includes(id))) {
+          sel = hitSet
           s.setSelection(sel)
         }
+        // ⌥-drag leaves a copy behind: clone in place, then drag the clones
+        const duplicating = e.altKey
+        if (duplicating) sel = s.duplicateSelected(0)
         const orig: Record<string, { x: number; y: number }> = {}
         for (const id of sel) {
-          const n = s.nodes[id]
+          const n = st().nodes[id]
           if (n) orig[id] = { x: n.x, y: n.y }
         }
-        beginGesture({ kind: "move", sx: e.clientX, sy: e.clientY, orig, moved: false })
+        beginGesture({ kind: "move", sx: e.clientX, sy: e.clientY, orig, moved: false, checkpointed: duplicating })
       } else {
         if (!e.shiftKey) s.setSelection([])
         beginGesture({ kind: "marquee", sx: lx, sy: ly })
@@ -399,6 +419,11 @@ export function Canvas() {
       if (!hitId) return
       const n = s.nodes[hitId]
       if (!n) return
+      // first double-click steps into a group; the next one edits what's inside
+      if (n.groupIds?.length && !(s.selection.length === 1 && s.selection[0] === hitId)) {
+        s.setSelection([hitId])
+        return
+      }
       if (n.type === "text") s.setEditing(hitId)
       if (n.type === "component") {
         const def = getDef(n.kind)
@@ -421,10 +446,12 @@ export function Canvas() {
     [st]
   )
 
-  // track cursor for placement ghost
+  // track cursor — for the placement ghost, and so ⌘V knows where "here" is
   const onPointerMoveLocal = useCallback(
     (e: React.PointerEvent) => {
-      if (st().placing) setCursor(toWorld(e))
+      const w = toWorld(e)
+      pointerWorld.current = w
+      if (st().placing) setCursor(w)
     },
     [st, toWorld]
   )
@@ -437,55 +464,183 @@ export function Canvas() {
       if (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable) return
       const s = st()
       const mod = e.metaKey || e.ctrlKey
+      // e.code for anything wearing a modifier: ⌥] is "‘" on a Mac, but the
+      // key under the finger is still BracketRight
+      const code = e.code
 
-      if (mod && e.key.toLowerCase() === "k") {
+      // ---- the two ways into the command sheet ----------------------------
+      if (mod && code === "KeyK" && !e.altKey) {
+        e.preventDefault()
+        // ⌘K over text means "link this", the way it does in every editor
+        const hasText = s.selection.some((id) => s.nodes[id]?.type === "text")
+        if (hasText && !s.commandOpen) s.setLinkOpen(true)
+        else s.setCommandOpen(!s.commandOpen)
+        return
+      }
+      if (mod && code === "Slash") {
         e.preventDefault()
         s.setCommandOpen(!s.commandOpen)
         return
       }
       if (s.commandOpen) return
 
-      if (mod && e.key === "z") {
+      if (code === "Slash" && e.shiftKey && !mod) {
         e.preventDefault()
-        if (e.shiftKey) s.redo()
-        else s.undo()
+        s.setShortcutsOpen(!s.shortcutsOpen)
         return
       }
-      if (mod && e.key === "d") {
-        e.preventDefault()
-        s.duplicateSelected()
+      if (e.key === "Escape") {
+        if (s.shortcutsOpen) s.setShortcutsOpen(false)
+        else if (s.linkOpen) s.setLinkOpen(false)
+        else if (s.contextMenu) s.setContextMenu(null)
+        else if (s.placing) s.setPlacing(null)
+        else if (s.panel) s.setPanel(null)
+        else if (s.selection.length) s.setSelection([])
+        else s.setTool("select")
         return
       }
-      if (mod && e.key === "a") {
-        e.preventDefault()
-        s.setSelection([...s.order])
+      if (s.shortcutsOpen) return
+
+      // ---- with ⌘ / Ctrl ---------------------------------------------------
+      if (mod) {
+        switch (code) {
+          case "KeyZ":
+            e.preventDefault()
+            if (e.shiftKey) s.redo()
+            else s.undo()
+            return
+          case "KeyD":
+            e.preventDefault()
+            s.duplicateSelected()
+            return
+          case "KeyA":
+            e.preventDefault()
+            s.setSelection([...s.order])
+            return
+          case "KeyG":
+            e.preventDefault()
+            if (e.shiftKey) s.ungroupSelected()
+            else s.groupSelected()
+            return
+          case "KeyB":
+            e.preventDefault()
+            // ⌥⌘B is Figma's detach; ⌘B is bold
+            if (e.altKey) s.detachSelected()
+            else s.toggleTextStyle("bold")
+            return
+          case "KeyI":
+            e.preventDefault()
+            s.toggleTextStyle("italic")
+            return
+          case "KeyU":
+            e.preventDefault()
+            s.toggleTextStyle("underline")
+            return
+          case "KeyC":
+            e.preventDefault()
+            s.copySelected()
+            return
+          case "KeyX":
+            e.preventDefault()
+            s.cutSelected()
+            return
+          case "KeyV": {
+            e.preventDefault()
+            if (e.shiftKey) {
+              // paste in place — right back where it was copied from
+              const cb = s.clipboard
+              if (cb.length) s.pasteClipboard([Math.min(...cb.map((n) => n.x)), Math.min(...cb.map((n) => n.y))])
+            } else {
+              s.pasteClipboard(pointerWorld.current ?? undefined)
+            }
+            return
+          }
+          // one step on its own; all the way with ⌥ (Mac) or ⇧ (Windows)
+          case "BracketRight":
+            e.preventDefault()
+            if (e.altKey || e.shiftKey) s.bringToFront(s.selection)
+            else s.bringForward(s.selection)
+            return
+          case "BracketLeft":
+            e.preventDefault()
+            if (e.altKey || e.shiftKey) s.sendToBack(s.selection)
+            else s.sendBackward(s.selection)
+            return
+          case "Equal":
+          case "NumpadAdd":
+            // the canvas zooms; the interface stays exactly the size it was
+            e.preventDefault()
+            s.zoomBy(1.25)
+            return
+          case "Minus":
+          case "NumpadSubtract":
+            e.preventDefault()
+            s.zoomBy(1 / 1.25)
+            return
+          case "Digit0":
+          case "Numpad0":
+            e.preventDefault()
+            s.setViewport({ x: 0, y: 0, zoom: 1 })
+            return
+          case "Backslash":
+            e.preventDefault()
+            s.setUiHidden(!s.uiHidden)
+            return
+        }
+        return // every other ⌘ combo is the browser's business
+      }
+
+      // ---- zoom framing (⇧ + digit) ---------------------------------------
+      if (e.shiftKey) {
+        switch (code) {
+          case "Digit0":
+            e.preventDefault()
+            s.zoomTo100()
+            return
+          case "Digit1":
+            e.preventDefault()
+            s.zoomToFit()
+            return
+          case "Digit2":
+            e.preventDefault()
+            s.zoomToSelection()
+            return
+        }
+        switch (e.key.toLowerCase()) {
+          case "h":
+            s.flipSelected("x")
+            return
+          case "v":
+            s.flipSelected("y")
+            return
+          case "l":
+            s.setArrowHead(true)
+            s.setTool("arrow")
+            return
+        }
+      }
+
+      if (code === "Equal" || code === "NumpadAdd") {
+        s.zoomBy(1.25)
         return
       }
-      if (mod && e.key === "0") {
-        e.preventDefault()
-        s.setViewport({ x: 0, y: 0, zoom: 1 })
+      if (code === "Minus" || code === "NumpadSubtract") {
+        s.zoomBy(1 / 1.25)
         return
       }
-      if (mod) return
 
       switch (e.key) {
         case "Backspace":
         case "Delete":
           s.deleteSelected()
           break
-        case "Escape":
-          if (s.contextMenu) s.setContextMenu(null)
-          else if (s.placing) s.setPlacing(null)
-          else if (s.panel) s.setPanel(null)
-          else if (s.selection.length) s.setSelection([])
-          else s.setTool("select")
-          break
         case "v": s.setTool("select"); break
         case "r": s.setShapeKind("rect"); s.setTool("shape"); break
         case "o": s.setShapeKind("ellipse"); s.setTool("shape"); break
         case "p": s.setTool("draw"); break
         case "t": s.setTool("text"); break
-        case "a": s.setTool("arrow"); break
+        case "l": s.setArrowHead(false); s.setTool("arrow"); break
+        case "a": s.setArrowHead(true); s.setTool("arrow"); break
         case "c": s.setPanel("components"); break
         case "b": s.setPanel("blocks"); break
         case "[": s.sendToBack(s.selection); break
@@ -775,6 +930,19 @@ function TextEditOverlay() {
         if (e.key === "Enter" && (e.metaKey || !isText)) {
           e.preventDefault()
           commit()
+        }
+        // styling applies to the whole text node — squig has no rich runs
+        if ((e.metaKey || e.ctrlKey) && isText) {
+          const style = { KeyB: "bold", KeyI: "italic", KeyU: "underline" }[e.code] as
+            | "bold"
+            | "italic"
+            | "underline"
+            | undefined
+          if (style) {
+            e.preventDefault()
+            const s = st()
+            s.updateNode(node.id, { [style]: !(node as TextNode)[style] } as Partial<SquigNode>)
+          }
         }
       }}
       className="absolute resize-none overflow-hidden rounded-md px-2 py-1 outline-none"

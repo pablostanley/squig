@@ -6,10 +6,9 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import { useSquig } from "@/lib/store"
-import { breakApart } from "@/lib/library/break-apart"
-import type { ComponentNode } from "@/lib/types"
 import { screenToWorld } from "@/lib/types"
 import { getDef } from "@/lib/library/registry"
+import { kbd } from "@/lib/shortcuts"
 
 interface Item {
   label: string
@@ -25,6 +24,7 @@ export function CanvasContextMenu() {
   const nodes = useSquig((s) => s.nodes)
   const selection = useSquig((s) => s.selection)
   const contextRow = useSquig((s) => s.contextRow)
+  const clipboard = useSquig((s) => s.clipboard)
   const st = useSquig.getState
   const ref = useRef<HTMLDivElement>(null)
   const [pos, setPos] = useState({ x: 0, y: 0 })
@@ -65,31 +65,35 @@ export function CanvasContextMenu() {
       : [menu.nodeId]
     : []
   const one = targets.length === 1 ? nodes[targets[0]] : null
-  const canBreak = one?.type === "component"
+  const hasComponent = targets.some((id) => nodes[id]?.type === "component")
+  const hasText = targets.some((id) => nodes[id]?.type === "text")
+  const hasGroup = targets.some((id) => nodes[id]?.groupIds?.length)
 
   let entries: Entry[]
 
   if (menu.nodeId) {
     entries = [
-      { label: "Duplicate", hint: "⌘D", run: () => st().duplicateSelected() },
-      ...(canBreak
-        ? [
-            {
-              label: "Break apart",
-              run: () => {
-                const pieces = breakApart(one as ComponentNode)
-                st().removeNodes([one!.id])
-                st().addNodes(pieces)
-              },
-            } as Entry,
-          ]
+      { label: "Duplicate", hint: kbd("mod+d"), run: () => st().duplicateSelected() },
+      { label: "Copy", hint: kbd("mod+c"), run: () => st().copySelected() },
+      ...(targets.length > 1 ? [{ label: "Group", hint: kbd("mod+g"), run: () => st().groupSelected() } as Entry] : []),
+      ...(hasGroup ? [{ label: "Ungroup", hint: kbd("mod+shift+g"), run: () => st().ungroupSelected() } as Entry] : []),
+      ...(hasComponent
+        ? [{ label: "Detach instance", hint: kbd("alt+mod+b"), run: () => st().detachSelected() } as Entry]
+        : []),
+      ...(hasText
+        ? [{ label: "Link text…", hint: kbd("mod+k"), run: () => st().setLinkOpen(true) } as Entry]
         : []),
       ...(one?.type === "text" || (one?.type === "component" && getDef(one.kind)?.controls.some((c) => c.type === "text"))
         ? [{ label: "Edit text", hint: "double-click", run: () => st().setEditing(one.id) } as Entry]
         : []),
       { separator: true },
-      { label: "Bring to front", hint: "]", run: () => st().bringToFront(targets) },
-      { label: "Send to back", hint: "[", run: () => st().sendToBack(targets) },
+      { label: "Bring to front", hint: kbd("far+]"), run: () => st().bringToFront(targets) },
+      { label: "Bring forward", hint: kbd("mod+]"), run: () => st().bringForward(targets) },
+      { label: "Send backward", hint: kbd("mod+["), run: () => st().sendBackward(targets) },
+      { label: "Send to back", hint: kbd("far+["), run: () => st().sendToBack(targets) },
+      { separator: true },
+      { label: "Flip horizontal", hint: kbd("shift+h"), run: () => st().flipSelected("x") },
+      { label: "Flip vertical", hint: kbd("shift+v"), run: () => st().flipSelected("y") },
       ...(selection.length > 1
         ? ([
             { separator: true },
@@ -102,22 +106,28 @@ export function CanvasContextMenu() {
           ] as Entry[])
         : []),
       { separator: true },
-      { label: "Delete", hint: "⌫", danger: true, run: () => st().removeNodes(targets) },
+      { label: "Delete", hint: kbd("del"), danger: true, run: () => st().removeNodes(targets) },
     ]
   } else {
     entries = [
-      { label: "Paste-ish… find a component", hint: "⌘K", run: () => st().setCommandOpen(true) },
-      { label: "Components", hint: "C", run: () => st().setPanel("components") },
-      { label: "Blocks", hint: "B", run: () => st().setPanel("blocks") },
+      { label: "Search everything", hint: kbd("mod+k"), run: () => st().setCommandOpen(true) },
+      { label: "Components", hint: kbd("c"), run: () => st().setPanel("components") },
+      { label: "Blocks", hint: kbd("b"), run: () => st().setPanel("blocks") },
       { separator: true },
-      { label: "Select all", hint: "⌘A", run: () => st().setSelection([...st().order]) },
-      { label: "Paste here", hint: "⌘V", run: () => pasteAt(menu.x, menu.y) },
+      { label: "Select all", hint: kbd("mod+a"), run: () => st().setSelection([...st().order]) },
+      ...(clipboard.length
+        ? [{ label: "Paste here", hint: kbd("mod+v"), run: () => pasteAt(menu.x, menu.y) } as Entry]
+        : []),
       { separator: true },
-      { label: "Undo", hint: "⌘Z", run: () => st().undo() },
-      { label: "Redo", hint: "⇧⌘Z", run: () => st().redo() },
+      { label: "Undo", hint: kbd("mod+z"), run: () => st().undo() },
+      { label: "Redo", hint: kbd("mod+shift+z"), run: () => st().redo() },
       { separator: true },
+      { label: "Zoom to fit", hint: kbd("shift+1"), run: () => st().zoomToFit() },
+      { label: "Zoom to 100%", hint: kbd("shift+0"), run: () => st().zoomTo100() },
+      { label: "Reset zoom", hint: kbd("mod+0"), run: () => st().setViewport({ x: 0, y: 0, zoom: 1 }) },
       { label: contextRow ? "Hide context menu" : "Show context menu", run: () => st().setContextRow(!contextRow) },
-      { label: "Reset zoom", hint: "⌘0", run: () => st().setViewport({ x: 0, y: 0, zoom: 1 }) },
+      { label: "Hide the interface", hint: kbd("mod+\\"), run: () => st().setUiHidden(true) },
+      { label: "Keyboard shortcuts", hint: kbd("shift+/"), run: () => st().setShortcutsOpen(true) },
       { separator: true },
       { label: "Clear canvas", danger: true, run: () => st().clearCanvas() },
     ]
@@ -155,22 +165,8 @@ export function CanvasContextMenu() {
   )
 }
 
-/** Duplicate the current selection to a screen point — the poor man's paste. */
+/** Drop the clipboard where the menu was opened. */
 function pasteAt(sx: number, sy: number) {
   const s = useSquig.getState()
-  if (!s.selection.length) return
-  const sel = s.selection.map((id) => s.nodes[id]).filter(Boolean)
-  if (!sel.length) return
-  const [wx, wy] = screenToWorld(s.viewport, sx, sy)
-  const minX = Math.min(...sel.map((n) => n.x))
-  const minY = Math.min(...sel.map((n) => n.y))
-  s.duplicateSelected()
-  const after = useSquig.getState()
-  const patches = Object.fromEntries(
-    after.selection.map((id, i) => {
-      const src = sel[i]
-      return [id, { x: wx + (src.x - minX), y: wy + (src.y - minY) }]
-    })
-  )
-  after.updateNodes(patches)
+  s.pasteClipboard(screenToWorld(s.viewport, sx, sy))
 }

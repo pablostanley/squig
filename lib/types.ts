@@ -19,6 +19,15 @@ export interface BaseNode {
   h: number
   /** Stable seed so the wobble doesn't re-roll on every render */
   seed: number
+  /**
+   * Group membership, outermost first. Groups are a stamp on a flat document
+   * rather than a tree: dragging, deleting, undo and saving all keep working,
+   * and nesting costs one more entry in this array.
+   */
+  groupIds?: string[]
+  /** Mirrored along its own box — see mirrorPrims, which flips layout not glyphs */
+  flipX?: boolean
+  flipY?: boolean
 }
 
 export interface ComponentNode extends BaseNode {
@@ -45,6 +54,11 @@ export interface TextNode extends BaseNode {
   type: "text"
   text: string
   fontSize: number
+  bold?: boolean
+  italic?: boolean
+  underline?: boolean
+  /** where this text points — wireframe metadata, drawn as an underline */
+  link?: string
 }
 
 export interface ArrowNode extends BaseNode {
@@ -74,4 +88,26 @@ export function worldToScreen(v: Viewport, wx: number, wy: number): [number, num
 
 export function screenToWorld(v: Viewport, sx: number, sy: number): [number, number] {
   return [(sx - v.x) / v.zoom, (sy - v.y) / v.zoom]
+}
+
+/** The group a click should select — the outermost one the node belongs to. */
+export function outerGroup(n: SquigNode | undefined | null): string | null {
+  return n?.groupIds?.[0] ?? null
+}
+
+export interface Box {
+  minX: number
+  minY: number
+  maxX: number
+  maxY: number
+}
+
+export function unionBox(nodes: SquigNode[]): Box | null {
+  if (!nodes.length) return null
+  return {
+    minX: Math.min(...nodes.map((n) => n.x)),
+    minY: Math.min(...nodes.map((n) => n.y)),
+    maxX: Math.max(...nodes.map((n) => n.x + n.w)),
+    maxY: Math.max(...nodes.map((n) => n.y + n.h)),
+  }
 }
