@@ -18,13 +18,23 @@ export function FileName() {
   const st = useSquig.getState
   const [resting, setResting] = useState(true)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // mirrors `resting` so a drag's worth of moves doesn't churn React state
+  const restingRef = useRef(true)
 
   // Hide on any pointer movement, reveal after the pointer has been still.
   useEffect(() => {
-    const onMove = () => {
+    const hide = () => {
+      restingRef.current = false
       setResting(false)
+    }
+    const show = () => {
+      restingRef.current = true
+      setResting(true)
+    }
+    const onMove = () => {
+      if (restingRef.current) hide()
       if (timer.current) clearTimeout(timer.current)
-      timer.current = setTimeout(() => setResting(true), REST_MS)
+      timer.current = setTimeout(show, REST_MS)
     }
     window.addEventListener("pointermove", onMove, { passive: true })
     return () => {
@@ -91,6 +101,7 @@ function NameInput({ initial }: { initial: string }) {
       </span>
       <input
         ref={input}
+        aria-label="file name"
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         // Tabbing away commits; the whole window losing focus should not —
