@@ -10,15 +10,20 @@ function ScrollArea({
   children,
   ...props
 }: React.ComponentProps<typeof ScrollAreaPrimitive.Root>) {
+  // The viewport stretches as a flex item rather than the stock `size-full`:
+  // a percentage height resolves to nothing when the root is itself a flex
+  // child, so the viewport grew to its content and the panel clipped it
+  // instead of scrolling. Stretching works whether the root's height is
+  // capped or content-sized.
   return (
     <ScrollAreaPrimitive.Root
       data-slot="scroll-area"
-      className={cn("relative", className)}
+      className={cn("relative flex flex-col", className)}
       {...props}
     >
       <ScrollAreaPrimitive.Viewport
         data-slot="scroll-area-viewport"
-        className="size-full rounded-[inherit] transition-[color,box-shadow] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-1"
+        className="w-full min-h-0 flex-auto rounded-[inherit] transition-[color,box-shadow] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-1"
       >
         {children}
       </ScrollAreaPrimitive.Viewport>
