@@ -35,7 +35,7 @@ export const THEMES = {
     muted: "#6E7DFF",
     faint: "#BFC6FF",
     grid: "#E6E1D3",
-    select: "#FF5A24",
+    select: "#A200FF",
   },
   "riso-red": {
     label: "Riso red",

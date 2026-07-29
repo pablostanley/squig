@@ -692,7 +692,7 @@ function SelectionOverlay({
     <div className="pointer-events-none absolute" style={{ left, top, width: w, height: h }}>
       <div
         className="absolute inset-0 rounded-sm"
-        style={{ border: "1.5px solid var(--sq-select)" }}
+        style={{ border: "2px solid var(--sq-select)" }}
       />
       {resizable &&
         one &&
@@ -702,7 +702,7 @@ function SelectionOverlay({
             <div
               key={hd}
               className="pointer-events-auto absolute h-2.5 w-2.5 rounded-[3px] bg-white"
-              style={{ left: pos.left, top: pos.top, cursor: pos.cursor, border: "1.5px solid var(--sq-select)" }}
+              style={{ left: pos.left, top: pos.top, cursor: pos.cursor, border: "2px solid var(--sq-select)" }}
               onPointerDown={(e) => onStartResize(hd, one.id, e)}
             />
           )
