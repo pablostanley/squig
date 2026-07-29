@@ -13,7 +13,7 @@ import { memo, useMemo } from "react"
 import rough from "roughjs"
 import type { Options } from "roughjs/bin/core"
 import type { RoughGenerator } from "roughjs/bin/generator"
-import { INK, type Prim, type PrimOpts } from "@/lib/sketch/kit"
+import { INK, mirrorPrims, type Prim, type PrimOpts } from "@/lib/sketch/kit"
 import type { SquigNode } from "@/lib/types"
 import { renderComponent } from "@/lib/library/registry"
 import { textureUrl, type ToneName } from "./sketch-defs"
@@ -246,6 +246,8 @@ export const SketchPrims = memo(function SketchPrims({ prims, seed }: { prims: P
           fontSize={t.size}
           fontFamily="var(--sq-font)"
           fontWeight={t.bold ? 700 : 400}
+          fontStyle={t.italic ? "italic" : undefined}
+          textDecoration={t.underline ? "underline" : undefined}
           fill={INK[t.color ?? "ink"]}
           textAnchor={t.align === "center" ? "middle" : t.align === "right" ? "end" : "start"}
         >
@@ -265,64 +267,75 @@ export const SketchPrims = memo(function SketchPrims({ prims, seed }: { prims: P
  */
 export const NodeSketch = memo(function NodeSketch({ node }: { node: SquigNode }) {
   const shapeKey = useMemo(() => {
+    const flip = `${node.flipX ? 1 : 0}${node.flipY ? 1 : 0}`
     switch (node.type) {
       case "component":
-        return `c:${node.kind}:${node.w}:${node.h}:${JSON.stringify(node.props)}`
+        return `c:${node.kind}:${node.w}:${node.h}:${flip}:${JSON.stringify(node.props)}`
       case "shape":
-        return `s:${node.shape}:${node.w}:${node.h}:${node.fill}`
+        return `s:${node.shape}:${node.w}:${node.h}:${flip}:${node.fill}`
       case "draw":
-        return `d:${node.points.length}:${node.w}:${node.h}:${node.points[0]?.join()}:${node.points.at(-1)?.join()}`
+        return `d:${node.points.length}:${node.w}:${node.h}:${flip}:${node.points[0]?.join()}:${node.points.at(-1)?.join()}`
       case "arrow":
-        return `a:${node.w}:${node.h}:${node.head}:${node.points.flat().join()}`
+        return `a:${node.w}:${node.h}:${flip}:${node.head}:${node.points.flat().join()}`
       case "text":
-        return `t:${node.text}:${node.fontSize}`
+        return `t:${node.text}:${node.fontSize}:${flip}:${node.bold ? 1 : 0}${node.italic ? 1 : 0}${node.underline || node.link ? 1 : 0}`
     }
   }, [node])
 
   const prims = useMemo<Prim[]>(() => {
-    switch (node.type) {
-      case "component":
-        return renderComponent(node.kind, node.props, node.w, node.h)
-      case "shape":
-        if (node.shape === "ellipse")
-          return [
-            { t: "ellipse", x: 0, y: 0, w: node.w, h: node.h, o: node.fill ? { fill: "hachure", fillColor: "ink" } : undefined },
-          ]
-        return [
-          { t: "rect", x: 0, y: 0, w: node.w, h: node.h, r: 6, o: node.fill ? { fill: "hachure", fillColor: "ink" } : undefined },
-        ]
-      case "draw":
-        // freehand is already the user's own line — barely roughen it
-        return [{ t: "poly", pts: node.points, o: { roughness: 0.2, strokeWidth: 1.9 } }]
-      case "arrow": {
-        const [[x1, y1], [x2, y2]] = node.points
-        const out: Prim[] = [{ t: "line", x1, y1, x2, y2, o: { strokeWidth: 1.6 } }]
-        if (node.head) {
-          const a = Math.atan2(y2 - y1, x2 - x1)
-          const L = 12
-          out.push({
-            t: "poly",
-            pts: [
-              [x2 - L * Math.cos(a - 0.45), y2 - L * Math.sin(a - 0.45)],
-              [x2, y2],
-              [x2 - L * Math.cos(a + 0.45), y2 - L * Math.sin(a + 0.45)],
-            ],
-            o: { strokeWidth: 1.6 },
-          })
-        }
-        return out
-      }
-      case "text":
-        return node.text.split("\n").map((lineText, i): Prim => ({
-          t: "text",
-          x: 0,
-          y: node.fontSize * (i + 1),
-          text: lineText,
-          size: node.fontSize,
-        }))
-    }
+    const base = basePrims(node)
+    return mirrorPrims(base, node.w, node.h, !!node.flipX, !!node.flipY)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shapeKey, node.type])
 
   return <SketchPrims prims={prims} seed={node.seed} />
 })
+
+/** A node's prims before any flip is applied. */
+function basePrims(node: SquigNode): Prim[] {
+  switch (node.type) {
+    case "component":
+      return renderComponent(node.kind, node.props, node.w, node.h)
+    case "shape":
+      if (node.shape === "ellipse")
+        return [
+          { t: "ellipse", x: 0, y: 0, w: node.w, h: node.h, o: node.fill ? { fill: "hachure", fillColor: "ink" } : undefined },
+        ]
+      return [
+        { t: "rect", x: 0, y: 0, w: node.w, h: node.h, r: 6, o: node.fill ? { fill: "hachure", fillColor: "ink" } : undefined },
+      ]
+    case "draw":
+      // freehand is already the user's own line — barely roughen it
+      return [{ t: "poly", pts: node.points, o: { roughness: 0.2, strokeWidth: 1.9 } }]
+    case "arrow": {
+      const [[x1, y1], [x2, y2]] = node.points
+      const out: Prim[] = [{ t: "line", x1, y1, x2, y2, o: { strokeWidth: 1.6 } }]
+      if (node.head) {
+        const a = Math.atan2(y2 - y1, x2 - x1)
+        const L = 12
+        out.push({
+          t: "poly",
+          pts: [
+            [x2 - L * Math.cos(a - 0.45), y2 - L * Math.sin(a - 0.45)],
+            [x2, y2],
+            [x2 - L * Math.cos(a + 0.45), y2 - L * Math.sin(a + 0.45)],
+          ],
+          o: { strokeWidth: 1.6 },
+        })
+      }
+      return out
+    }
+    case "text":
+      return node.text.split("\n").map((lineText, i): Prim => ({
+        t: "text",
+        x: 0,
+        y: node.fontSize * (i + 1),
+        text: lineText,
+        size: node.fontSize,
+        bold: node.bold,
+        italic: node.italic,
+        // a link is a link because it's underlined — no blue in a wireframe
+        underline: node.underline || !!node.link,
+      }))
+  }
+}

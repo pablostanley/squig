@@ -11,10 +11,14 @@ import { TopCorner, ZoomPill, CommandHint } from "@/components/chrome/top-corner
 import { FileName } from "@/components/chrome/file-name"
 import { CommandPalette } from "@/components/chrome/command-palette"
 import { CanvasContextMenu } from "@/components/chrome/context-menu"
+import { ShortcutsSheet } from "@/components/chrome/shortcuts-sheet"
+import { LinkEditor } from "@/components/chrome/link-editor"
+import { kbd } from "@/lib/shortcuts"
 
 export default function Home() {
   const hydrated = useSquig((s) => s.hydrated)
   const hydrate = useSquig((s) => s.hydrate)
+  const uiHidden = useSquig((s) => s.uiHidden)
 
   useEffect(() => {
     hydrate()
@@ -34,15 +38,27 @@ export default function Home() {
     <main className="relative h-full">
       <SketchDefs />
       <Canvas />
-      <TopCorner />
-      <FileName />
-      <LeftRail />
-      <LibraryPanel />
-      <Inspector />
-      <ZoomPill />
-      <CommandHint />
+      {/* ⌘\ clears the room — the canvas and what you've selected, nothing else */}
+      {!uiHidden && (
+        <>
+          <TopCorner />
+          <FileName />
+          <LeftRail />
+          <LibraryPanel />
+          <Inspector />
+          <ZoomPill />
+          <CommandHint />
+        </>
+      )}
+      {uiHidden && (
+        <p className="pointer-events-none absolute right-4 bottom-4 z-30 font-mono text-[10px] text-muted-foreground/60">
+          {kbd("mod+\\")}
+        </p>
+      )}
+      <LinkEditor />
       <CanvasContextMenu />
       <CommandPalette />
+      <ShortcutsSheet />
     </main>
   )
 }

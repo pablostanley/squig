@@ -54,6 +54,8 @@ export type Prim =
       align?: "left" | "center" | "right"
       color?: InkColor
       bold?: boolean
+      italic?: boolean
+      underline?: boolean
       maxW?: number
     }
   /**
@@ -114,6 +116,45 @@ export function place(prims: Prim[], dx: number, dy: number): Prim[] {
         return { ...p, x1: p.x1 + dx, y1: p.y1 + dy, x2: p.x2 + dx, y2: p.y2 + dy }
       case "poly":
         return { ...p, pts: p.pts.map(([px, py]) => [px + dx, py + dy] as [number, number]) }
+    }
+  })
+}
+
+/**
+ * Mirror a batch of prims inside a w×h box.
+ *
+ * Layout flips; glyphs don't. Mirroring the whole node with `scale(-1, 1)`
+ * would be one line, but it would also print every label backwards, and a
+ * wireframe with backwards labels reads as a bug rather than as a flip. So the
+ * geometry moves and the text stays upright, swapping its alignment instead.
+ */
+export function mirrorPrims(prims: Prim[], w: number, h: number, fx: boolean, fy: boolean): Prim[] {
+  if (!fx && !fy) return prims
+  const mx = (x: number) => (fx ? w - x : x)
+  const my = (y: number) => (fy ? h - y : y)
+  return prims.map((p): Prim => {
+    switch (p.t) {
+      case "rect":
+      case "ellipse":
+        return { ...p, x: fx ? w - p.x - p.w : p.x, y: fy ? h - p.y - p.h : p.y }
+      case "path":
+        return { ...p, x: fx ? w - p.x - p.size : p.x, y: fy ? h - p.y - p.size : p.y }
+      case "line":
+        return { ...p, x1: mx(p.x1), y1: my(p.y1), x2: mx(p.x2), y2: my(p.y2) }
+      case "poly":
+        return { ...p, pts: p.pts.map(([px, py]) => [mx(px), my(py)] as [number, number]) }
+      case "text": {
+        // a left-anchored run grows rightward; mirrored, it has to end where it started
+        const align = fx
+          ? p.align === "center"
+            ? "center"
+            : p.align === "right"
+              ? "left"
+              : "right"
+          : p.align
+        // y is a baseline: the box around it sits roughly [y - 0.8em, y + 0.2em]
+        return { ...p, x: mx(p.x), y: fy ? h - p.y + p.size * 0.6 : p.y, align }
+      }
     }
   })
 }

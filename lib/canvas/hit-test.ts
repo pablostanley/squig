@@ -88,12 +88,19 @@ function segmentNearRect(ax: number, ay: number, bx: number, by: number, r: Boun
   return true
 }
 
-/** World-space polyline for the nodes that have one. */
+/**
+ * World-space polyline for the nodes that have one.
+ *
+ * Flips live in the renderer, not the model, so the stored points still
+ * describe the unmirrored line — mirror them here or clicking a flipped arrow
+ * misses by the width of its own box.
+ */
 function polylineOf(n: SquigNode): [number, number][] | null {
-  if (n.type === "draw" || n.type === "arrow") {
-    return (n.points as [number, number][]).map(([px, py]) => [n.x + px, n.y + py])
-  }
-  return null
+  if (n.type !== "draw" && n.type !== "arrow") return null
+  return (n.points as [number, number][]).map(([px, py]) => [
+    n.x + (n.flipX ? n.w - px : px),
+    n.y + (n.flipY ? n.h - py : py),
+  ])
 }
 
 /** Shapes are only solid to the pointer when they're actually filled. */

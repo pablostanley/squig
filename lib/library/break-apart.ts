@@ -5,12 +5,19 @@
 
 import { nanoid } from "nanoid"
 import type { ComponentNode, SquigNode } from "@/lib/types"
+import { mirrorPrims } from "@/lib/sketch/kit"
 import { renderComponent } from "./registry"
 
 const seed = () => Math.floor(Math.random() * 2 ** 31)
 
 export function breakApart(node: ComponentNode): SquigNode[] {
-  const prims = renderComponent(node.kind, node.props, node.w, node.h)
+  const prims = mirrorPrims(
+    renderComponent(node.kind, node.props, node.w, node.h),
+    node.w,
+    node.h,
+    !!node.flipX,
+    !!node.flipY
+  )
   const out: SquigNode[] = []
   for (const p of prims) {
     switch (p.t) {

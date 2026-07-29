@@ -6,9 +6,9 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import { useSquig } from "@/lib/store"
-import { breakApartAll, canBreakApart } from "@/lib/library/break-apart-op"
 import { screenToWorld } from "@/lib/types"
 import { getDef } from "@/lib/library/registry"
+import { kbd } from "@/lib/shortcuts"
 
 interface Item {
   label: string
@@ -24,6 +24,7 @@ export function CanvasContextMenu() {
   const nodes = useSquig((s) => s.nodes)
   const selection = useSquig((s) => s.selection)
   const contextRow = useSquig((s) => s.contextRow)
+  const clipboard = useSquig((s) => s.clipboard)
   const st = useSquig.getState
   const ref = useRef<HTMLDivElement>(null)
   const [pos, setPos] = useState({ x: 0, y: 0 })
@@ -64,36 +65,36 @@ export function CanvasContextMenu() {
       : [menu.nodeId]
     : []
   const one = targets.length === 1 ? nodes[targets[0]] : null
+  const hasComponent = targets.some((id) => nodes[id]?.type === "component")
+  const hasText = targets.some((id) => nodes[id]?.type === "text")
+  const hasGroup = targets.some((id) => nodes[id]?.groupIds?.length)
 
   let entries: Entry[]
 
-  const components = targets.map((id) => nodes[id]).filter((n) => n && canBreakApart(n))
-  const many = targets.length > 1
-
   if (menu.nodeId) {
     entries = [
-      { label: "Copy", hint: "⌘C", run: () => st().copySelection() },
-      { label: "Cut", hint: "⌘X", run: () => st().cutSelection() },
-      { label: many ? `Duplicate ${targets.length}` : "Duplicate", hint: "⌘D", run: () => st().duplicateSelected() },
-      ...(components.length
-        ? [
-            {
-              label: components.length > 1 ? `Break apart ${components.length}` : "Break apart",
-              run: () => breakApartAll(components.map((c) => c.id)),
-            } as Entry,
-          ]
+      { label: "Duplicate", hint: kbd("mod+d"), run: () => st().duplicateSelected() },
+      { label: "Copy", hint: kbd("mod+c"), run: () => st().copySelected() },
+      ...(targets.length > 1 ? [{ label: "Group", hint: kbd("mod+g"), run: () => st().groupSelected() } as Entry] : []),
+      ...(hasGroup ? [{ label: "Ungroup", hint: kbd("mod+shift+g"), run: () => st().ungroupSelected() } as Entry] : []),
+      ...(hasComponent
+        ? [{ label: "Detach instance", hint: kbd("alt+mod+b"), run: () => st().detachSelected() } as Entry]
         : []),
-      ...(one &&
-      (one.type === "text" || (one.type === "component" && getDef(one.kind)?.controls.some((c) => c.type === "text")))
+      ...(hasText
+        ? [{ label: "Link text…", hint: kbd("mod+k"), run: () => st().setLinkOpen(true) } as Entry]
+        : []),
+      ...(one?.type === "text" || (one?.type === "component" && getDef(one.kind)?.controls.some((c) => c.type === "text"))
         ? [{ label: "Edit text", hint: "double-click", run: () => st().setEditing(one.id) } as Entry]
         : []),
       { separator: true },
-      { label: "Bring to front", hint: "]", run: () => st().bringToFront(targets) },
-      { label: "Send to back", hint: "[", run: () => st().sendToBack(targets) },
+      { label: "Bring to front", hint: kbd("far+]"), run: () => st().bringToFront(targets) },
+      { label: "Bring forward", hint: kbd("mod+]"), run: () => st().bringForward(targets) },
+      { label: "Send backward", hint: kbd("mod+["), run: () => st().sendBackward(targets) },
+      { label: "Send to back", hint: kbd("far+["), run: () => st().sendToBack(targets) },
       { separator: true },
-      { label: "Select all of this kind", run: () => st().selectSameKind() },
-      { label: "Zoom to selection", hint: "⇧2", run: () => st().zoomTo(st().selection) },
-      ...(many
+      { label: "Flip horizontal", hint: kbd("shift+h"), run: () => st().flipSelected("x") },
+      { label: "Flip vertical", hint: kbd("shift+v"), run: () => st().flipSelected("y") },
+      ...(selection.length > 1
         ? ([
             { separator: true },
             { label: "Align left", run: () => st().alignSelected("left") },
@@ -102,40 +103,31 @@ export function CanvasContextMenu() {
             { label: "Align top", run: () => st().alignSelected("top") },
             { label: "Align middles", run: () => st().alignSelected("vcenter") },
             { label: "Align bottom", run: () => st().alignSelected("bottom") },
-            ...(targets.length > 2
-              ? ([
-                  { label: "Distribute horizontally", run: () => st().distributeSelected("h") },
-                  { label: "Distribute vertically", run: () => st().distributeSelected("v") },
-                ] as Entry[])
-              : []),
           ] as Entry[])
         : []),
       { separator: true },
-      {
-        label: many ? `Delete ${targets.length}` : "Delete",
-        hint: "⌫",
-        danger: true,
-        run: () => st().removeNodes(targets),
-      },
+      { label: "Delete", hint: kbd("del"), danger: true, run: () => st().removeNodes(targets) },
     ]
   } else {
     entries = [
-      { label: "Paste-ish… find a component", hint: "⌘K", run: () => st().setCommandOpen(true) },
-      { label: "Components", hint: "C", run: () => st().setPanel("components") },
-      { label: "Blocks", hint: "B", run: () => st().setPanel("blocks") },
+      { label: "Search everything", hint: kbd("mod+k"), run: () => st().setCommandOpen(true) },
+      { label: "Components", hint: kbd("c"), run: () => st().setPanel("components") },
+      { label: "Blocks", hint: kbd("b"), run: () => st().setPanel("blocks") },
       { separator: true },
-      { label: "Select all", hint: "⌘A", run: () => st().selectAll() },
-      { label: "Invert selection", run: () => st().invertSelection() },
-      ...(st().clipboard.length
-        ? [{ label: "Paste here", hint: "⌘V", run: () => pasteAt(menu.x, menu.y) } as Entry]
+      { label: "Select all", hint: kbd("mod+a"), run: () => st().setSelection([...st().order]) },
+      ...(clipboard.length
+        ? [{ label: "Paste here", hint: kbd("mod+v"), run: () => pasteAt(menu.x, menu.y) } as Entry]
         : []),
       { separator: true },
-      { label: "Undo", hint: "⌘Z", run: () => st().undo() },
-      { label: "Redo", hint: "⇧⌘Z", run: () => st().redo() },
+      { label: "Undo", hint: kbd("mod+z"), run: () => st().undo() },
+      { label: "Redo", hint: kbd("mod+shift+z"), run: () => st().redo() },
       { separator: true },
+      { label: "Zoom to fit", hint: kbd("shift+1"), run: () => st().zoomToFit() },
+      { label: "Zoom to 100%", hint: kbd("shift+0"), run: () => st().zoomTo100() },
+      { label: "Reset zoom", hint: kbd("mod+0"), run: () => st().setViewport({ x: 0, y: 0, zoom: 1 }) },
       { label: contextRow ? "Hide context menu" : "Show context menu", run: () => st().setContextRow(!contextRow) },
-      { label: "Zoom to fit", hint: "⇧1", run: () => st().zoomTo() },
-      { label: "Reset zoom", hint: "⌘0", run: () => st().setViewport({ x: 0, y: 0, zoom: 1 }) },
+      { label: "Hide the interface", hint: kbd("mod+\\"), run: () => st().setUiHidden(true) },
+      { label: "Keyboard shortcuts", hint: kbd("shift+/"), run: () => st().setShortcutsOpen(true) },
       { separator: true },
       { label: "Clear canvas", danger: true, run: () => st().clearCanvas() },
     ]
@@ -144,7 +136,6 @@ export function CanvasContextMenu() {
   return (
     <div
       ref={ref}
-      data-squig-chrome
       className="fixed z-50 min-w-[196px] rounded-xl border bg-background p-1 shadow-lg"
       style={{ left: pos.x, top: pos.y }}
       onPointerDown={(e) => e.stopPropagation()}
@@ -174,8 +165,8 @@ export function CanvasContextMenu() {
   )
 }
 
-/** Paste the clipboard centred on a screen point. */
+/** Drop the clipboard where the menu was opened. */
 function pasteAt(sx: number, sy: number) {
   const s = useSquig.getState()
-  s.paste(screenToWorld(s.viewport, sx, sy))
+  s.pasteClipboard(screenToWorld(s.viewport, sx, sy))
 }

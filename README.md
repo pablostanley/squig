@@ -31,17 +31,28 @@ one sheet. Enter drops it in the middle of your view.
 
 ## Keyboard
 
+Figma's, so your hands already know it. `?` opens the full list in the app.
+
 | | |
 |---|---|
-| `V` `R` `O` `P` `T` `A` | select, rectangle, ellipse, draw, text, arrow |
+| `V` `R` `O` `P` `T` `L` `⇧L` | select, rectangle, ellipse, draw, text, line, arrow |
 | `C` / `B` | components / blocks panel |
-| `⌘K` | search everything |
+| `⌘K` / `⌘/` | search everything (`⌘K` over text links it instead) |
 | `⌘Z` / `⇧⌘Z` | undo / redo |
-| `⌘D` | duplicate |
-| `[` / `]` | send to back / bring to front |
+| `⌘D`, `⌥`-drag | duplicate |
+| `⌘C` `⌘X` `⌘V` / `⇧⌘V` | copy, cut, paste at cursor / paste in place |
+| `⌘G` / `⇧⌘G` | group / ungroup — and ungroup detaches an instance |
+| `⌥⌘B` | detach instance |
+| `⌘`-click, double-click | reach inside a group |
+| `⌘]` / `⌘[` | bring forward / send backward |
+| `⌥⌘]` / `⌥⌘[` (or `]` / `[`) | bring to front / send to back |
+| `⇧H` / `⇧V` | flip horizontal / vertical |
+| `⌘B` `⌘I` `⌘U` | bold, italic, underline |
 | arrows (`⇧` for 10px) | nudge |
 | space-drag, middle-drag | pan |
-| `⌘`-scroll | zoom |
+| `⌘+` / `⌘-`, `⌘`-scroll | zoom the canvas, never the browser |
+| `⇧0` `⇧1` `⇧2` | 100%, fit, selection |
+| `⌘\` | hide the interface |
 
 ## Running it
 

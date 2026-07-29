@@ -11,7 +11,6 @@
 import { useSquig } from "@/lib/store"
 import type { SquigNode, ComponentNode, ShapeNode, ArrowNode, TextNode } from "@/lib/types"
 import { getDef } from "@/lib/library/registry"
-import { breakApartAll, canBreakApart } from "@/lib/library/break-apart-op"
 import { selectionSummary, shared, sharedControls, sharedNumber, unionBounds } from "@/lib/selection"
 import { scaleNodes, MIN_SIZE } from "@/lib/canvas/transform"
 import { VariantControl } from "./variant-controls"
@@ -22,7 +21,8 @@ import { Switch } from "@/components/ui/switch"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Unlink, Trash2 } from "lucide-react"
+import { Unlink, Trash2, Link as LinkIcon } from "lucide-react"
+import { kbd } from "@/lib/shortcuts"
 
 export function Inspector() {
   const nodes = useSquig((s) => s.nodes)
@@ -85,6 +85,7 @@ function SelectionEditor({ selected }: { selected: SquigNode[] }) {
     if (Object.keys(patches).length) st().updateNodes(patches, { checkpoint: true })
   }
 
+  const grouped = selected.some((n) => n.groupIds?.length)
   const components = selected.filter((n): n is ComponentNode => n.type === "component")
   const shapes = selected.filter((n): n is ShapeNode => n.type === "shape")
   const arrows = selected.filter((n): n is ArrowNode => n.type === "arrow")
@@ -106,6 +107,12 @@ function SelectionEditor({ selected }: { selected: SquigNode[] }) {
         <h3 className="text-sm font-medium">{heading}</h3>
         {multi && <p className="mt-0.5 text-[11px] text-muted-foreground">{selectionSummary(selected)}</p>}
       </div>
+
+      {grouped && (
+        <p className="text-[11px] leading-relaxed text-muted-foreground">
+          grouped — {kbd("mod+click")} to reach one piece, {kbd("mod+shift+g")} to undo the grouping.
+        </p>
+      )}
 
       {/* position & size — a dash means they disagree; type to make them agree.
           Typing sets every node to that value (Figma does the same); arrow keys
@@ -211,6 +218,35 @@ function SelectionEditor({ selected }: { selected: SquigNode[] }) {
               }
             />
           </div>
+          <div className="flex items-center gap-1">
+            {(["bold", "italic", "underline"] as const).map((style) => {
+              const on = shared(texts.map((n) => !!n[style]))
+              return (
+                <StyleToggle
+                  key={style}
+                  label={style[0].toUpperCase() + style.slice(1)}
+                  hint={kbd(`mod+${style[0]}`)}
+                  on={!on.mixed && on.value}
+                  mixed={on.mixed}
+                  onClick={() => st().toggleTextStyle(style)}
+                >
+                  <span className={style === "bold" ? "font-bold" : style === "italic" ? "font-serif italic" : "underline"}>
+                    {style[0].toUpperCase()}
+                  </span>
+                </StyleToggle>
+              )
+            })}
+            <StyleToggle
+              label="Link"
+              hint={kbd("mod+k")}
+              on={texts.every((n) => !!n.link)}
+              mixed={shared(texts.map((n) => !!n.link)).mixed}
+              onClick={() => st().setLinkOpen(true)}
+            >
+              <LinkIcon className="size-3.5" />
+            </StyleToggle>
+          </div>
+
           <div className="flex items-center justify-between gap-2">
             <Label className="shrink-0 text-xs font-normal text-muted-foreground">Size</Label>
             <MixedNumberField
@@ -238,18 +274,14 @@ function SelectionEditor({ selected }: { selected: SquigNode[] }) {
 
 function Footer({ selected }: { selected: SquigNode[] }) {
   const st = useSquig.getState
-  const components = selected.filter(canBreakApart)
+  // icons re-emit as icon components, so detaching one changes nothing
+  const components = selected.filter((n) => n.type === "component" && n.kind !== "icon")
 
   return (
     <div className="flex shrink-0 gap-1.5 border-t p-2.5">
       {components.length > 0 && (
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-7 flex-1 text-xs"
-          onClick={() => breakApartAll(components.map((c) => c.id))}
-        >
-          <Unlink className="size-3" /> Break apart
+        <Button variant="outline" size="sm" className="h-7 flex-1 text-xs" onClick={() => st().detachSelected()}>
+          <Unlink className="size-3" /> Detach
           {components.length > 1 && <span className="tabular-nums">({components.length})</span>}
         </Button>
       )}
@@ -282,4 +314,38 @@ function reflowText(n: TextNode, text: string, fontSize: number): Partial<TextNo
   const lines = (text || " ").split("\n")
   const wGuess = Math.max(...lines.map((l) => l.length)) * fontSize * 0.5 + 10
   return { text, fontSize, w: Math.max(40, wGuess), h: lines.length * fontSize * 1.35 }
+}
+
+// ---------------------------------------------------------------------------
+
+function StyleToggle({
+  label,
+  hint,
+  on,
+  mixed = false,
+  onClick,
+  children,
+}: {
+  label: string
+  hint: string
+  on: boolean
+  /** the selection disagrees — shown as a dash, like every other control */
+  mixed?: boolean
+  onClick: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      aria-pressed={mixed ? "mixed" : on}
+      title={mixed ? `${label} · mixed · ${hint}` : `${label} · ${hint}`}
+      onClick={onClick}
+      className={`flex size-7 items-center justify-center rounded-md border text-xs transition-colors ${
+        on ? "bg-foreground text-background" : "text-muted-foreground hover:bg-accent hover:text-foreground"
+      } ${mixed ? "border-dashed" : ""}`}
+    >
+      {children}
+    </button>
+  )
 }

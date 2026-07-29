@@ -32,6 +32,7 @@ export function ContextRow({
   busy?: boolean
 }) {
   const enabled = useSquig((s) => s.contextRow)
+  const uiHidden = useSquig((s) => s.uiHidden)
   const editingId = useSquig((s) => s.editingId)
   const st = useSquig.getState
 
@@ -58,7 +59,7 @@ export function ContextRow({
   }, [])
 
   const bounds = unionBounds(selectedNodes)
-  if (!enabled || editingId || busy || !bounds) return null
+  if (!enabled || uiHidden || editingId || busy || !bounds) return null
 
   const boxLeft = bounds.x * viewport.zoom + viewport.x
   const boxTop = bounds.y * viewport.zoom + viewport.y

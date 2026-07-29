@@ -85,9 +85,11 @@ type Gesture =
       cloneIds: string[] | null
       /** whether a checkpoint has been taken for this gesture */
       dirty: boolean
-      /** set when the press landed on an already-multi-selected node: a click
-       *  with no drag narrows the selection to just that node */
-      collapseTo: string | null
+      /** set when the press landed inside a bigger selection: a click with no
+       *  drag narrows to exactly this set. Carries the set rather than the id
+       *  because ⌘-click means "just this piece" while a plain click means
+       *  "this piece's whole group". */
+      collapseTo: string[] | null
     }
   | {
       kind: "marquee"
@@ -172,6 +174,8 @@ export function Canvas() {
   const autoPanRef = useRef<number | null>(null)
   const autoPanTickRef = useRef<() => void>(() => {})
   const hoverRafRef = useRef<number | null>(null)
+  /** last world position of the pointer — ⌘V pastes here */
+  const pointerWorld = useRef<[number, number] | null>(null)
 
   const nodes = useSquig((s) => s.nodes)
   const order = useSquig((s) => s.order)
@@ -289,7 +293,8 @@ export function Canvas() {
           h: Math.abs(wy - g.wy),
         }
         setMarquee(g.exceeded ? box : null)
-        const hits = pickInRect(s.nodes, s.order, box, v.zoom)
+        // grazing one member of a group takes the whole group
+        const hits = s.expandSelection(pickInRect(s.nodes, s.order, box, v.zoom))
         if (marqueeMode(mods) === "replace") {
           s.setSelection(hits)
         } else {
@@ -648,9 +653,10 @@ export function Canvas() {
       s.setTool("select")
     }
 
-    // a click with no drag on an already-multi-selected node narrows to it
+    // a click with no drag inside a bigger selection narrows to what was
+    // clicked — already resolved to a group or a single piece at press time
     if (g.kind === "move" && !g.exceeded && g.collapseTo) {
-      s.setSelection([g.collapseTo])
+      s.setSelection(g.collapseTo)
     }
 
     teardownGesture()
@@ -863,25 +869,32 @@ export function Canvas() {
       const hitId = pickAt(s.nodes, s.order, wx, wy, s.viewport.zoom)
 
       if (hitId) {
-        const additive = mods.shift || mods.toggle
+        const grouped = !!s.nodes[hitId]?.groupIds?.length
+        // ⌘/Ctrl reaches past a group to the one thing under the cursor. With
+        // nothing to reach past it has no such job, so outside a group it
+        // falls back to toggling — which is what a Ctrl+click is everywhere
+        // that isn't a design tool.
+        const deep = mods.toggle && grouped
+        const hitSet = deep ? [hitId] : s.expandSelection([hitId])
+        const additive = !deep && (mods.shift || mods.toggle)
         let sel = s.selection
-        let collapseTo: string | null = null
+        let collapseTo: string[] | null = null
 
         if (additive) {
-          if (sel.includes(hitId)) {
+          if (hitSet.every((id) => sel.includes(id))) {
             // toggling something off is the whole interaction — no drag follows
-            s.setSelection(sel.filter((i) => i !== hitId))
+            s.setSelection(sel.filter((i) => !hitSet.includes(i)))
             return
           }
-          sel = [...sel, hitId]
+          sel = [...new Set([...sel, ...hitSet])]
           s.setSelection(sel)
-        } else if (!sel.includes(hitId)) {
-          sel = [hitId]
+        } else if (!hitSet.every((id) => sel.includes(id))) {
+          sel = hitSet
           s.setSelection(sel)
-        } else if (sel.length > 1) {
-          // already part of a multi-selection: hold the set together so it can
-          // be dragged, and only narrow down if this turns out to be a click
-          collapseTo = hitId
+        } else if (sel.length > hitSet.length) {
+          // already part of a bigger selection: hold the set together so it
+          // can be dragged, and only narrow down if this turns out to be a click
+          collapseTo = hitSet
         }
 
         const sourcePos: Record<string, { x: number; y: number }> = {}
@@ -913,6 +926,11 @@ export function Canvas() {
       if (!hitId) return
       const n = s.nodes[hitId]
       if (!n) return
+      // first double-click steps into a group; the next one edits what's inside
+      if (n.groupIds?.length && !(s.selection.length === 1 && s.selection[0] === hitId)) {
+        s.setSelection([hitId])
+        return
+      }
       // double-clicking inside a multi-selection narrows to what you clicked
       if (s.selection.length !== 1 || s.selection[0] !== hitId) s.setSelection([hitId])
       if (n.type === "text") s.setEditing(hitId)
@@ -935,7 +953,7 @@ export function Canvas() {
       if (gestureRef.current) cancelGesture()
       const hitId = pick(e)
       // right-clicking outside the current selection re-targets it
-      if (hitId && !s.selection.includes(hitId)) s.setSelection([hitId])
+      if (hitId && !s.selection.includes(hitId)) s.setSelection(s.expandSelection([hitId]))
       if (!hitId) s.setSelection([])
       s.setContextMenu({ x: e.clientX, y: e.clientY, nodeId: hitId })
     },
@@ -946,8 +964,9 @@ export function Canvas() {
   const onPointerMoveLocal = useCallback(
     (e: React.PointerEvent) => {
       const s = st()
+      pointerWorld.current = toWorld(e)
       if (s.placing) {
-        setCursor(toWorld(e))
+        setCursor(pointerWorld.current)
         return
       }
       if (gestureRef.current || s.tool !== "select" || isSpacebarHeld || s.editingId) {
@@ -1005,63 +1024,162 @@ export function Canvas() {
         return
       }
 
-      if (mod && key === "k") {
+      if (mod && e.code === "KeyK") {
+        e.preventDefault()
+        // ⌘K over text means "link this", the way it does in every editor
+        const hasText = s.selection.some((id) => s.nodes[id]?.type === "text")
+        if (hasText && !s.commandOpen) s.setLinkOpen(true)
+        else s.setCommandOpen(!s.commandOpen)
+        return
+      }
+      if (mod && e.code === "Slash") {
         e.preventDefault()
         s.setCommandOpen(!s.commandOpen)
         return
       }
       if (s.commandOpen) return
 
+      if (e.code === "Slash" && e.shiftKey && !mod) {
+        e.preventDefault()
+        s.setShortcutsOpen(!s.shortcutsOpen)
+        return
+      }
+      if (s.shortcutsOpen && e.key !== "Escape") return
+
       if (mod) {
-        switch (key) {
-          case "z":
+        // `e.code` under a modifier: ⌥] is "‘" on a Mac, but the key under the
+        // finger is still BracketRight
+        switch (e.code) {
+          case "KeyZ":
             e.preventDefault()
             if (e.shiftKey) s.redo()
             else s.undo()
             return
-          case "d":
+          case "KeyD":
             e.preventDefault()
             s.duplicateSelected()
             return
-          case "a":
+          case "KeyA":
             e.preventDefault()
             s.selectAll()
             return
-          case "c":
+          case "KeyG":
             e.preventDefault()
-            s.copySelection()
+            if (e.shiftKey) s.ungroupSelected()
+            else s.groupSelected()
             return
-          case "x":
+          case "KeyB":
             e.preventDefault()
-            s.cutSelection()
+            // ⌥⌘B is Figma's detach; ⌘B is bold
+            if (e.altKey) s.detachSelected()
+            else s.toggleTextStyle("bold")
             return
-          case "v":
+          case "KeyI":
             e.preventDefault()
-            s.paste()
+            s.toggleTextStyle("italic")
             return
-          case "0":
+          case "KeyU":
+            e.preventDefault()
+            s.toggleTextStyle("underline")
+            return
+          case "KeyC":
+            e.preventDefault()
+            s.copySelected()
+            return
+          case "KeyX":
+            e.preventDefault()
+            s.cutSelected()
+            return
+          case "KeyV": {
+            e.preventDefault()
+            if (e.shiftKey) {
+              // paste in place — right back where it was copied from
+              const cb = s.clipboard
+              if (cb.length) s.pasteClipboard([Math.min(...cb.map((n) => n.x)), Math.min(...cb.map((n) => n.y))])
+            } else {
+              s.pasteClipboard(pointerWorld.current ?? undefined)
+            }
+            return
+          }
+          // one step on its own; all the way with ⌥ (Mac) or ⇧ (Windows)
+          case "BracketRight":
+            e.preventDefault()
+            if (e.altKey || e.shiftKey) s.bringToFront(s.selection)
+            else s.bringForward(s.selection)
+            return
+          case "BracketLeft":
+            e.preventDefault()
+            if (e.altKey || e.shiftKey) s.sendToBack(s.selection)
+            else s.sendBackward(s.selection)
+            return
+          case "Equal":
+          case "NumpadAdd":
+            // the canvas zooms; the interface stays exactly the size it was
+            e.preventDefault()
+            s.zoomBy(1.25)
+            return
+          case "Minus":
+          case "NumpadSubtract":
+            e.preventDefault()
+            s.zoomBy(1 / 1.25)
+            return
+          case "Digit0":
+          case "Numpad0":
             e.preventDefault()
             s.setViewport({ x: 0, y: 0, zoom: 1 })
+            return
+          case "Backslash":
+            e.preventDefault()
+            s.setUiHidden(!s.uiHidden)
             return
           // the canvas ignores these, so stop the browser navigating away
           case "ArrowLeft":
           case "ArrowRight":
           case "ArrowUp":
           case "ArrowDown":
-          case "[":
-          case "]":
             e.preventDefault()
             return
         }
-        return
+        return // every other ⌘ combo is the browser's business
       }
 
-      // shift+1/2: the printed character depends entirely on the layout, so
-      // accept the physical number-row key as well
-      if (e.shiftKey && (e.code === "Digit1" || e.code === "Digit2" || key === "!" || key === "@")) {
-        e.preventDefault()
-        if (e.code === "Digit1" || key === "!") s.zoomTo()
-        else if (s.selection.length) s.zoomTo(s.selection)
+      if (e.shiftKey) {
+        // the printed character for a shifted digit depends entirely on the
+        // layout, so go by the physical number-row key
+        switch (e.code) {
+          case "Digit0":
+            e.preventDefault()
+            s.zoomTo100()
+            return
+          case "Digit1":
+            e.preventDefault()
+            s.zoomToFit()
+            return
+          case "Digit2":
+            e.preventDefault()
+            s.zoomToSelection()
+            return
+        }
+        switch (e.key.toLowerCase()) {
+          case "h":
+            s.flipSelected("x")
+            return
+          case "v":
+            s.flipSelected("y")
+            return
+          case "l":
+            s.setArrowHead(true)
+            s.setTool("arrow")
+            return
+        }
+      }
+
+      if (e.code === "Equal" || e.code === "NumpadAdd") {
+        s.zoomBy(1.25)
+        return
+      }
+      if (e.code === "Minus" || e.code === "NumpadSubtract") {
+        s.zoomBy(1 / 1.25)
         return
       }
       // `[` and `]` need Alt or AltGr on German, French, Spanish and Nordic
@@ -1087,7 +1205,9 @@ export function Canvas() {
           s.deleteSelected()
           break
         case "Escape":
-          if (s.editingId) s.setEditing(null)
+          if (s.shortcutsOpen) s.setShortcutsOpen(false)
+          else if (s.linkOpen) s.setLinkOpen(false)
+          else if (s.editingId) s.setEditing(null)
           else if (s.contextMenu) s.setContextMenu(null)
           else if (s.placing) s.setPlacing(null)
           else if (s.panel) s.setPanel(null)
@@ -1112,7 +1232,8 @@ export function Canvas() {
         case "o": s.setShapeKind("ellipse"); s.setTool("shape"); break
         case "p": s.setTool("draw"); break
         case "t": s.setTool("text"); break
-        case "a": s.setTool("arrow"); break
+        case "l": s.setArrowHead(false); s.setTool("arrow"); break
+        case "a": s.setArrowHead(true); s.setTool("arrow"); break
         case "c": s.setPanel("components"); break
         case "b": s.setPanel("blocks"); break
         case "ArrowLeft":
