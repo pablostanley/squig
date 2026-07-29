@@ -52,12 +52,12 @@
 /* squig canvas theme — overwritten at runtime by lib/theme.ts.
    These defaults are Internet blue, so first paint matches. */
 :root {
-  --sq-bg: #f6f3ea;
-  --sq-paper: #fffdf7;
+  --sq-bg: #fbfaf5;
+  --sq-paper: #ffffff;
   --sq-ink: #2438ff;
   --sq-muted: #6e7dff;
   --sq-faint: #bfc6ff;
-  --sq-grid: #dfd9c7;
+  --sq-grid: #e6e1d3;
   --sq-select: #ff5a24;
   --sq-font: var(--font-sketch);
 }
