@@ -241,10 +241,15 @@ export const useSquig = create<SquigState>((set, get) => ({
   setContextMenu: (m) => set({ contextMenu: m }),
 
   checkpoint: () => {
-    set((s) => ({
-      past: [...s.past.slice(-MAX_HISTORY + 1), { ...snapshot(s), displacedFuture: s.future }],
-      future: [],
-    }))
+    set((s) => {
+      const kept = s.past.slice(-MAX_HISTORY + 1)
+      // only the newest checkpoint can ever be reverted — once an edit lands on
+      // top of one, its stashed redo branch is unreachable, and holding onto it
+      // would let history retain far more clones than MAX_HISTORY implies
+      const top = kept[kept.length - 1]
+      if (top?.displacedFuture) kept[kept.length - 1] = { ...top, displacedFuture: undefined }
+      return { past: [...kept, { ...snapshot(s), displacedFuture: s.future }], future: [] }
+    })
   },
 
   /**

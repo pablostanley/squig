@@ -44,12 +44,15 @@ export function ContextRow({
   // effect would run once, with no element, and never observe anything.
   const measure = useCallback((el: HTMLDivElement | null) => {
     if (!el || typeof ResizeObserver === "undefined") return
-    const r = el.getBoundingClientRect()
-    setSize((prev) => (prev.w === r.width && prev.h === r.height ? prev : { w: r.width, h: r.height }))
-    const ro = new ResizeObserver(([entry]) => {
-      const box = entry.contentRect
-      setSize((prev) => (prev.w === box.width && prev.h === box.height ? prev : { w: box.width, h: box.height }))
-    })
+    // always the BORDER box: the placement maths below subtracts this from the
+    // viewport edge, and `contentRect` would leave out the padding and border,
+    // parking the row ~14px too low and letting it hang off the right edge
+    const read = () => {
+      const r = el.getBoundingClientRect()
+      setSize((prev) => (prev.w === r.width && prev.h === r.height ? prev : { w: r.width, h: r.height }))
+    }
+    read()
+    const ro = new ResizeObserver(read)
     ro.observe(el)
     return () => ro.disconnect()
   }, [])

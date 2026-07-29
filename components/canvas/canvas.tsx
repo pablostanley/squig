@@ -162,10 +162,10 @@ export function Canvas() {
   const containerRef = useRef<HTMLDivElement>(null)
   const gestureRef = useRef<Gesture | null>(null)
   const gestureAbort = useRef<AbortController | null>(null)
-  const nudgeRef = useRef<{ timer: ReturnType<typeof setTimeout> | null; sel: string; pastLen: number }>({
+  const nudgeRef = useRef<{ timer: ReturnType<typeof setTimeout> | null; sel: string; top: unknown }>({
     timer: null,
     sel: "",
-    pastLen: -1,
+    top: null,
   })
   const modsRef = useRef<Mods>(NO_MODS)
   const lastPointRef = useRef<{ clientX: number; clientY: number } | null>(null)
@@ -625,11 +625,22 @@ export function Canvas() {
               )
       } else {
         const n = st().nodes[id]
-        if (n && (n.w < 10 || n.h < 10)) {
-          // a stub from a twitchy drag — give it the same friendly default
-          if (n.type === "shape") s.updateNode(id, { w: 140, h: 90 })
-          else if (n.type === "arrow") {
-            s.updateNode(id, { w: 140, h: 90, points: [[0, 0], [140, 90]] } as Partial<SquigNode>)
+        // BOTH dimensions, not either: a horizontal arrow is 2 units tall by
+        // construction and a divider rect is deliberately thin. Testing `||`
+        // would quietly replace every one of them with a fat diagonal.
+        if (n && n.w < 10 && n.h < 10) {
+          const [w, h] = [140, 90]
+          if (n.type === "arrow") {
+            // keep the direction they dragged, however small
+            const sx = n.w > 0 ? w / n.w : 1
+            const sy = n.h > 0 ? h / n.h : 1
+            s.updateNode(id, {
+              w,
+              h,
+              points: n.points.map(([px, py]) => [px * sx, py * sy]) as [[number, number], [number, number]],
+            } as Partial<SquigNode>)
+          } else {
+            s.updateNode(id, { w, h })
           }
         }
       }
@@ -1053,6 +1064,19 @@ export function Canvas() {
         else if (s.selection.length) s.zoomTo(s.selection)
         return
       }
+      // `[` and `]` need Alt or AltGr on German, French, Spanish and Nordic
+      // layouts, so they have to be caught before the Alt bail below — and by
+      // physical position too, since the printed character is unreachable
+      if (key === "[" || e.code === "BracketLeft") {
+        e.preventDefault()
+        s.sendToBack(s.selection)
+        return
+      }
+      if (key === "]" || e.code === "BracketRight") {
+        e.preventDefault()
+        s.bringToFront(s.selection)
+        return
+      }
       if (e.altKey) return
 
       switch (key) {
@@ -1073,10 +1097,16 @@ export function Canvas() {
             containerRef.current?.blur()
           }
           break
-        case "Tab":
+        case "Tab": {
+          // Tab is how you move between controls. Only claim it when the
+          // canvas itself has focus — otherwise a click on the rail traps the
+          // keyboard and every Tab cycles the selection instead of moving on.
+          const focused = document.activeElement
+          if (focused !== containerRef.current && focused !== document.body) break
           e.preventDefault()
           s.cycleSelection(e.shiftKey ? -1 : 1)
           break
+        }
         case "v": s.setTool("select"); break
         case "r": s.setShapeKind("rect"); s.setTool("shape"); break
         case "o": s.setShapeKind("ellipse"); s.setTool("shape"); break
@@ -1085,8 +1115,6 @@ export function Canvas() {
         case "a": s.setTool("arrow"); break
         case "c": s.setPanel("components"); break
         case "b": s.setPanel("blocks"); break
-        case "[": s.sendToBack(s.selection); break
-        case "]": s.bringToFront(s.selection); break
         case "ArrowLeft":
         case "ArrowRight":
         case "ArrowUp":
@@ -1097,13 +1125,15 @@ export function Canvas() {
           // the same selection — otherwise ⌘Z reverts a move to another object
           const sig = s.selection.join(",")
           const nudge = nudgeRef.current
-          // the burst also has to still be writing against its own checkpoint:
-          // an undo in the middle pops it, and coalescing onto whatever is now
-          // on top would bury this edit in someone else's history entry
-          if (nudge.timer === null || nudge.sel !== sig || nudge.pastLen !== s.past.length) {
+          // the burst also has to still be writing against its own checkpoint.
+          // Compare the entry itself, not the stack depth: past is capped at
+          // MAX_HISTORY, so past a hundred edits the length stops changing and
+          // a count would happily coalesce onto someone else's entry.
+          if (nudge.timer === null || nudge.sel !== sig || nudge.top !== s.past[s.past.length - 1]) {
             s.checkpoint()
             nudge.sel = sig
-            nudge.pastLen = st().past.length
+            const after = st().past
+            nudge.top = after[after.length - 1]
           } else {
             clearTimeout(nudge.timer)
           }
