@@ -3,37 +3,26 @@
 // ---------------------------------------------------------------------------
 // Inspector — deliberately small. Position, variants, text. That's it.
 // If this ever looks like Figma's panel, something has gone wrong.
+//
+// It edits a selection, never "the selected node". One node is a selection of
+// one; anything the selection disagrees on shows a dash you can type over.
 // ---------------------------------------------------------------------------
 
 import { useSquig } from "@/lib/store"
-import type { SquigNode, ComponentNode } from "@/lib/types"
+import type { SquigNode, ComponentNode, ShapeNode, ArrowNode, TextNode } from "@/lib/types"
 import { getDef } from "@/lib/library/registry"
-import { breakApart } from "@/lib/library/break-apart"
+import { breakApartAll, canBreakApart } from "@/lib/library/break-apart-op"
+import { selectionSummary, shared, sharedControls, sharedNumber, unionBounds } from "@/lib/selection"
+import { scaleNodes, MIN_SIZE } from "@/lib/canvas/transform"
 import { VariantControl } from "./variant-controls"
-import { Input } from "@/components/ui/input"
+import { MixedNumberField, MixedSwitch, MixedTextField } from "./mixed-fields"
+import { AlignRow } from "./align-row"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Unlink, Trash2 } from "lucide-react"
-
-function NumberField({ label, value, onCommit }: { label: string; value: number; onCommit: (n: number) => void }) {
-  return (
-    <label className="flex items-center gap-1.5">
-      <span className="w-3 text-[11px] text-muted-foreground">{label}</span>
-      <Input
-        type="number"
-        className="h-7 px-1.5 text-xs"
-        value={Math.round(value)}
-        onChange={(e) => {
-          const n = Number(e.target.value)
-          if (!Number.isNaN(n)) onCommit(n)
-        }}
-      />
-    </label>
-  )
-}
 
 export function Inspector() {
   const nodes = useSquig((s) => s.nodes)
@@ -42,16 +31,18 @@ export function Inspector() {
   const st = useSquig.getState
 
   const selected = selection.map((id) => nodes[id]).filter(Boolean) as SquigNode[]
-  const one = selected.length === 1 ? selected[0] : null
 
   return (
     <div
+      data-squig-chrome
       className="absolute top-4 right-4 z-30 flex max-h-[calc(100vh-2rem)] w-[232px] flex-col overflow-hidden rounded-xl border bg-background shadow-md"
       onPointerDown={(e) => e.stopPropagation()}
     >
       <ScrollArea className="min-h-0">
-        <div className="flex flex-col gap-4 p-3.5">
-          {!selected.length && (
+        {/* remounting on a selection change drops any half-typed draft, which
+            is what you want — the field now describes different objects */}
+        <div key={selection.join(",")} className="flex flex-col gap-4 p-3.5">
+          {!selected.length ? (
             <>
               <div>
                 <h3 className="text-sm font-medium">nothing selected</h3>
@@ -68,142 +59,227 @@ export function Inspector() {
                 <Switch checked={contextRow} onCheckedChange={(on) => st().setContextRow(on)} className="scale-90" />
               </div>
             </>
-          )}
-
-          {selected.length > 1 && (
-            <p className="text-xs text-muted-foreground">{selected.length} things selected — drag to move, arrows to nudge.</p>
-          )}
-
-          {one && (
-            <>
-              <div>
-                <h3 className="text-sm font-medium capitalize">
-                  {one.type === "component" ? (getDef(one.kind)?.name ?? one.kind) : one.type}
-                </h3>
-              </div>
-
-              {/* position & size */}
-              <div className="grid grid-cols-2 gap-1.5">
-                <NumberField label="x" value={one.x} onCommit={(n) => st().updateNode(one.id, { x: n })} />
-                <NumberField label="y" value={one.y} onCommit={(n) => st().updateNode(one.id, { y: n })} />
-                <NumberField label="w" value={one.w} onCommit={(n) => st().updateNode(one.id, { w: Math.max(8, n) })} />
-                <NumberField label="h" value={one.h} onCommit={(n) => st().updateNode(one.id, { h: Math.max(8, n) })} />
-              </div>
-
-              {/* variants */}
-              {one.type === "component" && <ComponentControls node={one} />}
-
-              {one.type === "shape" && (
-                <div className="flex items-center justify-between">
-                  <Label className="text-xs font-normal text-muted-foreground">Scribble fill</Label>
-                  <Switch
-                    checked={one.fill}
-                    className="scale-90"
-                    onCheckedChange={(on) => {
-                      st().checkpoint()
-                      st().updateNode(one.id, { fill: on } as Partial<SquigNode>)
-                    }}
-                  />
-                </div>
-              )}
-
-              {one.type === "arrow" && (
-                <div className="flex items-center justify-between">
-                  <Label className="text-xs font-normal text-muted-foreground">Arrowhead</Label>
-                  <Switch
-                    checked={one.head}
-                    className="scale-90"
-                    onCheckedChange={(on) => {
-                      st().checkpoint()
-                      st().updateNode(one.id, { head: on } as Partial<SquigNode>)
-                    }}
-                  />
-                </div>
-              )}
-
-              {one.type === "text" && (
-                <div className="flex flex-col gap-2">
-                  <div className="flex flex-col gap-1">
-                    <Label className="text-xs font-normal text-muted-foreground">Text</Label>
-                    <Input
-                      className="h-7 px-2 text-xs"
-                      value={one.text}
-                      onChange={(e) => st().updateNode(one.id, { text: e.target.value } as Partial<SquigNode>)}
-                    />
-                  </div>
-                  <div className="flex items-center justify-between gap-2">
-                    <Label className="shrink-0 text-xs font-normal text-muted-foreground">Size</Label>
-                    <Input
-                      type="number"
-                      className="h-7 w-[70px] px-2 text-xs"
-                      value={Math.round(one.fontSize)}
-                      onChange={(e) => {
-                        const n = Number(e.target.value)
-                        if (n > 0) st().updateNode(one.id, { fontSize: n } as Partial<SquigNode>)
-                      }}
-                    />
-                  </div>
-                </div>
-              )}
-            </>
+          ) : (
+            <SelectionEditor selected={selected} />
           )}
         </div>
       </ScrollArea>
 
-      {selected.length > 0 && (
-        <div className="flex shrink-0 gap-1.5 border-t p-2.5">
-          {one?.type === "component" && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-7 flex-1 text-xs"
-              onClick={() => {
-                const pieces = breakApart(one as ComponentNode)
-                st().removeNodes([one.id])
-                st().addNodes(pieces)
-              }}
-            >
-              <Unlink className="size-3" /> Break apart
-            </Button>
-          )}
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-7 flex-1 text-xs text-muted-foreground hover:text-destructive"
-            onClick={() => st().deleteSelected()}
-          >
-            <Trash2 className="size-3" /> Delete
-          </Button>
-        </div>
-      )}
+      {selected.length > 0 && <Footer selected={selected} />}
     </div>
   )
 }
 
-function ComponentControls({ node }: { node: SquigNode }) {
-  if (node.type !== "component") return null
-  const def = getDef(node.kind)
-  if (!def) return null
-  const variants = def.controls.filter((c) => c.type !== "text")
-  const texts = def.controls.filter((c) => c.type === "text")
+// ---------------------------------------------------------------------------
+
+function SelectionEditor({ selected }: { selected: SquigNode[] }) {
+  const st = useSquig.getState
+  const multi = selected.length > 1
+
+  const patchAll = (make: (n: SquigNode) => Partial<SquigNode> | null) => {
+    const patches: Record<string, Partial<SquigNode>> = {}
+    for (const n of selected) {
+      const p = make(n)
+      if (p) patches[n.id] = p
+    }
+    if (Object.keys(patches).length) st().updateNodes(patches, { checkpoint: true })
+  }
+
+  const components = selected.filter((n): n is ComponentNode => n.type === "component")
+  const shapes = selected.filter((n): n is ShapeNode => n.type === "shape")
+  const arrows = selected.filter((n): n is ArrowNode => n.type === "arrow")
+  const texts = selected.filter((n): n is TextNode => n.type === "text")
+
+  const controls = components.length === selected.length ? sharedControls(components) : []
+  const variantControls = controls.filter((c) => c.type !== "text")
+  const textControls = controls.filter((c) => c.type === "text")
+
+  const heading = multi
+    ? `${selected.length} selected`
+    : selected[0].type === "component"
+      ? (getDef((selected[0] as ComponentNode).kind)?.name ?? (selected[0] as ComponentNode).kind)
+      : selected[0].type
+
   return (
     <>
-      {variants.length > 0 && (
-        <div className="flex flex-col gap-2">
-          <span className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">Variant</span>
-          {variants.map((c) => (
-            <VariantControl key={c.key} node={node} control={c} />
-          ))}
+      <div>
+        <h3 className="text-sm font-medium">{heading}</h3>
+        {multi && <p className="mt-0.5 text-[11px] text-muted-foreground">{selectionSummary(selected)}</p>}
+      </div>
+
+      {/* position & size — a dash means they disagree; type to make them agree.
+          Typing sets every node to that value (Figma does the same); arrow keys
+          nudge each from its own, so a mixed field stays mixed. */}
+      <div className="grid grid-cols-2 gap-1.5">
+        <MixedNumberField
+          label="x"
+          shared={sharedNumber(selected, (n) => n.x)}
+          onCommit={(v) => patchAll(() => ({ x: v }))}
+          onStep={(d) => patchAll((n) => ({ x: n.x + d }))}
+        />
+        <MixedNumberField
+          label="y"
+          shared={sharedNumber(selected, (n) => n.y)}
+          onCommit={(v) => patchAll(() => ({ y: v }))}
+          onStep={(d) => patchAll((n) => ({ y: n.y + d }))}
+        />
+        <MixedNumberField
+          label="w"
+          shared={sharedNumber(selected, (n) => n.w)}
+          onCommit={(v) => patchAll((n) => resizeTo(n, Math.max(MIN_SIZE, v), n.h))}
+          onStep={(d) => patchAll((n) => resizeTo(n, Math.max(MIN_SIZE, n.w + d), n.h))}
+        />
+        <MixedNumberField
+          label="h"
+          shared={sharedNumber(selected, (n) => n.h)}
+          onCommit={(v) => patchAll((n) => resizeTo(n, n.w, Math.max(MIN_SIZE, v)))}
+          onStep={(d) => patchAll((n) => resizeTo(n, n.w, Math.max(MIN_SIZE, n.h + d)))}
+        />
+      </div>
+
+      {multi && (
+        <div className="flex flex-col gap-1.5">
+          <span className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">Arrange</span>
+          <AlignRow count={selected.length} />
         </div>
       )}
+
+      {/* component variants, intersected across whatever is selected */}
+      {components.length > 0 && components.length === selected.length && (
+        <>
+          {variantControls.length > 0 && (
+            <div className="flex flex-col gap-2">
+              <span className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">Variant</span>
+              {variantControls.map((c) => (
+                <VariantControl key={c.key} nodes={components} control={c} />
+              ))}
+            </div>
+          )}
+          {textControls.length > 0 && (
+            <div className="flex flex-col gap-2">
+              <span className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">Text</span>
+              {textControls.map((c) => (
+                <VariantControl key={c.key} nodes={components} control={c} />
+              ))}
+            </div>
+          )}
+          {multi && !controls.length && (
+            <p className="text-[11px] leading-relaxed text-muted-foreground">
+              these components don&apos;t share any settings. select fewer kinds at once to tweak them.
+            </p>
+          )}
+        </>
+      )}
+
+      {/* mixed bags still get the knobs that apply to part of the selection */}
+      {shapes.length > 0 && (
+        <div className="flex items-center justify-between">
+          <Label className="text-xs font-normal text-muted-foreground">
+            Fill{shapes.length !== selected.length && ` (${shapes.length})`}
+          </Label>
+          <MixedSwitch
+            ariaLabel="Fill"
+            shared={shared(shapes.map((n) => n.fill))}
+            onChange={(on) => patchAll((n) => (n.type === "shape" ? ({ fill: on } as Partial<SquigNode>) : null))}
+          />
+        </div>
+      )}
+
+      {arrows.length > 0 && (
+        <div className="flex items-center justify-between">
+          <Label className="text-xs font-normal text-muted-foreground">
+            Arrowhead{arrows.length !== selected.length && ` (${arrows.length})`}
+          </Label>
+          <MixedSwitch
+            ariaLabel="Arrowhead"
+            shared={shared(arrows.map((n) => n.head))}
+            onChange={(on) => patchAll((n) => (n.type === "arrow" ? ({ head: on } as Partial<SquigNode>) : null))}
+          />
+        </div>
+      )}
+
       {texts.length > 0 && (
         <div className="flex flex-col gap-2">
-          <span className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">Text</span>
-          {texts.map((c) => (
-            <VariantControl key={c.key} node={node} control={c} />
-          ))}
+          <div className="flex flex-col gap-1">
+            <Label className="text-xs font-normal text-muted-foreground">
+              Text{texts.length !== selected.length && ` (${texts.length})`}
+            </Label>
+            <MixedTextField
+              shared={shared(texts.map((n) => n.text))}
+              onCommit={(v) =>
+                patchAll((n) => (n.type === "text" ? (reflowText(n, v, n.fontSize) as Partial<SquigNode>) : null))
+              }
+            />
+          </div>
+          <div className="flex items-center justify-between gap-2">
+            <Label className="shrink-0 text-xs font-normal text-muted-foreground">Size</Label>
+            <MixedNumberField
+              compact
+              label=""
+              className="w-[70px]"
+              shared={sharedNumber(texts, (n) => (n as TextNode).fontSize)}
+              onCommit={(v) =>
+                patchAll((n) => (n.type === "text" && v > 0 ? (reflowText(n, n.text, v) as Partial<SquigNode>) : null))
+              }
+              onStep={(d) =>
+                patchAll((n) =>
+                  n.type === "text" ? (reflowText(n, n.text, Math.max(4, n.fontSize + d)) as Partial<SquigNode>) : null
+                )
+              }
+            />
+          </div>
         </div>
       )}
     </>
   )
+}
+
+// ---------------------------------------------------------------------------
+
+function Footer({ selected }: { selected: SquigNode[] }) {
+  const st = useSquig.getState
+  const components = selected.filter(canBreakApart)
+
+  return (
+    <div className="flex shrink-0 gap-1.5 border-t p-2.5">
+      {components.length > 0 && (
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-7 flex-1 text-xs"
+          onClick={() => breakApartAll(components.map((c) => c.id))}
+        >
+          <Unlink className="size-3" /> Break apart
+          {components.length > 1 && <span className="tabular-nums">({components.length})</span>}
+        </Button>
+      )}
+      <Button
+        variant="outline"
+        size="sm"
+        className="h-7 flex-1 text-xs text-muted-foreground hover:text-destructive"
+        onClick={() => st().deleteSelected()}
+      >
+        <Trash2 className="size-3" /> Delete
+      </Button>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+
+/**
+ * Set one node's size through the exact transform the resize handle uses, so
+ * typing "200" and dragging to 200 produce the same document rather than two
+ * subtly different ones.
+ */
+function resizeTo(n: SquigNode, w: number, h: number): Partial<SquigNode> {
+  const from = unionBounds([n])!
+  return scaleNodes([n], from, { x: n.x, y: n.y, w, h })[n.id]
+}
+
+/** Text nodes size themselves from their content — keep the box honest. */
+function reflowText(n: TextNode, text: string, fontSize: number): Partial<TextNode> {
+  const lines = (text || " ").split("\n")
+  const wGuess = Math.max(...lines.map((l) => l.length)) * fontSize * 0.5 + 10
+  return { text, fontSize, w: Math.max(40, wGuess), h: lines.length * fontSize * 1.35 }
 }

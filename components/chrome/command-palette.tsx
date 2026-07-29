@@ -159,7 +159,8 @@ function Palette() {
 
   return (
     <>
-      <div className="fixed inset-0 z-50 flex flex-col justify-end" onPointerDown={close}>
+      <div data-squig-chrome
+      className="fixed inset-0 z-50 flex flex-col justify-end" onPointerDown={close}>
         <div className="absolute inset-0 bg-foreground/10 backdrop-blur-[2px]" />
         <div
           className="animate-in slide-in-from-bottom-4 fade-in relative mx-auto flex max-h-[62vh] w-full max-w-2xl flex-col overflow-hidden rounded-t-2xl border border-b-0 bg-background shadow-2xl duration-150"

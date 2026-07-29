@@ -3,66 +3,138 @@
 // ---------------------------------------------------------------------------
 // Context row — optional floating quick-controls above the selection.
 // Off by default; toggled in the inspector's settings.
+//
+// With more than one thing selected it shows the align cluster plus whichever
+// quick controls the whole selection has in common.
 // ---------------------------------------------------------------------------
 
+import { useLayoutEffect, useRef, useState } from "react"
+
 import { useSquig } from "@/lib/store"
-import type { SquigNode, Viewport, ComponentNode } from "@/lib/types"
-import { getDef } from "@/lib/library/registry"
+import type { SquigNode, Viewport, ComponentNode, ShapeNode, ArrowNode } from "@/lib/types"
+import { shared, sharedControls, unionBounds } from "@/lib/selection"
 import { VariantControl } from "@/components/chrome/variant-controls"
-import { Switch } from "@/components/ui/switch"
+import { MixedSwitch } from "@/components/chrome/mixed-fields"
+import { AlignRow } from "@/components/chrome/align-row"
 import { Label } from "@/components/ui/label"
 
-export function ContextRow({ selectedNodes, viewport }: { selectedNodes: SquigNode[]; viewport: Viewport }) {
+/** how many knobs fit before the row stops being a "quick" anything */
+const MAX_QUICK = 3
+
+export function ContextRow({
+  selectedNodes,
+  viewport,
+  busy = false,
+}: {
+  selectedNodes: SquigNode[]
+  viewport: Viewport
+  /** a gesture is in flight — get out of the way */
+  busy?: boolean
+}) {
   const enabled = useSquig((s) => s.contextRow)
   const editingId = useSquig((s) => s.editingId)
   const st = useSquig.getState
 
-  if (!enabled || editingId || selectedNodes.length !== 1) return null
-  const node = selectedNodes[0]
+  const ref = useRef<HTMLDivElement>(null)
+  const [size, setSize] = useState({ w: 0, h: 36 })
 
-  const left = node.x * viewport.zoom + viewport.x
-  const top = node.y * viewport.zoom + viewport.y - 46
-  const style = { left, top: Math.max(top, 8) }
+  // the row's own size decides whether it fits above the selection, so measure
+  // it rather than guessing — the control set changes with the selection
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el || typeof ResizeObserver === "undefined") return
+    const ro = new ResizeObserver(([entry]) => {
+      const r = entry.contentRect
+      setSize((prev) => (prev.w === r.width && prev.h === r.height ? prev : { w: r.width, h: r.height }))
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
 
-  if (node.type === "component") {
-    const def = getDef(node.kind)
-    const quick = def?.controls.filter((c) => c.quick && c.type !== "text").slice(0, 3) ?? []
-    if (!quick.length) return null
-    return (
-      <div
-        className="absolute z-20 flex items-center gap-3 rounded-lg border bg-background px-2.5 py-1.5 shadow-md"
-        style={style}
-        onPointerDown={(e) => e.stopPropagation()}
-      >
-        {quick.map((c) => (
-          <VariantControl key={c.key} node={node as ComponentNode} control={c} compact />
-        ))}
-      </div>
-    )
+  const bounds = unionBounds(selectedNodes)
+  if (!enabled || editingId || busy || !bounds) return null
+
+  const boxLeft = bounds.x * viewport.zoom + viewport.x
+  const boxTop = bounds.y * viewport.zoom + viewport.y
+  const boxBottom = (bounds.y + bounds.h) * viewport.zoom + viewport.y
+  const boxRight = (bounds.x + bounds.w) * viewport.zoom + viewport.x
+
+  const vw = typeof window === "undefined" ? 1280 : window.innerWidth
+  const vh = typeof window === "undefined" ? 800 : window.innerHeight
+  // a selection scrolled entirely off screen shouldn't leave its controls
+  // pinned to the edge with nothing to point at
+  if (boxRight < 0 || boxLeft > vw || boxBottom < 0 || boxTop > vh) return null
+
+  const gap = 10
+  const above = boxTop - size.h - gap
+  const style = {
+    left: Math.min(Math.max(boxLeft, 8), Math.max(8, vw - size.w - 8)),
+    // flip below when there's no room above
+    top: above >= 8 ? above : Math.min(boxBottom + gap, vh - size.h - 8),
   }
 
-  if (node.type === "shape" || node.type === "arrow") {
-    const isShape = node.type === "shape"
-    const checked = isShape ? node.fill : node.head
-    return (
-      <div
-        className="absolute z-20 flex items-center gap-2 rounded-lg border bg-background px-2.5 py-1.5 shadow-md"
-        style={style}
-        onPointerDown={(e) => e.stopPropagation()}
-      >
-        <Label className="text-xs font-normal text-muted-foreground">{isShape ? "Fill" : "Arrowhead"}</Label>
-        <Switch
-          checked={checked}
-          className="scale-90"
-          onCheckedChange={(on) => {
-            const s = st()
-            s.checkpoint()
-            s.updateNode(node.id, (isShape ? { fill: on } : { head: on }) as Partial<SquigNode>)
-          }}
-        />
-      </div>
-    )
+  const components = selectedNodes.filter((n): n is ComponentNode => n.type === "component")
+  const shapes = selectedNodes.filter((n): n is ShapeNode => n.type === "shape")
+  const arrows = selectedNodes.filter((n): n is ArrowNode => n.type === "arrow")
+
+  const quick =
+    components.length === selectedNodes.length
+      ? sharedControls(components)
+          .filter((c) => c.quick && c.type !== "text")
+          .slice(0, MAX_QUICK)
+      : []
+
+  const multi = selectedNodes.length > 1
+  const showFill = shapes.length === selectedNodes.length && shapes.length > 0
+  const showHead = arrows.length === selectedNodes.length && arrows.length > 0
+
+  if (!quick.length && !showFill && !showHead && !multi) return null
+
+  const patch = (make: (n: SquigNode) => Partial<SquigNode> | null) => {
+    const patches: Record<string, Partial<SquigNode>> = {}
+    for (const n of selectedNodes) {
+      const p = make(n)
+      if (p) patches[n.id] = p
+    }
+    if (Object.keys(patches).length) st().updateNodes(patches, { checkpoint: true })
   }
 
-  return null
+  return (
+    <div
+      ref={ref}
+      data-squig-chrome
+      className="absolute z-20 flex items-center gap-3 rounded-lg border bg-background px-2.5 py-1.5 shadow-md"
+      style={style}
+      onPointerDown={(e) => e.stopPropagation()}
+    >
+      {multi && <AlignRow count={selectedNodes.length} />}
+      {multi && (quick.length > 0 || showFill || showHead) && <span className="h-4 w-px bg-border" />}
+
+      {quick.map((c) => (
+        <VariantControl key={c.key} nodes={components} control={c} compact />
+      ))}
+
+      {showFill && (
+        <div className="flex items-center gap-2">
+          <Label className="text-xs font-normal text-muted-foreground">Fill</Label>
+          <MixedSwitch
+            ariaLabel="Scribble fill"
+            shared={shared(shapes.map((n) => n.fill))}
+            onChange={(on) => patch((n) => (n.type === "shape" ? ({ fill: on } as Partial<SquigNode>) : null))}
+          />
+        </div>
+      )}
+
+      {showHead && (
+        <div className="flex items-center gap-2">
+          <Label className="text-xs font-normal text-muted-foreground">Arrowhead</Label>
+          <MixedSwitch
+            ariaLabel="Arrowhead"
+            shared={shared(arrows.map((n) => n.head))}
+            onChange={(on) => patch((n) => (n.type === "arrow" ? ({ head: on } as Partial<SquigNode>) : null))}
+          />
+        </div>
+      )}
+    </div>
+  )
 }

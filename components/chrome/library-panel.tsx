@@ -71,6 +71,7 @@ function Panel({ panel }: { panel: Exclude<PanelKind, null> }) {
 
   return (
     <div
+      data-squig-chrome
       className="absolute top-1/2 left-16 z-30 flex max-h-[82vh] w-[300px] -translate-y-1/2 flex-col overflow-hidden rounded-xl border bg-background shadow-lg"
       onPointerDown={(e) => e.stopPropagation()}
     >

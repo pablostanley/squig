@@ -49,6 +49,7 @@ export function TopCorner() {
 
   return (
     <div
+      data-squig-chrome
       className="absolute top-4 left-4 z-30 flex items-center gap-1 rounded-xl border bg-background py-1 pr-3 pl-1.5 shadow-md"
       onPointerDown={(e) => e.stopPropagation()}
     >
@@ -181,6 +182,7 @@ export function ZoomPill() {
 
   return (
     <div
+      data-squig-chrome
       className="absolute bottom-4 left-4 z-30 flex items-center gap-0.5 rounded-xl border bg-background px-1 py-0.5 shadow-md"
       onPointerDown={(e) => e.stopPropagation()}
     >
@@ -218,6 +220,7 @@ export function CommandHint() {
       type="button"
       onPointerDown={(e) => e.stopPropagation()}
       onClick={() => st().setCommandOpen(true)}
+      data-squig-chrome
       className="absolute bottom-4 left-1/2 z-30 flex -translate-x-1/2 items-center gap-2 rounded-full border bg-background px-3.5 py-1.5 text-xs text-muted-foreground shadow-md hover:text-foreground"
     >
       search everything

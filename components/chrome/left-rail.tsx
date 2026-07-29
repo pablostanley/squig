@@ -64,7 +64,10 @@ export function LeftRail() {
 
   return (
     <TooltipProvider>
-      <div className="absolute top-1/2 left-3 z-30 flex -translate-y-1/2 flex-col gap-1 rounded-xl border bg-background p-1.5 shadow-md">
+      <div
+        data-squig-chrome
+        className="absolute top-1/2 left-3 z-30 flex -translate-y-1/2 flex-col gap-1 rounded-xl border bg-background p-1.5 shadow-md"
+      >
         <RailButton
           active={tool === "select" && !panel}
           label="Select"
