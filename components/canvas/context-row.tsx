@@ -37,11 +37,11 @@ export function ContextRow({
 
   const [size, setSize] = useState({ w: 0, h: 36 })
 
-  // The row's own size decides whether it fits above the selection and whether
-  // it needs pulling in from the edge, so it has to be measured — the control
-  // set changes with what's selected. A ref callback rather than an effect,
-  // because this component returns null when nothing is selected: a mount-time
-  // effect would run once, with no element, and never observe anything.
+  // The row's own size decides whether it fits above the selection and how far
+  // to pull it back to stay centred, so it has to be measured — the control set
+  // changes with what's selected. A ref callback rather than an effect, because
+  // this component returns null when nothing is selected: a mount-time effect
+  // would run once, with no element, and never observe anything.
   const measure = useCallback((el: HTMLDivElement | null) => {
     if (!el || typeof ResizeObserver === "undefined") return
     // always the BORDER box: the placement maths below subtracts this from the
@@ -73,8 +73,10 @@ export function ContextRow({
 
   const gap = 10
   const above = boxTop - size.h - gap
+  // centred on the selection, then clamped so it can't run off either edge
+  const centred = (boxLeft + boxRight) / 2 - size.w / 2
   const style = {
-    left: Math.min(Math.max(boxLeft, 8), Math.max(8, vw - size.w - 8)),
+    left: Math.min(Math.max(centred, 8), Math.max(8, vw - size.w - 8)),
     // flip below when there's no room above
     top: above >= 8 ? above : Math.min(boxBottom + gap, vh - size.h - 8),
   }

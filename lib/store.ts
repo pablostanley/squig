@@ -53,6 +53,8 @@ interface SquigState {
   clipboard: SquigNode[]
   /** how many times the current clipboard has been pasted, for cascade offset */
   pasteStep: number
+  /** the floating file name is in its editable state */
+  renamingFile: boolean
 
   past: DocSnapshot[]
   future: DocSnapshot[]
@@ -70,6 +72,7 @@ interface SquigState {
   setSelection: (ids: string[]) => void
   setCommandOpen: (open: boolean) => void
   setContextMenu: (m: ContextMenuState | null) => void
+  setRenamingFile: (on: boolean) => void
 
   /** snapshot current doc onto the undo stack (call once at gesture start) */
   checkpoint: () => void
@@ -197,6 +200,7 @@ export const useSquig = create<SquigState>((set, get) => ({
   contextMenu: null,
   clipboard: [],
   pasteStep: 0,
+  renamingFile: false,
   past: [],
   future: [],
 
@@ -239,6 +243,7 @@ export const useSquig = create<SquigState>((set, get) => ({
   },
   setCommandOpen: (open) => set({ commandOpen: open, contextMenu: null, panel: open ? null : get().panel }),
   setContextMenu: (m) => set({ contextMenu: m }),
+  setRenamingFile: (on) => set({ renamingFile: on }),
 
   checkpoint: () => {
     set((s) => {
@@ -722,6 +727,7 @@ export const useSquig = create<SquigState>((set, get) => ({
       selection: [],
       editingId: null,
       viewport: { x: 0, y: 0, zoom: 1 },
+      renamingFile: false,
       past: [],
       future: [],
     })
@@ -744,6 +750,7 @@ export const useSquig = create<SquigState>((set, get) => ({
         order: clean.order,
         selection: [],
         editingId: null,
+        renamingFile: false,
         past: [],
         future: [],
       })

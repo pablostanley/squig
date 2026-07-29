@@ -8,6 +8,7 @@ import { LeftRail } from "@/components/chrome/left-rail"
 import { LibraryPanel } from "@/components/chrome/library-panel"
 import { Inspector } from "@/components/chrome/inspector"
 import { TopCorner, ZoomPill, CommandHint } from "@/components/chrome/top-corner"
+import { FileName } from "@/components/chrome/file-name"
 import { CommandPalette } from "@/components/chrome/command-palette"
 import { CanvasContextMenu } from "@/components/chrome/context-menu"
 
@@ -34,6 +35,7 @@ export default function Home() {
       <SketchDefs />
       <Canvas />
       <TopCorner />
+      <FileName />
       <LeftRail />
       <LibraryPanel />
       <Inspector />
