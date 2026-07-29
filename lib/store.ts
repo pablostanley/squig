@@ -2,9 +2,10 @@
 
 import { create } from "zustand"
 import { nanoid } from "nanoid"
-import type { SquigNode, Tool, Viewport, ShapeKind } from "./types"
-import { screenToWorld } from "./types"
+import type { ComponentNode, SquigNode, TextNode, Tool, Viewport, ShapeKind } from "./types"
+import { screenToWorld, unionBox } from "./types"
 import { getDef } from "./library/registry"
+import { breakApart } from "./library/break-apart"
 import { applyTheme, DEFAULT_FONT, DEFAULT_THEME, type FontMode, type ThemeName } from "./theme"
 
 // ---------------------------------------------------------------------------
@@ -45,6 +46,15 @@ interface SquigState {
   contextMenu: ContextMenuState | null
   /** the floating file name is in its editable state */
   renamingFile: boolean
+  /** the arrow tool draws a head — L is a plain line, ⇧L an arrow */
+  arrowHead: boolean
+  /** ⌘\ — everything but the canvas gets out of the way */
+  uiHidden: boolean
+  shortcutsOpen: boolean
+  /** ⌘K over selected text opens the link field instead of the palette */
+  linkOpen: boolean
+  /** private clipboard — ⌘C/⌘X/⌘V never touch the system one */
+  clipboard: SquigNode[]
 
   past: DocSnapshot[]
   future: DocSnapshot[]
@@ -63,6 +73,10 @@ interface SquigState {
   setCommandOpen: (open: boolean) => void
   setContextMenu: (m: ContextMenuState | null) => void
   setRenamingFile: (on: boolean) => void
+  setArrowHead: (on: boolean) => void
+  setUiHidden: (on: boolean) => void
+  setShortcutsOpen: (on: boolean) => void
+  setLinkOpen: (on: boolean) => void
 
   /** snapshot current doc onto the undo stack (call once at gesture start) */
   checkpoint: () => void
@@ -72,13 +86,36 @@ interface SquigState {
   updateNodes: (patches: Record<string, Partial<SquigNode>>) => void
   removeNodes: (ids: string[]) => void
   deleteSelected: () => void
-  duplicateSelected: () => void
+  /** clone the selection and select the clones; returns the new ids */
+  duplicateSelected: (offset?: number) => string[]
   bringToFront: (ids: string[]) => void
   sendToBack: (ids: string[]) => void
+  bringForward: (ids: string[]) => void
+  sendBackward: (ids: string[]) => void
   undo: () => void
   redo: () => void
   hydrate: () => void
   clearCanvas: () => void
+
+  /** grow a set of ids to whole groups — what a click on a member selects */
+  expandSelection: (ids: string[]) => string[]
+  groupSelected: () => void
+  /** ⇧⌘G — peels one group off, or detaches instances when nothing is grouped */
+  ungroupSelected: () => void
+  detachSelected: () => void
+  flipSelected: (axis: "x" | "y") => void
+  toggleTextStyle: (style: "bold" | "italic" | "underline") => void
+  setLinkOnSelection: (url: string) => void
+
+  copySelected: () => void
+  cutSelected: () => void
+  /** paste at a world point, or nudged off the original when none is given */
+  pasteClipboard: (at?: [number, number]) => void
+
+  zoomBy: (factor: number, center?: [number, number]) => void
+  zoomTo100: () => void
+  zoomToFit: () => void
+  zoomToSelection: () => void
 
   /** drop a library item at the middle of what the user is looking at */
   insertComponent: (kind: string) => void
@@ -90,9 +127,74 @@ interface SquigState {
 
 const STORAGE_KEY = "squig:doc:v1"
 const MAX_HISTORY = 100
+const MIN_ZOOM = 0.1
+const MAX_ZOOM = 4
+/** breathing room around a zoom-to-fit, in screen px */
+const FIT_PADDING = 96
 
 function snapshot(s: Pick<SquigState, "nodes" | "order">): DocSnapshot {
   return structuredClone({ nodes: s.nodes, order: s.order })
+}
+
+const freshSeed = () => Math.floor(Math.random() * 2 ** 31)
+
+/**
+ * Copy nodes for duplicate / paste.
+ *
+ * Group ids are remapped consistently across the batch, so copying a group
+ * gives you a second, independent group rather than two halves of the first.
+ */
+function cloneNodes(list: SquigNode[], dx: number, dy: number): SquigNode[] {
+  const gmap = new Map<string, string>()
+  return list.map((n) => {
+    const c = structuredClone(n)
+    c.id = nanoid(8)
+    c.x = n.x + dx
+    c.y = n.y + dy
+    c.seed = freshSeed()
+    if (c.groupIds?.length) {
+      c.groupIds = c.groupIds.map((g) => {
+        const mapped = gmap.get(g) ?? nanoid(8)
+        gmap.set(g, mapped)
+        return mapped
+      })
+    }
+    return c
+  })
+}
+
+/** Frame a set of nodes in the window, with a margin so nothing kisses an edge. */
+function fitBox(set: (partial: { viewport: Viewport }) => void, list: SquigNode[]) {
+  const box = unionBox(list)
+  if (!box) return
+  const vw = window.innerWidth
+  const vh = window.innerHeight
+  const bw = Math.max(box.maxX - box.minX, 1)
+  const bh = Math.max(box.maxY - box.minY, 1)
+  const zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.min((vw - FIT_PADDING * 2) / bw, (vh - FIT_PADDING * 2) / bh)))
+  set({
+    viewport: {
+      zoom,
+      x: vw / 2 - (box.minX + bw / 2) * zoom,
+      y: vh / 2 - (box.minY + bh / 2) * zoom,
+    },
+  })
+}
+
+/** Move ids one slot along `order`, without jumping over each other. */
+function stepOrder(order: string[], ids: string[], dir: 1 | -1): string[] {
+  const out = [...order]
+  const sel = new Set(ids)
+  if (dir === 1) {
+    for (let i = out.length - 2; i >= 0; i--) {
+      if (sel.has(out[i]) && !sel.has(out[i + 1])) [out[i], out[i + 1]] = [out[i + 1], out[i]]
+    }
+  } else {
+    for (let i = 1; i < out.length; i++) {
+      if (sel.has(out[i]) && !sel.has(out[i - 1])) [out[i], out[i - 1]] = [out[i - 1], out[i]]
+    }
+  }
+  return out
 }
 
 let saveTimer: ReturnType<typeof setTimeout> | null = null
@@ -126,6 +228,11 @@ export const useSquig = create<SquigState>((set, get) => ({
   commandOpen: false,
   contextMenu: null,
   renamingFile: false,
+  arrowHead: true,
+  uiHidden: false,
+  shortcutsOpen: false,
+  linkOpen: false,
+  clipboard: [],
   past: [],
   future: [],
 
@@ -154,9 +261,14 @@ export const useSquig = create<SquigState>((set, get) => ({
   },
   setViewport: (v) => set({ viewport: v }),
   setSelection: (ids) => set({ selection: ids }),
-  setCommandOpen: (open) => set({ commandOpen: open, contextMenu: null, panel: open ? null : get().panel }),
+  setCommandOpen: (open) =>
+    set({ commandOpen: open, contextMenu: null, shortcutsOpen: false, panel: open ? null : get().panel }),
   setContextMenu: (m) => set({ contextMenu: m }),
   setRenamingFile: (on) => set({ renamingFile: on }),
+  setArrowHead: (on) => set({ arrowHead: on }),
+  setUiHidden: (on) => set({ uiHidden: on }),
+  setShortcutsOpen: (on) => set({ shortcutsOpen: on, commandOpen: false, contextMenu: null }),
+  setLinkOpen: (on) => set({ linkOpen: on, contextMenu: null }),
 
   checkpoint: () => {
     set((s) => ({ past: [...s.past.slice(-MAX_HISTORY + 1), snapshot(s)], future: [] }))
@@ -231,36 +343,43 @@ export const useSquig = create<SquigState>((set, get) => ({
 
   deleteSelected: () => get().removeNodes(get().selection),
 
-  duplicateSelected: () => {
-    const { selection, nodes } = get()
-    if (!selection.length) return
+  duplicateSelected: (offset = 16) => {
+    const { selection, nodes, order } = get()
+    const src = order.filter((id) => selection.includes(id)).map((id) => nodes[id])
+    if (!src.length) return []
     get().checkpoint()
-    const clones: SquigNode[] = []
-    for (const id of selection) {
-      const n = nodes[id]
-      if (!n) continue
-      clones.push({
-        ...structuredClone(n),
-        id: nanoid(8),
-        x: n.x + 16,
-        y: n.y + 16,
-        seed: Math.floor(Math.random() * 2 ** 31),
-      })
-    }
+    const clones = cloneNodes(src, offset, offset)
     set((s) => ({
       nodes: { ...s.nodes, ...Object.fromEntries(clones.map((c) => [c.id, c])) },
       order: [...s.order, ...clones.map((c) => c.id)],
       selection: clones.map((c) => c.id),
     }))
     scheduleSave(get)
+    return clones.map((c) => c.id)
   },
 
   bringToFront: (ids) => {
+    if (!ids.length) return
+    get().checkpoint()
     set((s) => ({ order: [...s.order.filter((i) => !ids.includes(i)), ...s.order.filter((i) => ids.includes(i))] }))
     scheduleSave(get)
   },
   sendToBack: (ids) => {
+    if (!ids.length) return
+    get().checkpoint()
     set((s) => ({ order: [...s.order.filter((i) => ids.includes(i)), ...s.order.filter((i) => !ids.includes(i))] }))
+    scheduleSave(get)
+  },
+  bringForward: (ids) => {
+    if (!ids.length) return
+    get().checkpoint()
+    set((s) => ({ order: stepOrder(s.order, ids, 1) }))
+    scheduleSave(get)
+  },
+  sendBackward: (ids) => {
+    if (!ids.length) return
+    get().checkpoint()
+    set((s) => ({ order: stepOrder(s.order, ids, -1) }))
     scheduleSave(get)
   },
 
@@ -328,6 +447,198 @@ export const useSquig = create<SquigState>((set, get) => ({
     scheduleSave(get)
   },
 
+  // -- groups ---------------------------------------------------------------
+
+  expandSelection: (ids) => {
+    const { nodes, order } = get()
+    const gids = new Set<string>()
+    for (const id of ids) {
+      const g = nodes[id]?.groupIds?.[0]
+      if (g) gids.add(g)
+    }
+    if (!gids.size) return ids
+    const out = new Set(ids)
+    for (const id of order) {
+      const g = nodes[id]?.groupIds?.[0]
+      if (g && gids.has(g)) out.add(id)
+    }
+    return order.filter((id) => out.has(id))
+  },
+
+  groupSelected: () => {
+    const { selection, nodes, order } = get()
+    const ids = order.filter((id) => selection.includes(id) && nodes[id])
+    if (ids.length < 2) return
+    get().checkpoint()
+    const gid = nanoid(8)
+    set((s) => {
+      const map = { ...s.nodes }
+      for (const id of ids) {
+        const n = map[id]
+        map[id] = { ...n, groupIds: [gid, ...(n.groupIds ?? [])] } as SquigNode
+      }
+      // collapse the members together at the topmost one, so nothing else
+      // can sit inside the group's z-range and look like it belongs
+      const top = s.order.lastIndexOf(ids[ids.length - 1])
+      const before = s.order.slice(0, top + 1).filter((id) => !ids.includes(id))
+      const after = s.order.slice(top + 1).filter((id) => !ids.includes(id))
+      return { nodes: map, order: [...before, ...ids, ...after], selection: ids }
+    })
+    scheduleSave(get)
+  },
+
+  ungroupSelected: () => {
+    const { selection, nodes } = get()
+    const sel = selection.map((id) => nodes[id]).filter(Boolean) as SquigNode[]
+    if (!sel.length) return
+    const gids = new Set(sel.map((n) => n.groupIds?.[0]).filter(Boolean) as string[])
+
+    // nothing grouped? then ⇧⌘G means the other kind of coming apart
+    if (!gids.size) {
+      get().detachSelected()
+      return
+    }
+
+    get().checkpoint()
+    set((s) => {
+      const map = { ...s.nodes }
+      const freed: string[] = []
+      for (const id of s.order) {
+        const n = map[id]
+        const g = n?.groupIds?.[0]
+        if (!g || !gids.has(g)) continue
+        const rest = n.groupIds!.slice(1)
+        map[id] = { ...n, groupIds: rest.length ? rest : undefined } as SquigNode
+        freed.push(id)
+      }
+      return { nodes: map, selection: freed }
+    })
+    scheduleSave(get)
+  },
+
+  detachSelected: () => {
+    const { selection, nodes } = get()
+    const comps = selection.map((id) => nodes[id]).filter((n) => n?.type === "component") as ComponentNode[]
+    if (!comps.length) return
+    get().checkpoint()
+    set((s) => {
+      const map = { ...s.nodes }
+      let ord = [...s.order]
+      const picked: string[] = []
+      for (const c of comps) {
+        // a detached instance stays one thing you can drag — same as Figma
+        const gid = nanoid(8)
+        const pieces = breakApart(c).map((p) => ({ ...p, groupIds: [gid, ...(c.groupIds ?? [])] }))
+        if (!pieces.length) continue
+        for (const p of pieces) {
+          map[p.id] = p
+          picked.push(p.id)
+        }
+        const at = ord.indexOf(c.id)
+        ord = [...ord.slice(0, at), ...pieces.map((p) => p.id), ...ord.slice(at + 1)]
+        delete map[c.id]
+      }
+      return { nodes: map, order: ord, selection: picked }
+    })
+    scheduleSave(get)
+  },
+
+  flipSelected: (axis) => {
+    const { selection, nodes } = get()
+    const sel = selection.map((id) => nodes[id]).filter(Boolean) as SquigNode[]
+    if (!sel.length) return
+    const box = unionBox(sel)
+    if (!box) return
+    get().checkpoint()
+    const patches: Record<string, Partial<SquigNode>> = {}
+    for (const n of sel) {
+      patches[n.id] =
+        axis === "x"
+          ? { x: box.minX + box.maxX - (n.x + n.w), flipX: !n.flipX }
+          : { y: box.minY + box.maxY - (n.y + n.h), flipY: !n.flipY }
+    }
+    get().updateNodes(patches)
+  },
+
+  toggleTextStyle: (style) => {
+    const { selection, nodes } = get()
+    const texts = selection.map((id) => nodes[id]).filter((n) => n?.type === "text") as TextNode[]
+    if (!texts.length) return
+    get().checkpoint()
+    // mixed selection turns everything on first, like every text editor ever
+    const on = texts.some((n) => !n[style])
+    get().updateNodes(Object.fromEntries(texts.map((n) => [n.id, { [style]: on } as Partial<SquigNode>])))
+  },
+
+  setLinkOnSelection: (url) => {
+    const { selection, nodes } = get()
+    const texts = selection.map((id) => nodes[id]).filter((n) => n?.type === "text") as TextNode[]
+    if (!texts.length) return
+    get().checkpoint()
+    const trimmed = url.trim()
+    get().updateNodes(
+      Object.fromEntries(texts.map((n) => [n.id, { link: trimmed || undefined } as Partial<SquigNode>]))
+    )
+  },
+
+  // -- clipboard ------------------------------------------------------------
+
+  copySelected: () => {
+    const { selection, nodes, order } = get()
+    const sel = order.filter((id) => selection.includes(id)).map((id) => nodes[id])
+    if (!sel.length) return
+    set({ clipboard: structuredClone(sel) })
+  },
+
+  cutSelected: () => {
+    get().copySelected()
+    get().deleteSelected()
+  },
+
+  pasteClipboard: (at) => {
+    const { clipboard } = get()
+    if (!clipboard.length) return
+    const box = unionBox(clipboard)!
+    const [dx, dy] = at ? [at[0] - box.minX, at[1] - box.minY] : [16, 16]
+    get().checkpoint()
+    const clones = cloneNodes(clipboard, dx, dy)
+    set((s) => ({
+      nodes: { ...s.nodes, ...Object.fromEntries(clones.map((c) => [c.id, c])) },
+      order: [...s.order, ...clones.map((c) => c.id)],
+      selection: clones.map((c) => c.id),
+    }))
+    scheduleSave(get)
+  },
+
+  // -- zoom -----------------------------------------------------------------
+
+  zoomBy: (factor, center) => {
+    const v = get().viewport
+    const [cx, cy] = center ?? [window.innerWidth / 2, window.innerHeight / 2]
+    const zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, v.zoom * factor))
+    const k = zoom / v.zoom
+    set({ viewport: { zoom, x: cx - (cx - v.x) * k, y: cy - (cy - v.y) * k } })
+  },
+
+  zoomTo100: () => {
+    const v = get().viewport
+    const [cx, cy] = [window.innerWidth / 2, window.innerHeight / 2]
+    const k = 1 / v.zoom
+    set({ viewport: { zoom: 1, x: cx - (cx - v.x) * k, y: cy - (cy - v.y) * k } })
+  },
+
+  zoomToFit: () => {
+    const { nodes, order } = get()
+    fitBox(set, order.map((id) => nodes[id]).filter(Boolean))
+  },
+
+  zoomToSelection: () => {
+    const { nodes, selection } = get()
+    const sel = selection.map((id) => nodes[id]).filter(Boolean)
+    if (!sel.length) return get().zoomToFit()
+    fitBox(set, sel)
+  },
+
   insertComponent: (kind) => {
     const def = getDef(kind)
     if (!def) return
@@ -376,6 +687,7 @@ export const useSquig = create<SquigState>((set, get) => ({
       selection: [],
       viewport: { x: 0, y: 0, zoom: 1 },
       renamingFile: false,
+      linkOpen: false,
       past: [],
       future: [],
     })
@@ -397,6 +709,7 @@ export const useSquig = create<SquigState>((set, get) => ({
         order: doc.order,
         selection: [],
         renamingFile: false,
+        linkOpen: false,
         past: [],
         future: [],
       })

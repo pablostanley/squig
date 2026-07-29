@@ -13,6 +13,7 @@ import {
   PencilSimpleIcon,
   TextTIcon,
   ArrowUpRightIcon,
+  LineSegmentIcon,
   type Icon as PhosphorIcon,
 } from "@phosphor-icons/react"
 import { useSquig } from "@/lib/store"
@@ -60,6 +61,7 @@ export function LeftRail() {
   const tool = useSquig((s) => s.tool)
   const panel = useSquig((s) => s.panel)
   const shapeKind = useSquig((s) => s.shapeKind)
+  const arrowHead = useSquig((s) => s.arrowHead)
   const st = useSquig.getState
 
   return (
@@ -116,11 +118,24 @@ export function LeftRail() {
         />
         <RailButton active={tool === "text"} label="Text" hotkey="T" icon={TextTIcon} onClick={() => st().setTool("text")} />
         <RailButton
-          active={tool === "arrow"}
+          active={tool === "arrow" && !arrowHead}
+          label="Line"
+          hotkey="L"
+          icon={LineSegmentIcon}
+          onClick={() => {
+            st().setArrowHead(false)
+            st().setTool("arrow")
+          }}
+        />
+        <RailButton
+          active={tool === "arrow" && arrowHead}
           label="Arrow"
-          hotkey="A"
+          hotkey="⇧L"
           icon={ArrowUpRightIcon}
-          onClick={() => st().setTool("arrow")}
+          onClick={() => {
+            st().setArrowHead(true)
+            st().setTool("arrow")
+          }}
         />
       </div>
     </TooltipProvider>

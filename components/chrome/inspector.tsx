@@ -6,9 +6,9 @@
 // ---------------------------------------------------------------------------
 
 import { useSquig } from "@/lib/store"
-import type { SquigNode, ComponentNode } from "@/lib/types"
+import type { SquigNode } from "@/lib/types"
 import { getDef } from "@/lib/library/registry"
-import { breakApart } from "@/lib/library/break-apart"
+import { kbd } from "@/lib/shortcuts"
 import { VariantControl } from "./variant-controls"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -16,7 +16,7 @@ import { Switch } from "@/components/ui/switch"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Unlink, Trash2 } from "lucide-react"
+import { Unlink, Trash2, Group, Ungroup, Link as LinkIcon } from "lucide-react"
 
 function NumberField({ label, value, onCommit }: { label: string; value: number; onCommit: (n: number) => void }) {
   return (
@@ -43,6 +43,8 @@ export function Inspector() {
 
   const selected = selection.map((id) => nodes[id]).filter(Boolean) as SquigNode[]
   const one = selected.length === 1 ? selected[0] : null
+  const grouped = selected.some((n) => n.groupIds?.length)
+  const hasComponent = selected.some((n) => n.type === "component")
 
   return (
     <div
@@ -71,7 +73,15 @@ export function Inspector() {
           )}
 
           {selected.length > 1 && (
-            <p className="text-xs text-muted-foreground">{selected.length} things selected — drag to move, arrows to nudge.</p>
+            <p className="text-xs text-muted-foreground">
+              {selected.length} things selected — drag to move, {kbd("mod+g")} to group.
+            </p>
+          )}
+
+          {grouped && (
+            <p className="text-xs text-muted-foreground">
+              grouped — {kbd("mod+click")} to reach one piece, {kbd("mod+shift+g")} to undo the grouping.
+            </p>
           )}
 
           {one && (
@@ -143,6 +153,45 @@ export function Inspector() {
                       }}
                     />
                   </div>
+                  <div className="flex items-center gap-1">
+                    <StyleToggle
+                      label="Bold"
+                      hint={kbd("mod+b")}
+                      on={!!one.bold}
+                      onClick={() => st().toggleTextStyle("bold")}
+                    >
+                      <span className="font-bold">B</span>
+                    </StyleToggle>
+                    <StyleToggle
+                      label="Italic"
+                      hint={kbd("mod+i")}
+                      on={!!one.italic}
+                      onClick={() => st().toggleTextStyle("italic")}
+                    >
+                      <span className="font-serif italic">I</span>
+                    </StyleToggle>
+                    <StyleToggle
+                      label="Underline"
+                      hint={kbd("mod+u")}
+                      on={!!one.underline}
+                      onClick={() => st().toggleTextStyle("underline")}
+                    >
+                      <span className="underline">U</span>
+                    </StyleToggle>
+                    <StyleToggle
+                      label="Link"
+                      hint={kbd("mod+k")}
+                      on={!!one.link}
+                      onClick={() => st().setLinkOpen(true)}
+                    >
+                      <LinkIcon className="size-3.5" />
+                    </StyleToggle>
+                  </div>
+                  {one.link && (
+                    <p className="truncate text-[11px] text-muted-foreground" title={one.link}>
+                      → {one.link}
+                    </p>
+                  )}
                 </div>
               )}
             </>
@@ -151,19 +200,20 @@ export function Inspector() {
       </ScrollArea>
 
       {selected.length > 0 && (
-        <div className="flex shrink-0 gap-1.5 border-t p-2.5">
-          {one?.type === "component" && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-7 flex-1 text-xs"
-              onClick={() => {
-                const pieces = breakApart(one as ComponentNode)
-                st().removeNodes([one.id])
-                st().addNodes(pieces)
-              }}
-            >
-              <Unlink className="size-3" /> Break apart
+        <div className="flex shrink-0 flex-wrap gap-1.5 border-t p-2.5">
+          {selected.length > 1 && !grouped && (
+            <Button variant="outline" size="sm" className="h-7 flex-1 text-xs" onClick={() => st().groupSelected()}>
+              <Group className="size-3" /> Group
+            </Button>
+          )}
+          {grouped && (
+            <Button variant="outline" size="sm" className="h-7 flex-1 text-xs" onClick={() => st().ungroupSelected()}>
+              <Ungroup className="size-3" /> Ungroup
+            </Button>
+          )}
+          {hasComponent && (
+            <Button variant="outline" size="sm" className="h-7 flex-1 text-xs" onClick={() => st().detachSelected()}>
+              <Unlink className="size-3" /> Detach
             </Button>
           )}
           <Button
@@ -177,6 +227,36 @@ export function Inspector() {
         </div>
       )}
     </div>
+  )
+}
+
+/** One of the B / I / U / link squares under a text node. */
+function StyleToggle({
+  label,
+  hint,
+  on,
+  onClick,
+  children,
+}: {
+  label: string
+  hint: string
+  on: boolean
+  onClick: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      title={`${label} · ${hint}`}
+      aria-label={label}
+      aria-pressed={on}
+      onClick={onClick}
+      className={`flex size-7 items-center justify-center rounded-md border text-xs transition-colors ${
+        on ? "bg-foreground text-background" : "text-muted-foreground hover:bg-accent hover:text-foreground"
+      }`}
+    >
+      {children}
+    </button>
   )
 }
 
