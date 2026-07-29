@@ -3,7 +3,6 @@
 import { useEffect } from "react"
 import { useSquig } from "@/lib/store"
 import { Canvas } from "@/components/canvas/canvas"
-import { SketchDefs } from "@/components/canvas/sketch-defs"
 import { LeftRail } from "@/components/chrome/left-rail"
 import { LibraryPanel } from "@/components/chrome/library-panel"
 import { Inspector } from "@/components/chrome/inspector"
@@ -36,7 +35,6 @@ export default function Home() {
 
   return (
     <main className="relative h-full">
-      <SketchDefs />
       <Canvas />
       {/* ⌘\ clears the room — the canvas and what you've selected, nothing else */}
       {!uiHidden && (

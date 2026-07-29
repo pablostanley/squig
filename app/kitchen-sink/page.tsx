@@ -9,7 +9,6 @@
 import { useMemo, useState } from "react"
 import { ALL_DEFS, GROUPS, type ComponentDef, type Category } from "@/lib/library/registry"
 import { SketchPrims } from "@/components/canvas/sketch"
-import { SketchDefs } from "@/components/canvas/sketch-defs"
 
 function Cell({ def, scale }: { def: ComponentDef; scale: number }) {
   const w = Math.round(def.size.w * scale)
@@ -64,7 +63,6 @@ export default function KitchenSink() {
 
   return (
     <div className="min-h-screen bg-white p-8 font-sans">
-      <SketchDefs />
       <div className="sticky top-0 z-10 -mx-8 mb-6 flex items-center gap-4 border-b bg-white/90 px-8 py-3 backdrop-blur">
         <h1 className="text-lg font-bold tracking-tight">squig kitchen sink</h1>
         <span className="text-sm text-neutral-500">{total} defs</span>

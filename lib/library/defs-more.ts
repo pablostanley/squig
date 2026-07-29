@@ -31,7 +31,7 @@ const pick = (pool: string[], i: number): string => pool[((i % pool.length) + po
 
 const FAINT_FILL: PrimOpts = { fill: "solid", fillColor: "faint", stroke: "faint", strokeWidth: 0.8 }
 const PAPER_FILL: PrimOpts = { fill: "solid", fillColor: "paper" }
-const INK_FILL: PrimOpts = { fill: "hachure", fillColor: "ink" }
+const INK_FILL: PrimOpts = { fill: "shade", fillColor: "ink" }
 
 // ===========================================================================
 // Buttons
@@ -628,9 +628,9 @@ export const colorSwatchRowDef: ComponentDef = {
     const sel = clamp(Math.round(num(p, "selected", 2)), 0, n) - 1
     const ramp: PrimOpts[] = [
       { fill: "solid", fillColor: "ink" },
-      { fill: "hachure", fillColor: "ink" },
+      { fill: "shade", fillColor: "ink" },
       { fill: "solid", fillColor: "muted" },
-      { fill: "hachure", fillColor: "muted" },
+      { fill: "shade", fillColor: "muted" },
       { fill: "solid", fillColor: "faint" },
       { fill: "solid", fillColor: "paper" },
     ]
@@ -970,7 +970,7 @@ export const carouselDef: ComponentDef = {
     const dotsH = 20
     const thumbH = thumbs ? clamp(h * 0.2, 40, 62) : 0
     const frameH = Math.max(40, h - dotsH - thumbH - (thumbs ? 6 : 0))
-    const prims: Prim[] = [rect(0, 0, w, frameH)]
+    const prims: Prim[] = [rect(0, 0, w, frameH, { fill: "shade", fillColor: "faint" })]
     prims.push(...icon("image", w / 2, frameH / 2, clamp(Math.min(w, frameH) * 0.24, 20, 52), { stroke: "muted" }))
     if (bool(p, "arrows") && w > 120) {
       const ad = clamp(Math.min(frameH * 0.28, 34), 20, 34)
@@ -999,7 +999,7 @@ export const carouselDef: ComponentDef = {
       const tw = (w - tgap * (tn - 1)) / tn
       for (let i = 0; i < tn; i++) {
         const tx = i * (tw + tgap)
-        prims.push(rect(tx, ty, tw, thumbH - 6, i === active ? { strokeWidth: 2 } : { stroke: "faint" }))
+        prims.push(rect(tx, ty, tw, thumbH - 6, i === active ? { strokeWidth: 2, fill: "shade", fillColor: "faint" } : { fill: "shade", fillColor: "faint" }))
         if (Math.min(tw, thumbH - 6) > 30) {
           prims.push(...icon("image", tx + tw / 2, ty + (thumbH - 6) / 2, 16, { stroke: "faint" }))
         }
@@ -1598,7 +1598,7 @@ export const cardMediaDef: ComponentDef = {
     const pad = 14
     const prims: Prim[] = [rect(0, 0, w, h)]
     const imgH = clamp(h * 0.5, 40, Math.max(40, h - 74))
-    prims.push(rect(0, 0, w, imgH, { stroke: "faint" }))
+    prims.push(rect(0, 0, w, imgH, { fill: "shade", fillColor: "faint" }))
     prims.push(...icon("image", w / 2, imgH / 2, clamp(Math.min(w, imgH) * 0.24, 18, 46), { stroke: "muted" }))
     if (bool(p, "badge") && imgH > 40) {
       const bw = 56
@@ -1751,7 +1751,7 @@ export const cardProductDef: ComponentDef = {
     const pad = 14
     const prims: Prim[] = [rect(0, 0, w, h)]
     const imgH = clamp(h * 0.48, 40, Math.max(40, h - 92))
-    prims.push(rect(0, 0, w, imgH, { stroke: "faint" }))
+    prims.push(rect(0, 0, w, imgH, { fill: "shade", fillColor: "faint" }))
     prims.push(...icon("image", w / 2, imgH / 2, clamp(Math.min(w, imgH) * 0.24, 18, 46), { stroke: "muted" }))
     if (bool(p, "badge") && imgH > 40) {
       const bw = 46
@@ -1805,7 +1805,7 @@ export const cardBlogDef: ComponentDef = {
     const pad = clamp(w * 0.06, 14, 18)
     const prims: Prim[] = [rect(0, 0, w, h)]
     const imgH = clamp(h * 0.38, 40, Math.max(40, h - 130))
-    prims.push(rect(0, 0, w, imgH, { stroke: "faint" }))
+    prims.push(rect(0, 0, w, imgH, { fill: "shade", fillColor: "faint" }))
     prims.push(...icon("image", w / 2, imgH / 2, clamp(Math.min(w, imgH) * 0.26, 18, 44), { stroke: "muted" }))
     let y = imgH + pad + 8
     const tw = Math.min(w - pad * 2, advance(str(p, "tag", "Design"), 10) + 18)
@@ -2400,7 +2400,7 @@ export const videoPlayerDef: ComponentDef = {
     const controls = bool(p, "controls") && h > 90
     const cH = controls ? 36 : 0
     const stageH = h - cH
-    const prims: Prim[] = [rect(0, 0, w, h)]
+    const prims: Prim[] = [rect(0, 0, w, h), rect(0, 0, w, stageH, { fill: "shade", fillColor: "faint" })]
     const d = clamp(Math.min(w, stageH) * 0.26, 28, 62)
     prims.push(ellipse(w / 2 - d / 2, stageH / 2 - d / 2, d, d, PAPER_FILL))
     prims.push(ellipse(w / 2 - d / 2, stageH / 2 - d / 2, d, d))
@@ -2506,7 +2506,7 @@ export const imageGridDef: ComponentDef = {
       const bh = big ? ch * 2 + gap : ch
       const x = c * (cw + gap)
       const y = r * (ch + gap)
-      prims.push(rect(x, y, bw, bh, { stroke: "faint" }))
+      prims.push(rect(x, y, bw, bh, { fill: "shade", fillColor: "faint" }))
       const m = Math.min(bw, bh)
       if (m > 30) prims.push(...icon("image", x + bw / 2, y + bh / 2, clamp(m * 0.3, 14, 44), { stroke: "muted" }))
     }

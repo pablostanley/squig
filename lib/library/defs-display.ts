@@ -34,7 +34,7 @@ export const cardDef: ComponentDef = {
     let y = 0
     if (bool(p, "image")) {
       const imgH = Math.min(h * 0.4, 110)
-      prims.push(rect(0, 0, w, imgH, { stroke: "faint", fill: "hachure", fillColor: "faint", texture: "diagonal" }))
+      prims.push(rect(0, 0, w, imgH, { fill: "shade", fillColor: "faint" }))
       prims.push(...icon("image", w / 2, imgH / 2, Math.min(imgH, 44), { stroke: "muted" }))
       y = imgH
     }
@@ -50,7 +50,7 @@ export const cardDef: ComponentDef = {
     if (bool(p, "footer")) {
       const fy = h - 46
       prims.push(line(0, fy, w, fy, { stroke: "faint" }))
-      prims.push(rect(w - 96, fy + 9, 80, 28, { fill: "hachure", fillColor: "ink" }))
+      prims.push(rect(w - 96, fy + 9, 80, 28, { fill: "shade", fillColor: "ink" }))
       prims.push(text(w - 56, fy + 27, "Go", 13, { align: "center" }))
       prims.push(text(16, fy + 27, "Nope", 13, { color: "muted" }))
     }
@@ -75,7 +75,7 @@ export const imageDef: ComponentDef = {
   render(p, w, h) {
     const capH = bool(p, "caption") ? 22 : 0
     const ih = h - capH
-    const prims: Prim[] = [rect(0, 0, w, ih, { fill: "hachure", fillColor: "faint", texture: "diagonal" })]
+    const prims: Prim[] = [rect(0, 0, w, ih, { fill: "shade", fillColor: "faint" })]
     if (str(p, "style") === "crossed") {
       prims.push(line(0, 0, w, ih, { stroke: "faint" }), line(w, 0, 0, ih, { stroke: "faint" }))
     } else {
@@ -133,7 +133,7 @@ export const paragraphDef: ComponentDef = {
     const prims: Prim[] = []
     let y = 6
     if (bool(p, "heading")) {
-      prims.push(rect(0, 0, w * 0.55, 16, { fill: "hachure", fillColor: "muted", stroke: "faint", strokeWidth: 1 }))
+      prims.push(rect(0, 0, w * 0.55, 16, { fill: "shade", fillColor: "muted", stroke: "faint", strokeWidth: 1 }))
       y = 34
     }
     const n = Math.max(1, Math.min(12, num(p, "lines", 4)))
@@ -166,7 +166,7 @@ export const tableDef: ComponentDef = {
     const rowH = h / totalRows
     const colW = w / cols
     const prims: Prim[] = [rect(0, 0, w, h)]
-    if (header) prims.push(rect(1, 1, w - 2, rowH - 2, { fill: "hachure", fillColor: "faint", strokeWidth: 0.8, stroke: "faint" }))
+    if (header) prims.push(rect(1, 1, w - 2, rowH - 2, { fill: "shade", fillColor: "faint", strokeWidth: 0.8, stroke: "faint" }))
     for (let r = 1; r < totalRows; r++) prims.push(line(0, r * rowH, w, r * rowH, { stroke: "faint" }))
     for (let c = 1; c < cols; c++) prims.push(line(c * colW, 0, c * colW, h, { stroke: "faint" }))
     // cell squiggles
@@ -243,7 +243,7 @@ export const dialogDef: ComponentDef = {
     if (bool(p, "close")) prims.push(...icon("x", w - 22, 24, 14, { stroke: "muted" }))
     prims.push(...loremLines(20, 62, w - 40, 2, 16))
     const by = h - 48
-    prims.push(rect(w - 110, by, 90, 32, { fill: "hachure", fillColor: "ink" }))
+    prims.push(rect(w - 110, by, 90, 32, { fill: "shade", fillColor: "ink" }))
     prims.push(text(w - 65, by + 21, bool(p, "danger") ? "Delete it" : "Confirm", 13, { align: "center" }))
     prims.push(rect(w - 210, by, 90, 32))
     prims.push(text(w - 165, by + 21, "Cancel", 13, { align: "center" }))
@@ -351,7 +351,7 @@ export const tooltipDef: ComponentDef = {
   render(p, w, h) {
     const bh = h - 10
     return [
-      rect(0, 0, w, bh, { fill: "hachure", fillColor: "ink" }),
+      rect(0, 0, w, bh, { fill: "shade", fillColor: "ink" }),
       poly([[w / 2 - 7, bh], [w / 2, h], [w / 2 + 7, bh]], false),
       text(w / 2, bh / 2 + 5, truncate(str(p, "label", "Helpful hint"), 13, w - 12), 13, { align: "center" }),
     ]
@@ -417,7 +417,7 @@ export const paginationDef: ComponentDef = {
     x += cell + gap
     for (let i = 1; i <= pages; i++) {
       if (i === current) {
-        prims.push(rect(x, cy - cell / 2, cell, cell, { fill: "hachure", fillColor: "ink" }))
+        prims.push(rect(x, cy - cell / 2, cell, cell, { fill: "shade", fillColor: "ink" }))
       }
       prims.push(text(x + cell / 2, cy + 5, String(i), 13, { align: "center", color: i === current ? "ink" : "muted" }))
       x += cell + gap
@@ -445,7 +445,7 @@ export const chartDef: ComponentDef = {
     const prims: Prim[] = []
     let top = 0
     if (bool(p, "title")) {
-      prims.push(rect(0, 0, w * 0.4, 12, { fill: "hachure", fillColor: "muted", stroke: "faint", strokeWidth: 0.8 }))
+      prims.push(rect(0, 0, w * 0.4, 12, { fill: "shade", fillColor: "muted", stroke: "faint", strokeWidth: 0.8 }))
       top = 24
     }
     const ch = h - top
@@ -458,7 +458,7 @@ export const chartDef: ComponentDef = {
       prims.push(line(cx, cy, cx, cy - d / 2))
       prims.push(line(cx, cy, cx + d * 0.43, cy + d * 0.25))
       prims.push(line(cx, cy, cx - d * 0.48, cy + d * 0.12))
-      prims.push(poly([[cx, cy], [cx + d * 0.2, cy - d * 0.44]], false, { fill: "hachure" }))
+      prims.push(poly([[cx, cy], [cx + d * 0.2, cy - d * 0.44]], false, { fill: "shade" }))
       return prims
     }
     // axes
@@ -470,7 +470,7 @@ export const chartDef: ComponentDef = {
       const heights = [0.5, 0.8, 0.35, 0.65, 0.95]
       for (let i = 0; i < n; i++) {
         const bh = (ch - 30) * heights[i]
-        prims.push(rect(18 + i * (bw + 10), top + ch - 14 - bh, bw, bh, { fill: "hachure", fillColor: "ink", texture: "halftone" }))
+        prims.push(rect(18 + i * (bw + 10), top + ch - 14 - bh, bw, bh, { fill: "shade", fillColor: "ink" }))
       }
     } else {
       const pts: [number, number][] = [0.7, 0.45, 0.6, 0.3, 0.5, 0.15].map((v, i, arr) => [

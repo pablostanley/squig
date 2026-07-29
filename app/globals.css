@@ -57,6 +57,8 @@
   --sq-ink: #2438ff;
   --sq-muted: #6e7dff;
   --sq-faint: #bfc6ff;
+  --sq-shade: #edefff;
+  --sq-shade-strong: #d3d7ff;
   --sq-grid: #e6e1d3;
   --sq-select: #a200ff;
   --sq-font: var(--font-sketch);

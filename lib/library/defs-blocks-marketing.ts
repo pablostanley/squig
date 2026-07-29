@@ -789,7 +789,7 @@ export const pricingBlockDef: ComponentDef = {
       prims.push(rect(x, y0, cw, ch, isHi ? { strokeWidth: 2.2 } : {}))
       let y = y0 + 26
       if (isHi) {
-        prims.push(rect(x, y0, cw, 24, { fill: "hachure", fillColor: "ink" }))
+        prims.push(rect(x, y0, cw, 24, { fill: "shade", fillColor: "ink" }))
         prims.push(text(x + cw / 2, y0 + 17, "most popular", 11, { align: "center" }))
         y = y0 + 48
       }

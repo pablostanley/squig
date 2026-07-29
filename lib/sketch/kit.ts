@@ -18,20 +18,32 @@ export const INK: Record<InkColor, string> = {
   accent: "var(--sq-ink)",
 }
 
-/** Printed textures, in place of a flat tint. */
-export type Texture = "halftone" | "checker" | "dither" | "diagonal" | "grid" | "cross"
+/**
+ * Area fills come from a deliberately tiny ladder — paper, then two shades.
+ * A wireframe that needs a fourth tone is usually asking for hierarchy that
+ * layout or a label should be carrying instead.
+ */
+export const SHADE = {
+  shade: "var(--sq-shade)",
+  shadeStrong: "var(--sq-shade-strong)",
+} as const
 
 export interface PrimOpts {
+  /**
+   * Pen pressure, not colour — every line in a squig prints in the one ink.
+   * "ink" is a full stroke, "muted" an ordinary one, "faint" a hairline.
+   * If something needs to recede further than a hairline, give it a shaded
+   * fill; don't reach for a paler line, because there isn't one.
+   */
   stroke?: InkColor
   strokeWidth?: number
   /**
-   * "hachure" is the emphasis fill — it renders as a printed texture.
-   * "solid" is genuinely opaque (menus, popovers, knobs).
+   * "shade" is the tinted fill — a flat step off the paper, never a pattern.
+   * Which of the two shades you get follows `fillColor` (see fillPaint).
+   * "solid" is genuinely opaque, at full strength (menus, popovers, knobs).
    */
-  fill?: "none" | "hachure" | "solid"
+  fill?: "none" | "shade" | "solid"
   fillColor?: InkColor
-  /** which texture an emphasis fill uses; defaults to halftone */
-  texture?: Texture
   roughness?: number
   dashed?: boolean
   /** corner radius — rects only; `rect(x, y, w, h, { r: 6 })` */

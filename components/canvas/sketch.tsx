@@ -4,8 +4,8 @@
 // Sketch renderers — turn prims / nodes into SVG paths.
 //
 // The look is early-web risograph: one saturated ink on warm paper, confident
-// closed lines, and printed textures (halftone, checker, dither) carrying the
-// analog feel. Irregularity is deliberately small — a line should read as
+// closed lines, and flat shaded fills — two tones, no patterns — carrying the
+// printed feel. Irregularity is deliberately small — a line should read as
 // drawn, not as a napkin, and corners must actually meet. Icons stay crisp.
 // ---------------------------------------------------------------------------
 
@@ -13,10 +13,9 @@ import { memo, useMemo } from "react"
 import rough from "roughjs"
 import type { Options } from "roughjs/bin/core"
 import type { RoughGenerator } from "roughjs/bin/generator"
-import { INK, mirrorPrims, type Prim, type PrimOpts } from "@/lib/sketch/kit"
+import { INK, SHADE, mirrorPrims, type InkColor, type Prim, type PrimOpts } from "@/lib/sketch/kit"
 import type { SquigNode } from "@/lib/types"
 import { renderComponent } from "@/lib/library/registry"
-import { textureUrl, type ToneName } from "./sketch-defs"
 
 const gen: RoughGenerator = rough.generator()
 
@@ -27,7 +26,6 @@ const gen: RoughGenerator = rough.generator()
  * as drawn rather than generated, but not so much that corners fall open.
  * `preserveVertices` pins every endpoint to its exact coordinate, so closed
  * shapes actually close — the wobble lives in the middle of each segment.
- * The analog character comes from the printed fill textures, not the stroke.
  */
 const HAND = {
   roughness: 0.25,
@@ -41,30 +39,50 @@ const HAND = {
 const SHADOW_OFFSET = 4
 
 /**
- * An emphasis fill prints one step lighter than the ink it was asked for.
+ * A shaded fill prints as one of two flat tones — never at full ink strength.
  * Defs say `fillColor: "ink"` to mean "this surface is emphasised", but a
- * full-strength fill swallows any label sitting on it — so emphasis reads
- * through tone, and the text keeps the darkest ink to itself.
+ * full-strength fill swallows any label sitting on it, so emphasis reads
+ * through tone and the text keeps the darkest ink to itself.
+ *
+ * Two shades is the whole vocabulary: `shade` for inert areas (image
+ * placeholders, tracks, empty states, alternating rows) and `shadeStrong` for
+ * the one thing on a surface that should come forward (primary button,
+ * selected row, chart bars).
  */
-const EMPHASIS_TONE: Record<string, ToneName> = {
-  ink: "faint",
-  accent: "faint",
-  muted: "faint",
-  faint: "faint",
-  paper: "faint",
+const SHADE_FOR: Partial<Record<InkColor, keyof typeof SHADE>> = {
+  ink: "shadeStrong",
+  accent: "shadeStrong",
+  muted: "shadeStrong",
+  faint: "shade",
 }
 
 /**
- * Controls get flat colour; texture is reserved for decorative areas — image
- * placeholders, empty states, chart fills. Halftone behind a button label
- * just makes the label hard to read, and a page where every surface is
- * screened reads as noise rather than as print.
+ * `solid` keeps the literal colour — it exists for genuinely opaque marks
+ * (menu panels on paper, a toggle knob, a status dot) where a tint would
+ * either let the canvas show through or vanish at small sizes. `paper` is
+ * always literal for the same reason: it is there to occlude, not to tint.
  */
 function fillPaint(o: PrimOpts): string {
-  const tone = o.fillColor ?? "faint"
-  if (o.fill === "solid") return INK[tone]
-  const emphasis = EMPHASIS_TONE[tone] ?? "faint"
-  return o.texture ? textureUrl(o.texture, tone === "faint" ? "muted" : emphasis) : INK[emphasis]
+  const tone: InkColor = o.fillColor ?? "faint"
+  if (o.fill === "solid" || tone === "paper") return INK[tone]
+  return SHADE[SHADE_FOR[tone] ?? "shade"]
+}
+
+/**
+ * One pen draws the whole wireframe.
+ *
+ * Every line prints in the same ink — a divider is not a paler blue than the
+ * border above it, it is the same pen pressed lighter. So `stroke` no longer
+ * picks a colour; it picks how hard the pen presses, and the tone names it
+ * inherited now read as weights. Anything that needs to recede further than
+ * a hairline should be carrying a shaded fill instead of a paler line.
+ */
+const PEN: Record<InkColor, number> = {
+  ink: 1,
+  accent: 1,
+  muted: 0.8,
+  faint: 0.62,
+  paper: 1,
 }
 
 function primOptions(p: Prim, seed: number): Options {
@@ -73,8 +91,9 @@ function primOptions(p: Prim, seed: number): Options {
     seed,
     roughness: o?.roughness ?? HAND.roughness,
     bowing: HAND.bowing,
-    stroke: INK[o?.stroke ?? "ink"],
-    strokeWidth: o?.strokeWidth ?? HAND.strokeWidth,
+    stroke: INK.ink,
+    // an explicit strokeWidth is already a considered weight — leave it alone
+    strokeWidth: o?.strokeWidth ?? (HAND.strokeWidth * PEN[o?.stroke ?? "ink"]),
     fill: undefined,
     disableMultiStroke: true,
     disableMultiStrokeFill: true,
@@ -135,7 +154,7 @@ function drawableToPaths(drawable: ReturnType<RoughGenerator["rectangle"]>, dash
     stroke: pi.stroke,
     strokeWidth: pi.strokeWidth,
     fill: pi.fill ?? "none",
-    // only dash real strokes — dashing the hachure fill looks like static
+    // only dash real strokes — dashing a fill path looks like static
     dash: dash && pi.stroke !== "none" ? dash : undefined,
   }))
 }
@@ -159,13 +178,13 @@ export function primsToPaths(
             ? roundRectPath(p.x + SHADOW_OFFSET, p.y + SHADOW_OFFSET, p.w, p.h, p.r ?? p.o?.r ?? HAND.radius)
             : null
         if (d) {
-          paths.push({ d, stroke: "none", strokeWidth: 0, fill: INK.faint })
+          paths.push({ d, stroke: "none", strokeWidth: 0, fill: SHADE.shadeStrong })
         } else {
           paths.push({
             d: ellipsePath(p.x + SHADOW_OFFSET + p.w / 2, p.y + SHADOW_OFFSET + p.h / 2, p.w, p.h),
             stroke: "none",
             strokeWidth: 0,
-            fill: INK.faint,
+            fill: SHADE.shadeStrong,
           })
         }
       }
@@ -186,13 +205,16 @@ export function primsToPaths(
           else paths.push(...drawableToPaths(gen.linearPath(p.pts, primOptions(p, s)), dash))
           break
         case "path": {
+          // Phosphor glyphs are filled outlines, so pen pressure has nothing to
+          // push on — an icon is simply drawn in the ink, like everything else.
+          // The weight below only bites on the handful of stroke-mode paths.
           const k = p.size / p.vb
           crisp.push({
             d: p.d,
             transform: `translate(${p.x} ${p.y}) scale(${k})`,
             mode: p.mode,
-            color: INK[p.o?.stroke ?? "ink"],
-            strokeWidth: (p.o?.strokeWidth ?? 12) / k,
+            color: INK.ink,
+            strokeWidth: ((p.o?.strokeWidth ?? 12) * PEN[p.o?.stroke ?? "ink"]) / k,
           })
           break
         }
@@ -299,10 +321,10 @@ function basePrims(node: SquigNode): Prim[] {
     case "shape":
       if (node.shape === "ellipse")
         return [
-          { t: "ellipse", x: 0, y: 0, w: node.w, h: node.h, o: node.fill ? { fill: "hachure", fillColor: "ink" } : undefined },
+          { t: "ellipse", x: 0, y: 0, w: node.w, h: node.h, o: node.fill ? { fill: "shade", fillColor: "ink" } : undefined },
         ]
       return [
-        { t: "rect", x: 0, y: 0, w: node.w, h: node.h, r: 6, o: node.fill ? { fill: "hachure", fillColor: "ink" } : undefined },
+        { t: "rect", x: 0, y: 0, w: node.w, h: node.h, r: 6, o: node.fill ? { fill: "shade", fillColor: "ink" } : undefined },
       ]
     case "draw":
       // freehand is already the user's own line — barely roughen it

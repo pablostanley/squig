@@ -25,7 +25,7 @@ export function breakApart(node: ComponentNode): SquigNode[] {
         out.push({
           id: nanoid(8), type: "shape", shape: "rect",
           x: node.x + p.x, y: node.y + p.y, w: p.w, h: p.h,
-          fill: p.o?.fill === "hachure" || p.o?.fill === "solid",
+          fill: p.o?.fill === "shade" || p.o?.fill === "solid",
           seed: seed(),
         })
         break
@@ -33,7 +33,7 @@ export function breakApart(node: ComponentNode): SquigNode[] {
         out.push({
           id: nanoid(8), type: "shape", shape: "ellipse",
           x: node.x + p.x, y: node.y + p.y, w: p.w, h: p.h,
-          fill: p.o?.fill === "hachure" || p.o?.fill === "solid",
+          fill: p.o?.fill === "shade" || p.o?.fill === "solid",
           seed: seed(),
         })
         break
