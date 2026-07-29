@@ -1370,7 +1370,7 @@ function SelectionOverlay({
 
       {!marqueeing && (
         <div className="pointer-events-none absolute" style={{ left, top, width: w, height: h }}>
-          <div className="absolute inset-0 rounded-sm" style={{ border: "1.5px solid var(--sq-select)" }} />
+          <div className="absolute inset-0 rounded-sm" style={{ border: "2px solid var(--sq-select)" }} />
           {showHandles &&
             HANDLES.filter(visible).map((hd) => {
               const [hx, hy] = handleOffset(hd, w, h)
@@ -1382,7 +1382,7 @@ function SelectionOverlay({
                     left: hx - 5,
                     top: hy - 5,
                     cursor: HANDLE_CURSORS[hd],
-                    border: "1.5px solid var(--sq-select)",
+                    border: "2px solid var(--sq-select)",
                   }}
                   onPointerDown={(e) => onStartResize(hd, e)}
                 />
