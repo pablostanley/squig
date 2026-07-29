@@ -7,6 +7,7 @@ import { LeftRail } from "@/components/chrome/left-rail"
 import { LibraryPanel } from "@/components/chrome/library-panel"
 import { Inspector } from "@/components/chrome/inspector"
 import { TopCorner, ZoomPill, CommandHint } from "@/components/chrome/top-corner"
+import { FileName } from "@/components/chrome/file-name"
 import { CommandPalette } from "@/components/chrome/command-palette"
 import { CanvasContextMenu } from "@/components/chrome/context-menu"
 
@@ -32,6 +33,7 @@ export default function Home() {
     <main className="relative h-full">
       <Canvas />
       <TopCorner />
+      <FileName />
       <LeftRail />
       <LibraryPanel />
       <Inspector />

@@ -74,7 +74,7 @@ function Panel({ panel }: { panel: Exclude<PanelKind, null> }) {
       className="absolute top-1/2 left-16 z-30 flex max-h-[82vh] w-[300px] -translate-y-1/2 flex-col overflow-hidden rounded-xl border bg-background shadow-lg"
       onPointerDown={(e) => e.stopPropagation()}
     >
-      <div className="relative border-b p-2.5">
+      <div className="relative shrink-0 border-b p-2.5">
         <MagnifyingGlassIcon className="pointer-events-none absolute top-1/2 left-5 size-3.5 -translate-y-1/2 text-muted-foreground" />
         <Input
           ref={inputRef}
@@ -90,7 +90,10 @@ function Panel({ panel }: { panel: Exclude<PanelKind, null> }) {
         />
       </div>
 
-      <ScrollArea className="flex-1">
+      {/* min-h-0 — without it the flex item won't shrink below its content.
+          type="scroll" flashes the bar while scrolling, so a list this long
+          doesn't look like it ends at the fold. */}
+      <ScrollArea type="scroll" className="min-h-0 flex-1 overscroll-contain">
         <div className="p-2.5 pt-1">
           {sections.map((section) => (
             <div key={section.group} className="mb-2">
@@ -117,7 +120,7 @@ function Panel({ panel }: { panel: Exclude<PanelKind, null> }) {
         </div>
       </ScrollArea>
 
-      <div className="border-t px-3 py-2 text-xs text-muted-foreground">
+      <div className="shrink-0 border-t px-3 py-2 text-xs text-muted-foreground">
         {placing ? "now click the canvas to drop it" : `${total} to choose from — ⌘K searches everything`}
       </div>
     </div>

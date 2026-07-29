@@ -2,14 +2,15 @@
 // Themes — a duotone ink on paper, applied as CSS custom properties so the
 // whole canvas restyles without re-running a single rough.js path.
 //
-// The look is early-web risograph: one saturated ink, warm paper, and flat
+// The look is early-web risograph: one saturated ink, bright paper, and flat
 // shaded fills doing the "analog" work that wobbly lines used to do. Lines
 // stay clean and closed.
 //
 // Area fills come from exactly three tones — paper, shade, shadeStrong — so a
 // wireframe reads as a small tonal ladder rather than a pile of tints. Both
 // shades are the ink mixed into the paper (8% and 20%), which keeps every
-// theme's fills in that theme's own hue.
+// theme's fills in that theme's own hue. If you retune a palette's ink or
+// paper, recompute the two shades from them rather than nudging them by eye.
 // ---------------------------------------------------------------------------
 
 export interface Palette {
@@ -38,74 +39,74 @@ export interface Palette {
 export const THEMES = {
   "internet-blue": {
     label: "Internet blue",
-    bg: "#EDEAE0",
-    paper: "#FAF8F2",
-    ink: "#2338D4",
-    muted: "#7A88E4",
-    faint: "#BFC8F1",
-    shade: "#E9E9F0",
-    shadeStrong: "#CFD2EC",
-    grid: "#D5CFC0",
-    select: "#E8622F",
+    bg: "#FBFAF5",
+    paper: "#FFFFFF",
+    ink: "#2438FF",
+    muted: "#6E7DFF",
+    faint: "#BFC6FF",
+    shade: "#EDEFFF",
+    shadeStrong: "#D3D7FF",
+    grid: "#E6E1D3",
+    select: "#FF5A24",
   },
   "riso-red": {
     label: "Riso red",
-    bg: "#F2EEE6",
-    paper: "#FBF8F2",
+    bg: "#FCFAF7",
+    paper: "#FFFFFF",
     ink: "#E0342B",
     muted: "#EE7B72",
     faint: "#F7B9B3",
-    shade: "#F9E8E2",
-    shadeStrong: "#F6D1CA",
-    grid: "#DDD5C6",
-    select: "#2338D4",
+    shade: "#FDEFEE",
+    shadeStrong: "#F9D6D5",
+    grid: "#E8E0D3",
+    select: "#2438FF",
   },
   "terminal-green": {
     label: "Terminal green",
-    bg: "#E9EFE6",
-    paper: "#F7FAF4",
+    bg: "#F8FBF7",
+    paper: "#FFFFFF",
     ink: "#137A3D",
     muted: "#54A472",
     faint: "#A3CDB2",
-    shade: "#E5F0E5",
-    shadeStrong: "#C9E0CF",
-    grid: "#CBD8C6",
+    shade: "#ECF4EF",
+    shadeStrong: "#D0E4D8",
+    grid: "#D9E4D5",
     select: "#E8622F",
   },
   plum: {
     label: "Plum",
-    bg: "#F1ECF2",
-    paper: "#FBF7FB",
+    bg: "#FCF9FC",
+    paper: "#FFFFFF",
     ink: "#71268A",
     muted: "#A566B8",
     faint: "#D0AADB",
-    shade: "#F0E6F2",
-    shadeStrong: "#DFCDE4",
-    grid: "#DCD2DE",
+    shade: "#F4EEF6",
+    shadeStrong: "#E3D4E8",
+    grid: "#E7DFE9",
     select: "#D9A441",
   },
   marigold: {
     label: "Marigold",
-    bg: "#F6F1E2",
-    paper: "#FDFAF0",
+    bg: "#FDFAF2",
+    paper: "#FFFFFF",
     ink: "#B26A0F",
     muted: "#D69B4E",
     faint: "#EDCC96",
-    shade: "#F7EEDE",
-    shadeStrong: "#EEDDC3",
-    grid: "#E2D8BE",
-    select: "#2338D4",
+    shade: "#F9F3EC",
+    shadeStrong: "#F0E1CF",
+    grid: "#EAE0C7",
+    select: "#2438FF",
   },
   graphite: {
     label: "Graphite",
-    bg: "#FAF9F6",
+    bg: "#FCFCFA",
     paper: "#FFFFFF",
     ink: "#2D2A26",
     muted: "#8A857D",
     faint: "#C9C4BB",
     shade: "#EEEEEE",
     shadeStrong: "#D5D4D4",
-    grid: "#D9D4CA",
+    grid: "#E2DDD3",
     select: "#E0653A",
   },
 } satisfies Record<string, Palette>
