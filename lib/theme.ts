@@ -29,13 +29,13 @@ export interface Palette {
 export const THEMES = {
   "internet-blue": {
     label: "Internet blue",
-    bg: "#EDEAE0",
-    paper: "#FAF8F2",
-    ink: "#2338D4",
-    muted: "#7A88E4",
-    faint: "#BFC8F1",
-    grid: "#D5CFC0",
-    select: "#E8622F",
+    bg: "#F6F3EA",
+    paper: "#FFFDF7",
+    ink: "#2438FF",
+    muted: "#6E7DFF",
+    faint: "#BFC6FF",
+    grid: "#DFD9C7",
+    select: "#FF5A24",
   },
   "riso-red": {
     label: "Riso red",
@@ -45,7 +45,7 @@ export const THEMES = {
     muted: "#EE7B72",
     faint: "#F7B9B3",
     grid: "#DDD5C6",
-    select: "#2338D4",
+    select: "#2438FF",
   },
   "terminal-green": {
     label: "Terminal green",
@@ -75,7 +75,7 @@ export const THEMES = {
     muted: "#D69B4E",
     faint: "#EDCC96",
     grid: "#E2D8BE",
-    select: "#2338D4",
+    select: "#2438FF",
   },
   graphite: {
     label: "Graphite",
