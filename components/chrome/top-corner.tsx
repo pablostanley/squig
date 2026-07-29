@@ -5,7 +5,7 @@
 // inline-editable. No toolbar chrome beyond that, on purpose.
 // ---------------------------------------------------------------------------
 
-import { useState } from "react"
+import { useRef } from "react"
 import { useSquig } from "@/lib/store"
 import { exportDoc, importDoc } from "@/lib/file-io"
 import { CaretDownIcon } from "@phosphor-icons/react"
@@ -34,22 +34,17 @@ function Swatch({ name }: { name: ThemeName }) {
 }
 
 export function TopCorner() {
-  const fileName = useSquig((s) => s.fileName)
   const contextRow = useSquig((s) => s.contextRow)
   const theme = useSquig((s) => s.theme)
   const font = useSquig((s) => s.font)
   const st = useSquig.getState
-  const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState(fileName)
-
-  const commit = () => {
-    st().setFileName(draft.trim() || "untitled scribbles")
-    setEditing(false)
-  }
+  // Rename hands focus to the floating name field, so the menu must not yank
+  // focus back to its trigger on the way out.
+  const keepFocus = useRef(false)
 
   return (
     <div
-      className="absolute top-4 left-4 z-30 flex items-center gap-1 rounded-xl border bg-background py-1 pr-3 pl-1.5 shadow-md"
+      className="absolute top-4 left-4 z-30 flex items-center gap-1 rounded-xl border bg-background p-1 shadow-md"
       onPointerDown={(e) => e.stopPropagation()}
     >
       <DropdownMenu>
@@ -68,7 +63,16 @@ export function TopCorner() {
             <CaretDownIcon className="size-3 text-muted-foreground" weight="bold" />
           </button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-56">
+        <DropdownMenuContent
+          align="start"
+          className="w-56"
+          onCloseAutoFocus={(e) => {
+            if (keepFocus.current) {
+              keepFocus.current = false
+              e.preventDefault()
+            }
+          }}
+        >
           <DropdownMenuItem onSelect={() => st().newFile()}>New file</DropdownMenuItem>
           <DropdownMenuItem onSelect={importDoc}>Open…</DropdownMenuItem>
           <DropdownMenuItem onSelect={exportDoc}>
@@ -78,8 +82,8 @@ export function TopCorner() {
           <DropdownMenuSeparator />
           <DropdownMenuItem
             onSelect={() => {
-              setDraft(st().fileName)
-              setEditing(true)
+              keepFocus.current = true
+              st().setRenamingFile(true)
             }}
           >
             Rename
@@ -133,35 +137,6 @@ export function TopCorner() {
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
-
-      <span className="h-4 w-px bg-border" />
-
-      {editing ? (
-        <input
-          autoFocus
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onBlur={commit}
-          onKeyDown={(e) => {
-            e.stopPropagation()
-            if (e.key === "Enter") commit()
-            if (e.key === "Escape") setEditing(false)
-          }}
-          className="ml-1 w-44 rounded bg-transparent px-1 text-sm outline-none"
-        />
-      ) : (
-        <button
-          type="button"
-          className="ml-1 max-w-52 truncate rounded px-1 text-sm text-muted-foreground hover:text-foreground"
-          onClick={() => {
-            setDraft(fileName)
-            setEditing(true)
-          }}
-          title="rename"
-        >
-          {fileName}
-        </button>
-      )}
     </div>
   )
 }
