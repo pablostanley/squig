@@ -2,7 +2,8 @@
 
 // ---------------------------------------------------------------------------
 // Library panel — floats next to the rail. Search on top, grouped two-column
-// grid of live sketch previews. Pick one, then click the canvas to drop it.
+// grid of live sketch previews. Pick one, then click the canvas to drop it —
+// or drag one straight out of the grid and let go where you want it.
 // ---------------------------------------------------------------------------
 
 import { useEffect, useMemo, useRef, useState } from "react"
@@ -16,16 +17,76 @@ import { MagnifyingGlassIcon } from "@phosphor-icons/react"
 
 const BOX_W = 118
 const BOX_H = 82
+/** screen px of travel before a press on a preview stops being a click */
+const DRAG_THRESHOLD = 4
 
-function Preview({ def, active, onPick }: { def: ComponentDef; active: boolean; onPick: () => void }) {
+function Preview({
+  def,
+  active,
+  onPick,
+  onDragOut,
+}: {
+  def: ComponentDef
+  active: boolean
+  onPick: () => void
+  onDragOut: () => void
+}) {
   const prims = useMemo(() => def.render(def.defaults, def.size.w, def.size.h), [def])
   const scale = Math.min((BOX_W - 14) / def.size.w, (BOX_H - 14) / def.size.h, 1)
   const ox = (BOX_W - def.size.w * scale) / 2
   const oy = (BOX_H - def.size.h * scale) / 2
+  /** this press turned into a drag, so the click it ends with isn't a pick */
+  const dragged = useRef(false)
+
+  /**
+   * Drag out of the panel: past the threshold this becomes a pending placement,
+   * and the canvas takes it from there — it draws the ghost and does the drop on
+   * pointer up. Nothing happens until the threshold, so a plain click still just
+   * picks the component the way it always did.
+   */
+  const onPointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
+    if (e.button !== 0 || !e.isPrimary) return
+    const el = e.currentTarget
+    const { pointerId } = e
+    const sx = e.clientX
+    const sy = e.clientY
+    dragged.current = false
+    const ac = new AbortController()
+    const stop = () => {
+      ac.abort()
+      // click fires before timers, so the guard below still sees the drag
+      setTimeout(() => (dragged.current = false), 0)
+    }
+    window.addEventListener(
+      "pointermove",
+      (ev: PointerEvent) => {
+        if (ev.pointerId !== pointerId || dragged.current) return
+        if (Math.hypot(ev.clientX - sx, ev.clientY - sy) < DRAG_THRESHOLD) return
+        dragged.current = true
+        // keep the events coming once the pointer leaves the button. Capture is
+        // a nicety, not the mechanism — the listeners are on window either way,
+        // so a pointer that's already gone must not take the drag down with it.
+        try {
+          el.setPointerCapture(pointerId)
+        } catch {
+          // no live pointer to capture — carry on
+        }
+        onDragOut()
+      },
+      { signal: ac.signal }
+    )
+    window.addEventListener("pointerup", stop, { signal: ac.signal })
+    window.addEventListener("pointercancel", stop, { signal: ac.signal })
+  }
+
   return (
     <button
       type="button"
-      onClick={onPick}
+      onPointerDown={onPointerDown}
+      onClick={() => {
+        if (dragged.current) return
+        onPick()
+      }}
       title={def.name}
       className={cn(
         "group flex flex-col items-center gap-1 rounded-lg border p-1 transition-colors hover:border-foreground/40 hover:bg-accent",
@@ -56,6 +117,7 @@ export function LibraryPanel() {
 
 function Panel({ panel }: { panel: Exclude<PanelKind, null> }) {
   const placing = useSquig((s) => s.placing)
+  const placingDrag = useSquig((s) => s.placingDrag)
   const st = useSquig.getState
   const [query, setQuery] = useState("")
   const inputRef = useRef<HTMLInputElement>(null)
@@ -108,6 +170,7 @@ function Panel({ panel }: { panel: Exclude<PanelKind, null> }) {
                     def={def}
                     active={placing === def.kind}
                     onPick={() => st().setPlacing(placing === def.kind ? null : def.kind)}
+                    onDragOut={() => st().setPlacing(def.kind, { drag: true })}
                   />
                 ))}
               </div>
@@ -122,7 +185,11 @@ function Panel({ panel }: { panel: Exclude<PanelKind, null> }) {
       </ScrollArea>
 
       <div className="shrink-0 border-t px-3 py-2 text-xs text-muted-foreground">
-        {placing ? "now click the canvas to drop it" : `${total} to choose from — ⌘K searches everything`}
+        {placingDrag
+          ? "let go where you want it"
+          : placing
+            ? "now click the canvas to drop it"
+            : `${total} to choose from — click one or drag it out`}
       </div>
     </div>
   )

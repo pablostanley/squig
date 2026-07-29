@@ -184,6 +184,7 @@ export function Canvas() {
   const tool = useSquig((s) => s.tool)
 
   const placing = useSquig((s) => s.placing)
+  const placingDrag = useSquig((s) => s.placingDrag)
   const editingId = useSquig((s) => s.editingId)
 
   /** marquee box in WORLD units — screen conversion happens at render time */
@@ -221,6 +222,26 @@ export function Canvas() {
       return pickAt(s.nodes, s.order, wx, wy, s.viewport.zoom)
     },
     [st, toWorld]
+  )
+
+  // -- library placement ----------------------------------------------------
+
+  /** drop a pending library item centred on a world point */
+  const dropComponent = useCallback(
+    (kind: string, wx: number, wy: number) => {
+      const def = getDef(kind)
+      if (!def) return
+      st().addNode({
+        type: "component",
+        kind: def.kind,
+        props: { ...def.defaults },
+        x: wx - def.size.w / 2,
+        y: wy - def.size.h / 2,
+        w: def.size.w,
+        h: def.size.h,
+      } as Omit<SquigNode, "id" | "seed">)
+    },
+    [st]
   )
 
   // -- wheel: pan / pinch-zoom ---------------------------------------------
@@ -824,18 +845,7 @@ export function Canvas() {
 
       // placing a component from the library
       if (s.placing) {
-        const def = getDef(s.placing)
-        if (def) {
-          s.addNode({
-            type: "component",
-            kind: def.kind,
-            props: { ...def.defaults },
-            x: wx - def.size.w / 2,
-            y: wy - def.size.h / 2,
-            w: def.size.w,
-            h: def.size.h,
-          } as Omit<SquigNode, "id" | "seed">)
-        }
+        dropComponent(s.placing, wx, wy)
         s.setPlacing(null)
         s.setPanel(null)
         return
@@ -916,7 +926,7 @@ export function Canvas() {
       // empty canvas — marquee, with the current selection as its base
       beginGesture({ kind: "marquee", ...common, wx, wy, base: s.selection }, e)
     },
-    [st, tool, isSpacebarHeld, toWorld, beginGesture]
+    [st, tool, isSpacebarHeld, toWorld, beginGesture, dropComponent]
   )
 
   const onDoubleClick = useCallback(
@@ -965,10 +975,8 @@ export function Canvas() {
     (e: React.PointerEvent) => {
       const s = st()
       pointerWorld.current = toWorld(e)
-      if (s.placing) {
-        setCursor(pointerWorld.current)
-        return
-      }
+      // the ghost is driven at the window level instead — see below
+      if (s.placing) return
       if (gestureRef.current || s.tool !== "select" || isSpacebarHeld || s.editingId) {
         if (hoverId) setHoverId(null)
         return
@@ -986,6 +994,51 @@ export function Canvas() {
   )
 
   const onPointerLeave = useCallback(() => setHoverId(null), [])
+
+  /**
+   * The placement ghost tracks the pointer on `window`, not on the canvas, so a
+   * press that started inside the library panel is already being followed by the
+   * time it crosses onto the canvas. Same preview either way: pick-then-click and
+   * drag-out are the same pending placement, just ended differently.
+   */
+  useEffect(() => {
+    if (!placing) return
+    const onMove = (e: PointerEvent) => setCursor(toWorld(e))
+    window.addEventListener("pointermove", onMove)
+    return () => {
+      window.removeEventListener("pointermove", onMove)
+      // drop the stale position with the placement, so the next pick doesn't
+      // flash its ghost wherever the last one was
+      setCursor(null)
+    }
+  }, [placing, toWorld])
+
+  /**
+   * A library item dragged out of the panel lands where the pointer is released.
+   * The press began in the panel, so the canvas never sees a pointerdown for it —
+   * this listener is the whole gesture's ending.
+   */
+  useEffect(() => {
+    if (!placingDrag) return
+    const ac = new AbortController()
+    const finish = (e: PointerEvent) => {
+      const s = st()
+      const kind = s.placing
+      s.setPlacing(null)
+      if (!kind || e.type !== "pointerup") return
+      // released over the rail, the panel, the context row or any other chrome —
+      // nothing lands. The context row floats *inside* the canvas, so being
+      // inside the container isn't enough on its own.
+      const el = containerRef.current
+      const under = document.elementFromPoint(e.clientX, e.clientY)
+      if (!el || !under || !el.contains(under) || under.closest("[data-squig-chrome]")) return
+      const [wx, wy] = toWorld(e)
+      dropComponent(kind, wx, wy)
+    }
+    window.addEventListener("pointerup", finish, { signal: ac.signal })
+    window.addEventListener("pointercancel", finish, { signal: ac.signal })
+    return () => ac.abort()
+  }, [placingDrag, st, toWorld, dropComponent])
 
   useEffect(
     () => () => {

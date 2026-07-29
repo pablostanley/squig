@@ -43,6 +43,9 @@ interface SquigState {
   panel: PanelKind
   /** component kind waiting to be placed on next canvas click */
   placing: string | null
+  /** the pending placement came out of a library drag, so it lands on pointer up
+   *  rather than on the next click */
+  placingDrag: boolean
   editingId: string | null
   contextRow: boolean
   theme: ThemeName
@@ -69,7 +72,7 @@ interface SquigState {
   setTool: (t: Tool) => void
   setShapeKind: (s: ShapeKind) => void
   setPanel: (p: PanelKind) => void
-  setPlacing: (kind: string | null) => void
+  setPlacing: (kind: string | null, opts?: { drag?: boolean }) => void
   setEditing: (id: string | null) => void
   setContextRow: (on: boolean) => void
   setTheme: (t: ThemeName) => void
@@ -276,6 +279,7 @@ export const useSquig = create<SquigState>((set, get) => ({
   shapeKind: "rect",
   panel: null,
   placing: null,
+  placingDrag: false,
   editingId: null,
   contextRow: false,
   theme: DEFAULT_THEME,
@@ -296,10 +300,10 @@ export const useSquig = create<SquigState>((set, get) => ({
     set({ fileName: n })
     scheduleSave(get)
   },
-  setTool: (t) => set({ tool: t, placing: null, panel: null }),
+  setTool: (t) => set({ tool: t, placing: null, placingDrag: false, panel: null }),
   setShapeKind: (s) => set({ shapeKind: s }),
-  setPanel: (p) => set((st) => ({ panel: st.panel === p ? null : p, placing: null })),
-  setPlacing: (kind) => set({ placing: kind }),
+  setPanel: (p) => set((st) => ({ panel: st.panel === p ? null : p, placing: null, placingDrag: false })),
+  setPlacing: (kind, opts) => set({ placing: kind, placingDrag: kind !== null && opts?.drag === true }),
   setEditing: (id) => set({ editingId: id }),
   setContextRow: (on) => {
     set({ contextRow: on })
