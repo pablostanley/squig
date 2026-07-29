@@ -92,7 +92,8 @@ function primOptions(p: Prim, seed: number): Options {
     roughness: o?.roughness ?? HAND.roughness,
     bowing: HAND.bowing,
     stroke: INK.ink,
-    strokeWidth: o?.strokeWidth ?? HAND.strokeWidth * PEN[o?.stroke ?? "ink"],
+    // an explicit strokeWidth is already a considered weight — leave it alone
+    strokeWidth: o?.strokeWidth ?? (HAND.strokeWidth * PEN[o?.stroke ?? "ink"]),
     fill: undefined,
     disableMultiStroke: true,
     disableMultiStrokeFill: true,
@@ -204,6 +205,9 @@ export function primsToPaths(
           else paths.push(...drawableToPaths(gen.linearPath(p.pts, primOptions(p, s)), dash))
           break
         case "path": {
+          // Phosphor glyphs are filled outlines, so pen pressure has nothing to
+          // push on — an icon is simply drawn in the ink, like everything else.
+          // The weight below only bites on the handful of stroke-mode paths.
           const k = p.size / p.vb
           crisp.push({
             d: p.d,
