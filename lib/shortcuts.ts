@@ -38,12 +38,17 @@ const PC_SYMBOLS: Record<string, string> = {
 const MAC_ORDER = ["ctrl", "alt", "shift", "mod"]
 const PC_ORDER = ["mod", "alt", "shift", "ctrl"]
 
-/** "mod+shift+g" → "⇧⌘G" on a Mac, "Ctrl+Shift+G" elsewhere. */
+/**
+ * "mod+shift+g" → "⇧⌘G" on a Mac, "Ctrl+Shift+G" elsewhere.
+ *
+ * The pseudo-modifier "far" is the all-the-way version of a one-step
+ * shortcut — Figma spells that ⌥⌘ on a Mac and Ctrl+Shift on Windows.
+ */
 export function kbd(spec: string): string {
   const mac = isMac()
   const symbols = mac ? MAC_SYMBOLS : PC_SYMBOLS
   const order = mac ? MAC_ORDER : PC_ORDER
-  const parts = spec.split("+")
+  const parts = spec.split("+").flatMap((p) => (p === "far" ? (mac ? ["alt", "mod"] : ["mod", "shift"]) : [p]))
   const mods = parts.filter((p) => order.includes(p)).sort((a, b) => order.indexOf(a) - order.indexOf(b))
   const rest = parts.filter((p) => !order.includes(p))
   const printed = [
@@ -108,10 +113,10 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
   {
     title: "Arrange",
     rows: [
-      { keys: ["mod+]"], label: "Bring to front" },
-      { keys: ["mod+["], label: "Send to back" },
-      { keys: ["alt+mod+]"], label: "Bring forward" },
-      { keys: ["alt+mod+["], label: "Send backward" },
+      { keys: ["mod+]"], label: "Bring forward" },
+      { keys: ["mod+["], label: "Send backward" },
+      { keys: ["far+]", "]"], label: "Bring to front" },
+      { keys: ["far+[", "["], label: "Send to back" },
       { keys: ["shift+h"], label: "Flip horizontal" },
       { keys: ["shift+v"], label: "Flip vertical" },
       { keys: ["←↑→↓"], label: "Nudge" },

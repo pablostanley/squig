@@ -555,15 +555,16 @@ export function Canvas() {
             }
             return
           }
+          // one step on its own; all the way with ⌥ (Mac) or ⇧ (Windows)
           case "BracketRight":
             e.preventDefault()
-            if (e.altKey) s.bringForward(s.selection)
-            else s.bringToFront(s.selection)
+            if (e.altKey || e.shiftKey) s.bringToFront(s.selection)
+            else s.bringForward(s.selection)
             return
           case "BracketLeft":
             e.preventDefault()
-            if (e.altKey) s.sendBackward(s.selection)
-            else s.sendToBack(s.selection)
+            if (e.altKey || e.shiftKey) s.sendToBack(s.selection)
+            else s.sendBackward(s.selection)
             return
           case "Equal":
           case "NumpadAdd":

@@ -44,7 +44,8 @@ Figma's, so your hands already know it. `?` opens the full list in the app.
 | `⌘G` / `⇧⌘G` | group / ungroup — and ungroup detaches an instance |
 | `⌥⌘B` | detach instance |
 | `⌘`-click, double-click | reach inside a group |
-| `⌘]` `⌘[` / `⌥⌘]` `⌥⌘[` | to front, to back / forward, backward |
+| `⌘]` / `⌘[` | bring forward / send backward |
+| `⌥⌘]` / `⌥⌘[` (or `]` / `[`) | bring to front / send to back |
 | `⇧H` / `⇧V` | flip horizontal / vertical |
 | `⌘B` `⌘I` `⌘U` | bold, italic, underline |
 | arrows (`⇧` for 10px) | nudge |
