@@ -7,6 +7,21 @@
 export type InkColor = "ink" | "muted" | "faint" | "paper" | "accent"
 
 /**
+ * House defaults for the hand.
+ *
+ * Deliberately restrained: enough irregularity that a line reads as drawn
+ * rather than generated, but not so much that corners fall open. The renderer
+ * reads all four; anything that draws a plain line starts from `strokeWidth`.
+ */
+export const HAND = {
+  roughness: 0.25,
+  bowing: 0.35,
+  strokeWidth: 1.4,
+  /** default corner rounding for rects that don't ask for one */
+  radius: 3,
+}
+
+/**
  * Colours resolve through CSS custom properties, so switching theme restyles
  * every node without regenerating a single path. See lib/theme.ts.
  */

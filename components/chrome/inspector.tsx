@@ -15,11 +15,12 @@
 // ---------------------------------------------------------------------------
 
 import { useSquig } from "@/lib/store"
-import type { ArrowNode, ComponentNode, FillTone, ShapeNode, SquigNode, StrokeWeight, TextNode } from "@/lib/types"
+import type { ArrowNode, ComponentNode, FillTone, ShapeNode, SquigNode, StrokeWeight, TextAlign, TextNode } from "@/lib/types"
 import { normalizeFill } from "@/lib/types"
 import { getDef } from "@/lib/library/registry"
 import { selectionSummary, shared, sharedControls, sharedNumber, unionBounds } from "@/lib/selection"
 import { scaleNodes, MIN_SIZE } from "@/lib/canvas/transform"
+import { fitTextBox } from "@/lib/canvas/text-reflow"
 import { VariantControl } from "./variant-controls"
 import { MixedNumberField, MixedSwitch, MixedTextField } from "./mixed-fields"
 import { AlignRow } from "./align-row"
@@ -34,6 +35,9 @@ import {
   FlipVerticalIcon,
   LinkBreakIcon,
   SelectionAllIcon,
+  TextAlignCenterIcon,
+  TextAlignLeftIcon,
+  TextAlignRightIcon,
   TextBIcon,
   TextItalicIcon,
   TextUnderlineIcon,
@@ -115,6 +119,17 @@ const STROKE_OPTIONS: readonly SegmentOption<StrokeWeight>[] = [
   { value: "light", label: "Light pen", content: <PenChip height={1} /> },
   { value: "regular", label: "Regular pen", content: <PenChip height={1.75} /> },
   { value: "heavy", label: "Heavy pen", content: <PenChip height={3} /> },
+]
+
+/**
+ * Three, not four: squig text doesn't wrap, so there is no justify to be had —
+ * a line ends where you pressed Return. What these do decide is which edge the
+ * run is pinned to, which is the edge that holds still while you type.
+ */
+const ALIGN_OPTIONS: readonly SegmentOption<TextAlign>[] = [
+  { value: "left", label: "Align left", content: <TextAlignLeftIcon className="size-4" /> },
+  { value: "center", label: "Align centre", content: <TextAlignCenterIcon className="size-4" /> },
+  { value: "right", label: "Align right", content: <TextAlignRightIcon className="size-4" /> },
 ]
 
 /** Drawn as icons, not as styled letters — a glyph small enough to fit the
@@ -376,9 +391,18 @@ function SelectionEditor({ selected }: { selected: SquigNode[] }) {
             <MixedTextField
               ariaLabel="Text"
               shared={shared(texts.map((n) => n.text))}
-              onCommit={(v) => patch((n) => (n.type === "text" ? (reflowText(n, v, n.fontSize) as Partial<SquigNode>) : null))}
+              onCommit={(v) => patch((n) => (n.type === "text" ? (fitTextBox(n, v) as Partial<SquigNode>) : null))}
             />
           </StackRow>
+
+          <Row label="Align">
+            <Segmented
+              ariaLabel="Text alignment"
+              options={ALIGN_OPTIONS}
+              shared={shared(texts.map((n) => n.align ?? "left"))}
+              onChange={(align) => patch((n) => (n.type === "text" ? ({ align } as Partial<SquigNode>) : null))}
+            />
+          </Row>
 
           <Row label="Style">
             {TEXT_STYLES.map(({ key, label, icon: Icon }) => {
@@ -419,11 +443,11 @@ function SelectionEditor({ selected }: { selected: SquigNode[] }) {
               shared={sharedNumber(texts, (n) => (n as TextNode).fontSize)}
               onGestureStart={startGesture}
               onCommit={(v) =>
-                live((n) => (n.type === "text" && v > 0 ? (reflowText(n, n.text, v) as Partial<SquigNode>) : null))
+                live((n) => (n.type === "text" && v > 0 ? (fitTextBox(n, n.text, v) as Partial<SquigNode>) : null))
               }
               onStep={(d) =>
                 live((n) =>
-                  n.type === "text" ? (reflowText(n, n.text, Math.max(4, n.fontSize + d)) as Partial<SquigNode>) : null
+                  n.type === "text" ? (fitTextBox(n, n.text, Math.max(4, n.fontSize + d)) as Partial<SquigNode>) : null
                 )
               }
             />
@@ -551,11 +575,4 @@ function isOutlined(n: SquigNode): boolean {
 function resizeTo(n: SquigNode, w: number, h: number): Partial<SquigNode> {
   const from = unionBounds([n])!
   return scaleNodes([n], from, { x: n.x, y: n.y, w, h })[n.id]
-}
-
-/** Text nodes size themselves from their content — keep the box honest. */
-function reflowText(n: TextNode, text: string, fontSize: number): Partial<TextNode> {
-  const lines = (text || " ").split("\n")
-  const wGuess = Math.max(...lines.map((l) => l.length)) * fontSize * 0.5 + 10
-  return { text, fontSize, w: Math.max(40, wGuess), h: lines.length * fontSize * 1.35 }
 }

@@ -5,7 +5,9 @@
 
 import { nanoid } from "nanoid"
 import type { ComponentNode, FillTone, SquigNode } from "@/lib/types"
+import { measureTextWidth } from "@/lib/canvas/text-metrics"
 import { mirrorPrims, type PrimOpts } from "@/lib/sketch/kit"
+import { anchorFactor, textBlockHeight } from "@/lib/sketch/text-layout"
 import { renderComponent } from "./registry"
 
 const seed = () => Math.floor(Math.random() * 2 ** 31)
@@ -96,13 +98,16 @@ export function breakApart(node: ComponentNode): SquigNode[] {
         break
       }
       case "text": {
-        const approxW = p.text.length * p.size * 0.46
-        const x = p.align === "center" ? p.x - approxW / 2 : p.align === "right" ? p.x - approxW : p.x
+        // the box hangs off the same edge the run was anchored to, so a label
+        // that was centred in its component comes out centred on its old spot
+        const w = Math.max(measureTextWidth(p.text, { size: p.size, bold: p.bold, italic: p.italic }), 20)
         out.push({
           id: nanoid(8), type: "text",
-          x: node.x + x, y: node.y + p.y - p.size,
-          w: Math.max(approxW, 20), h: p.size * 1.4,
-          text: p.text, fontSize: p.size,
+          x: node.x + p.x - anchorFactor(p.align) * w,
+          y: node.y + p.y - p.size,
+          w, h: textBlockHeight(1, p.size),
+          text: p.text, fontSize: p.size, align: p.align,
+          bold: p.bold, italic: p.italic, underline: p.underline,
           seed: seed(),
         })
         break

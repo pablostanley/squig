@@ -162,8 +162,9 @@ export function scaleNodes(
     } else if (n.type === "arrow") {
       patch.points = n.points.map(([px, py]) => [px * sx, py * sy]) as [[number, number], [number, number]]
     } else if (n.type === "text") {
-      // the renderer lays lines out at fontSize * (i + 1), so the type has to
-      // follow the vertical scale or the box and the words come apart
+      // the renderer lays every baseline out in multiples of the type size, so
+      // the type has to follow the vertical scale or the box and the words
+      // come apart — see lib/sketch/text-layout
       patch.fontSize = Math.max(4, n.fontSize * sy)
     }
 

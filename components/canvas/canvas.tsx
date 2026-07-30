@@ -24,6 +24,8 @@ import { computeSnap, computeResizeSnap, makeSnapRect, type GuideLine, type Snap
 import { useSpacebarPan } from "@/lib/canvas/use-spacebar-pan"
 import { HANDLES, HANDLE_CURSORS, handleOffset, resizeBounds, scaleNodes, type Handle } from "@/lib/canvas/transform"
 import { pickAt, pickInRect } from "@/lib/canvas/hit-test"
+import { editTarget } from "@/lib/canvas/edit-target"
+import { textBlockHeight } from "@/lib/sketch/text-layout"
 import { unionBounds, type Bounds } from "@/lib/selection"
 import { NodeSketch, SketchPrims } from "./sketch"
 import { getDef, renderComponent } from "@/lib/library/registry"
@@ -188,6 +190,11 @@ export function Canvas() {
   const placing = useSquig((s) => s.placing)
   const placingDrag = useSquig((s) => s.placingDrag)
   const editingId = useSquig((s) => s.editingId)
+
+  // where the words being edited actually sit — the editor stands there, and
+  // the renderer leaves that one run out so they don't print on top of it
+  const editingNode = editingId ? nodes[editingId] : null
+  const editing = useMemo(() => (editingNode ? editTarget(editingNode) : null), [editingNode])
 
   /** marquee box in WORLD units — screen conversion happens at render time */
   const [marquee, setMarquee] = useState<Bounds | null>(null)
@@ -874,14 +881,17 @@ export function Canvas() {
         // mousedown that follows would hand focus straight back to the canvas —
         // blurring the editor into a commit that deletes the still-empty node
         e.preventDefault()
+        const fontSize = 18
+        const h = textBlockHeight(1, fontSize)
         const id = s.addNode({
           type: "text",
           text: "",
-          fontSize: 18,
+          fontSize,
           x: wx,
-          y: wy - 13,
+          // the click lands in the middle of the line it just started
+          y: wy - h / 2,
           w: 120,
-          h: 26,
+          h,
         } as Omit<SquigNode, "id" | "seed">)
         s.setTool("select")
         s.setEditing(id)
@@ -1410,7 +1420,7 @@ export function Canvas() {
             if (!n) return null
             return (
               <g key={id} transform={`translate(${n.x} ${n.y})`}>
-                <NodeSketch node={n} />
+                <NodeSketch node={n} hiddenText={id === editingId ? editing?.hidden : undefined} />
               </g>
             )
           })}
@@ -1490,7 +1500,7 @@ export function Canvas() {
       )}
 
       {/* inline text editing */}
-      {editingId && <TextEditOverlay key={editingId} />}
+      {editingNode && editing && <TextEditOverlay key={editingNode.id} node={editingNode} target={editing} />}
 
       {/* context row */}
       <ContextRow selectedNodes={selectedNodes} viewport={v} busy={!!gestureKind} />

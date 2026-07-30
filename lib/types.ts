@@ -81,10 +81,19 @@ export interface DrawNode extends BaseNode, Outlined {
   points: [number, number][]
 }
 
+/**
+ * Squig text doesn't wrap — a line ends where you pressed Return — so there is
+ * no justify to be had. The three that remain are real: they decide which edge
+ * of the box the run is pinned to, which is what holds still while you type.
+ */
+export type TextAlign = "left" | "center" | "right"
+
 export interface TextNode extends BaseNode {
   type: "text"
   text: string
   fontSize: number
+  /** left when absent — most text is */
+  align?: TextAlign
   bold?: boolean
   italic?: boolean
   underline?: boolean

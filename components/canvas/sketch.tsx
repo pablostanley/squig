@@ -13,27 +13,11 @@ import { memo, useMemo } from "react"
 import rough from "roughjs"
 import type { Options } from "roughjs/bin/core"
 import type { RoughGenerator } from "roughjs/bin/generator"
-import { INK, SHADE, mirrorPrims, type InkColor, type Prim, type PrimOpts } from "@/lib/sketch/kit"
-import { normalizeFill, type FillTone, type Outlined, type SquigNode, type StrokeWeight } from "@/lib/types"
-import { renderComponent } from "@/lib/library/registry"
+import { HAND, INK, SHADE, type InkColor, type Prim, type PrimOpts } from "@/lib/sketch/kit"
+import { nodePrims } from "@/lib/sketch/node-prims"
+import type { SquigNode } from "@/lib/types"
 
 const gen: RoughGenerator = rough.generator()
-
-/**
- * House defaults.
- *
- * The hand is deliberately restrained: enough irregularity that a line reads
- * as drawn rather than generated, but not so much that corners fall open.
- * `preserveVertices` pins every endpoint to its exact coordinate, so closed
- * shapes actually close — the wobble lives in the middle of each segment.
- */
-const HAND = {
-  roughness: 0.25,
-  bowing: 0.35,
-  strokeWidth: 1.4,
-  /** default corner rounding for rects that don't ask for one */
-  radius: 3,
-}
 
 /** How far the early-desktop block shadow sits behind a surface. */
 const SHADOW_OFFSET = 4
@@ -229,7 +213,20 @@ export function primsToPaths(
   return { paths, texts, crisp }
 }
 
-export const SketchPrims = memo(function SketchPrims({ prims, seed }: { prims: Prim[]; seed: number }) {
+export const SketchPrims = memo(function SketchPrims({
+  prims,
+  seed,
+  hiddenText,
+}: {
+  prims: Prim[]
+  seed: number
+  /**
+   * A run the inline editor is standing in for — "all" while a text node is
+   * being edited, or the index of one label inside a component. Drawing it as
+   * well would print the words twice, half a pixel apart.
+   */
+  hiddenText?: "all" | number
+}) {
   const { paths, texts, crisp } = useMemo(() => primsToPaths(prims, seed), [prims, seed])
   return (
     <>
@@ -260,22 +257,24 @@ export const SketchPrims = memo(function SketchPrims({ prims, seed }: { prims: P
           ))}
         </g>
       ))}
-      {texts.map((t, i) => (
-        <text
-          key={`t${i}`}
-          x={t.x}
-          y={t.y}
-          fontSize={t.size}
-          fontFamily="var(--sq-font)"
-          fontWeight={t.bold ? 700 : 400}
-          fontStyle={t.italic ? "italic" : undefined}
-          textDecoration={t.underline ? "underline" : undefined}
-          fill={INK[t.color ?? "ink"]}
-          textAnchor={t.align === "center" ? "middle" : t.align === "right" ? "end" : "start"}
-        >
-          {t.text}
-        </text>
-      ))}
+      {texts.map((t, i) =>
+        hiddenText === "all" || hiddenText === i ? null : (
+          <text
+            key={`t${i}`}
+            x={t.x}
+            y={t.y}
+            fontSize={t.size}
+            fontFamily="var(--sq-font)"
+            fontWeight={t.bold ? 700 : 400}
+            fontStyle={t.italic ? "italic" : undefined}
+            textDecoration={t.underline ? "underline" : undefined}
+            fill={INK[t.color ?? "ink"]}
+            textAnchor={t.align === "center" ? "middle" : t.align === "right" ? "end" : "start"}
+          >
+            {t.text}
+          </text>
+        )
+      )}
     </>
   )
 })
@@ -287,7 +286,14 @@ export const SketchPrims = memo(function SketchPrims({ prims, seed }: { prims: P
  * the parent <g transform> handles. Without that, dragging a template would
  * re-run rough.js over hundreds of prims on every pointer move.
  */
-export const NodeSketch = memo(function NodeSketch({ node }: { node: SquigNode }) {
+export const NodeSketch = memo(function NodeSketch({
+  node,
+  hiddenText,
+}: {
+  node: SquigNode
+  /** see SketchPrims — the run the inline editor has taken over */
+  hiddenText?: "all" | number
+}) {
   const shapeKey = useMemo(() => {
     const flip = `${node.flipX ? 1 : 0}${node.flipY ? 1 : 0}`
     // outline settings change the generated geometry, so they belong in the key
@@ -302,96 +308,14 @@ export const NodeSketch = memo(function NodeSketch({ node }: { node: SquigNode }
       case "arrow":
         return `a:${node.w}:${node.h}:${flip}:${node.head}:${node.points.flat().join()}:${pen}`
       case "text":
-        return `t:${node.text}:${node.fontSize}:${flip}:${node.bold ? 1 : 0}${node.italic ? 1 : 0}${node.underline || node.link ? 1 : 0}`
+        // w and align place the anchor, so a resize or a realignment is a
+        // different set of marks even when the words haven't changed
+        return `t:${node.text}:${node.fontSize}:${node.w}:${node.align ?? ""}:${flip}:${node.bold ? 1 : 0}${node.italic ? 1 : 0}${node.underline || node.link ? 1 : 0}`
     }
   }, [node])
 
-  const prims = useMemo<Prim[]>(() => {
-    const base = basePrims(node)
-    return mirrorPrims(base, node.w, node.h, !!node.flipX, !!node.flipY)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [shapeKey, node.type])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const prims = useMemo<Prim[]>(() => nodePrims(node), [shapeKey, node.type])
 
-  return <SketchPrims prims={prims} seed={node.seed} />
+  return <SketchPrims prims={prims} seed={node.seed} hiddenText={hiddenText} />
 })
-
-/**
- * A shape's fill tone, as prim options.
- *
- * These reuse the component ladder rather than inventing a second one: `light`
- * and `strong` are the same two shades every card and button prints with, so a
- * filled scribble sits in the same tonal world as the library. `paper` is
- * genuinely opaque — it's the tone you reach for when a box has to hide what
- * it overlaps rather than tint it.
- */
-const FILL_OPTS: Record<FillTone, PrimOpts | undefined> = {
-  none: undefined,
-  paper: { fill: "solid", fillColor: "paper" },
-  light: { fill: "shade", fillColor: "faint" },
-  strong: { fill: "shade", fillColor: "ink" },
-}
-
-/**
- * Pen pressure, as a multiplier on whatever weight the mark draws at by
- * default. A multiplier rather than three absolute widths because an arrow, a
- * freehand line and a rectangle don't start from the same weight, and "heavy"
- * should mean the same *relative* press on all three.
- */
-const PEN_SCALE: Record<StrokeWeight, number> = { light: 0.65, regular: 1, heavy: 1.7 }
-
-/** Merge a node's outline settings into the options for one of its marks. */
-function outline(node: Outlined, baseWidth: number, o?: PrimOpts): PrimOpts {
-  return {
-    ...o,
-    strokeWidth: baseWidth * PEN_SCALE[node.stroke ?? "regular"],
-    dashed: node.dashed,
-  }
-}
-
-/** A node's prims before any flip is applied. */
-function basePrims(node: SquigNode): Prim[] {
-  switch (node.type) {
-    case "component":
-      return renderComponent(node.kind, node.props, node.w, node.h)
-    case "shape": {
-      const o = outline(node, HAND.strokeWidth, FILL_OPTS[normalizeFill(node.fill)])
-      if (node.shape === "ellipse") return [{ t: "ellipse", x: 0, y: 0, w: node.w, h: node.h, o }]
-      return [{ t: "rect", x: 0, y: 0, w: node.w, h: node.h, r: 6, o }]
-    }
-    case "draw":
-      // freehand is already the user's own line — barely roughen it
-      return [{ t: "poly", pts: node.points, o: outline(node, 1.9, { roughness: 0.2 }) }]
-    case "arrow": {
-      const [[x1, y1], [x2, y2]] = node.points
-      const o = outline(node, 1.6)
-      const out: Prim[] = [{ t: "line", x1, y1, x2, y2, o }]
-      if (node.head) {
-        const a = Math.atan2(y2 - y1, x2 - x1)
-        const L = 12
-        out.push({
-          t: "poly",
-          pts: [
-            [x2 - L * Math.cos(a - 0.45), y2 - L * Math.sin(a - 0.45)],
-            [x2, y2],
-            [x2 - L * Math.cos(a + 0.45), y2 - L * Math.sin(a + 0.45)],
-          ],
-          // a dashed arrowhead reads as a rendering fault, not a style
-          o: { ...o, dashed: false },
-        })
-      }
-      return out
-    }
-    case "text":
-      return node.text.split("\n").map((lineText, i): Prim => ({
-        t: "text",
-        x: 0,
-        y: node.fontSize * (i + 1),
-        text: lineText,
-        size: node.fontSize,
-        bold: node.bold,
-        italic: node.italic,
-        // a link is a link because it's underlined — no blue in a wireframe
-        underline: node.underline || !!node.link,
-      }))
-  }
-}

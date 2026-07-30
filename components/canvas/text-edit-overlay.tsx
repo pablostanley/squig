@@ -1,7 +1,12 @@
 "use client"
 
 // ---------------------------------------------------------------------------
-// Inline text editing — a textarea parked over the node being edited.
+// Inline text editing — the editor stands exactly where the words already are.
+//
+// Nothing moves when you start typing. The drawn run is hidden, and a bare
+// textarea takes its place on the same baseline, at the same size, weight and
+// alignment, growing around the same edge the renderer anchors to. No box, no
+// panel, no field: a caret in the drawing, and the words you're changing.
 //
 // Enter (or ⌘Enter on a multi-line text node) and clicking away both commit.
 // Escape cancels, which is what Escape means everywhere else in squig.
@@ -10,33 +15,21 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 
 import { useSquig } from "@/lib/store"
-import type { SquigNode, TextNode, ComponentNode } from "@/lib/types"
-import { getDef } from "@/lib/library/registry"
+import type { ComponentNode, SquigNode, TextNode } from "@/lib/types"
+import type { EditTarget } from "@/lib/canvas/edit-target"
+import { fontMetrics, measureLinesWidth } from "@/lib/canvas/text-metrics"
+import { fitTextBox } from "@/lib/canvas/text-reflow"
+import { TEXT_LINE_HEIGHT, anchorFactor } from "@/lib/sketch/text-layout"
 
-export function TextEditOverlay() {
-  const editingId = useSquig((s) => s.editingId)
-  const node = useSquig((s) => (s.editingId ? s.nodes[s.editingId] : null))
-  if (!node || !editingId) return null
-  return <Editor node={node} />
-}
+/** Room for a caret at either end of the run, in screen px. */
+const CARET_PAD = 2
 
-function Editor({ node }: { node: SquigNode }) {
-  const viewport = useSquig((s) => s.viewport)
+export function TextEditOverlay({ node, target }: { node: SquigNode; target: EditTarget }) {
+  const v = useSquig((s) => s.viewport)
   const st = useSquig.getState
 
   const isText = node.type === "text"
-  const textControlKey = useMemo(() => {
-    if (node.type !== "component") return null
-    return getDef(node.kind)?.controls.find((c) => c.type === "text")?.key ?? null
-  }, [node])
-
-  const initial = isText
-    ? (node as TextNode).text
-    : node.type === "component" && textControlKey
-      ? String((node as ComponentNode).props[textControlKey] ?? "")
-      : ""
-
-  const [value, setValue] = useState(initial)
+  const [value, setValue] = useState(target.value)
   const taRef = useRef<HTMLTextAreaElement>(null)
 
   const commit = () => {
@@ -50,7 +43,7 @@ function Editor({ node }: { node: SquigNode }) {
       s.setEditing(null)
       return
     }
-    if (value === initial) {
+    if (value === target.value) {
       // nothing changed — don't spend an undo step saying so
       s.setEditing(null)
       return
@@ -61,18 +54,11 @@ function Editor({ node }: { node: SquigNode }) {
       if (!trimmed) {
         s.removeNodes([node.id], { checkpoint: false })
       } else {
-        const lines = trimmed.split("\n")
-        const fs = (node as TextNode).fontSize
-        const wGuess = Math.max(...lines.map((l) => l.length)) * fs * 0.5 + 10
-        s.updateNode(node.id, {
-          text: trimmed,
-          w: Math.max(40, wGuess),
-          h: lines.length * fs * 1.35,
-        } as Partial<SquigNode>)
+        s.updateNode(node.id, fitTextBox(node as TextNode, trimmed) as Partial<SquigNode>)
       }
-    } else if (textControlKey) {
+    } else if (target.propKey) {
       s.updateNode(node.id, {
-        props: { ...(node as ComponentNode).props, [textControlKey]: value },
+        props: { ...(node as ComponentNode).props, [target.propKey]: value },
       } as Partial<SquigNode>)
     }
     s.setEditing(null)
@@ -119,14 +105,48 @@ function Editor({ node }: { node: SquigNode }) {
     return () => window.removeEventListener("pointerdown", onDown, true)
   }, [])
 
-  const v = viewport
-  const fontSize = isText ? (node as TextNode).fontSize * v.zoom : 15 * v.zoom
+  const placeholder = isText ? "say something" : "label"
+
+  /**
+   * Put the textarea's first baseline on the renderer's.
+   *
+   * A line box centres the face's em box inside itself and sets the baseline at
+   * half-leading + ascent — so measuring the ascent off the live font is what
+   * lands the caret on the line the words were already printing on. The padding
+   * is slack for ascenders, descenders and a caret at either end; the top-left
+   * walks back by exactly that much, so none of it shifts anything.
+   */
+  const box = useMemo(() => {
+    const size = target.fontSize * v.zoom
+    const style = { size, bold: target.bold, italic: target.italic }
+    const lines = value.split("\n")
+    const lineHeight = size * TEXT_LINE_HEIGHT
+    const { ascent, descent } = fontMetrics(style)
+
+    // an empty run still needs somewhere to show its placeholder
+    const run = measureLinesWidth(value ? lines : [placeholder], style)
+    const padY = size * 0.35
+    const anchorX = (node.x + target.x) * v.zoom + v.x
+    const baselineY = (node.y + target.baseline) * v.zoom + v.y
+
+    return {
+      left: anchorX - CARET_PAD - anchorFactor(target.align) * run,
+      top: baselineY - ((lineHeight - (ascent + descent)) / 2 + ascent) - padY,
+      width: run + CARET_PAD * 2,
+      height: lines.length * lineHeight + padY * 2,
+      padding: `${padY}px ${CARET_PAD}px`,
+      fontSize: size,
+      lineHeight: `${lineHeight}px`,
+    }
+  }, [node.x, node.y, target, value, v, placeholder])
 
   return (
     <textarea
       ref={taRef}
       value={value}
-      onChange={(e) => setValue(e.target.value)}
+      wrap="off"
+      spellCheck={false}
+      onChange={(e) => setValue(target.multiline ? e.target.value : e.target.value.replace(/\n/g, ""))}
       onBlur={() => {
         if (!settled.current) {
           requestAnimationFrame(() => taRef.current?.focus())
@@ -141,25 +161,35 @@ function Editor({ node }: { node: SquigNode }) {
           cancel()
           return
         }
-        if (e.key === "Enter" && (e.metaKey || !isText)) {
+        if (e.key === "Enter" && (e.metaKey || !target.multiline)) {
           e.preventDefault()
           commit()
         }
       }}
-      className="absolute resize-none overflow-hidden rounded-md px-2 py-1 outline-none"
+      className="absolute resize-none overflow-hidden border-0 outline-none"
       style={{
-        left: node.x * v.zoom + v.x - 8,
-        top: node.y * v.zoom + v.y - 6,
-        minWidth: Math.max(node.w * v.zoom + 16, 140),
-        height: Math.max(node.h * v.zoom + 12, fontSize * 1.8),
-        fontSize,
+        left: box.left,
+        top: box.top,
+        width: box.width,
+        height: box.height,
+        padding: box.padding,
+        boxSizing: "border-box",
+        fontSize: box.fontSize,
+        lineHeight: box.lineHeight,
         fontFamily: "var(--sq-font)",
-        lineHeight: 1.35,
-        color: "var(--sq-ink)",
-        background: "rgba(255,255,255,0.92)",
-        border: "1.5px dashed var(--sq-select)",
+        fontWeight: target.bold ? 700 : 400,
+        fontStyle: target.italic ? "italic" : undefined,
+        textDecoration: target.underline ? "underline" : undefined,
+        textAlign: target.align,
+        whiteSpace: "pre",
+        color: target.color,
+        caretColor: "var(--sq-ink)",
+        // the one tell that this run is live: a wash the width of the words,
+        // rather than a field the words have been moved into
+        background: "color-mix(in srgb, var(--sq-select) 12%, transparent)",
+        borderRadius: 2,
       }}
-      placeholder={isText ? "say something" : "label"}
+      placeholder={placeholder}
     />
   )
 }
