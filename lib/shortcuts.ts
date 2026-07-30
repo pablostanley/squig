@@ -131,7 +131,7 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
       { keys: ["mod+i"], label: "Italic" },
       { keys: ["mod+u"], label: "Underline" },
       { keys: ["mod+k"], label: "Link selected text" },
-      { keys: ["double-click"], label: "Edit text" },
+      { keys: ["enter", "double-click"], label: "Edit text" },
     ],
   },
   {

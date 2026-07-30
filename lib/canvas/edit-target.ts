@@ -55,6 +55,15 @@ export function textControlKey(node: ComponentNode): string | null {
   return getDef(node.kind)?.controls.find((c) => c.type === "text")?.key ?? null
 }
 
+/**
+ * Has this node any words to edit? The cheap answer — same verdict `editTarget`
+ * reaches, without rendering anything to find out, so a keystroke can ask.
+ */
+export function hasEditableText(node: SquigNode): boolean {
+  if (node.type === "text") return true
+  return node.type === "component" && textControlKey(node) !== null
+}
+
 function currentValue(node: ComponentNode, key: string): string {
   const def = getDef(node.kind)
   const value = node.props[key] ?? def?.defaults[key]

@@ -8,6 +8,7 @@
 // alignment, growing around the same edge the renderer anchors to. No box, no
 // panel, no field: a caret in the drawing, and the words you're changing.
 //
+// A double-click opens this, and so does Return on a selected layer.
 // Enter (or ⌘Enter on a multi-line text node) and clicking away both commit.
 // Escape cancels, which is what Escape means everywhere else in squig.
 // ---------------------------------------------------------------------------

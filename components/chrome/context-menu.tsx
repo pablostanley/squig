@@ -8,7 +8,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import { copySelection, pasteFromSystem } from "@/lib/clipboard"
 import { useSquig } from "@/lib/store"
 import { screenToWorld } from "@/lib/types"
-import { getDef } from "@/lib/library/registry"
+import { hasEditableText } from "@/lib/canvas/edit-target"
 import { kbd } from "@/lib/shortcuts"
 import { copyAsPngWithNotice } from "@/lib/export-image"
 import {
@@ -128,8 +128,8 @@ export function CanvasContextMenu() {
       ...(hasText
         ? [{ label: "Link text…", hint: kbd("mod+k"), icon: LinkSimpleIcon, run: () => st().setLinkOpen(true) } as Entry]
         : []),
-      ...(one?.type === "text" || (one?.type === "component" && getDef(one.kind)?.controls.some((c) => c.type === "text"))
-        ? [{ label: "Edit text", hint: "double-click", icon: TextTIcon, run: () => st().setEditing(one.id) } as Entry]
+      ...(one && hasEditableText(one)
+        ? [{ label: "Edit text", hint: kbd("enter"), icon: TextTIcon, run: () => st().setEditing(one.id) } as Entry]
         : []),
       { separator: true },
       { label: "Bring to front", hint: kbd("far+]"), icon: ArrowLineUpIcon, run: () => st().bringToFront(targets) },

@@ -26,7 +26,7 @@ import { HANDLES, HANDLE_CURSORS, handleOffset, resizeBounds, scaleNodes, type H
 import { pickAt, pickInRect } from "@/lib/canvas/hit-test"
 import { canvasOwnsKeyboard } from "@/lib/canvas/keyboard-owner"
 import { useClipboard } from "@/lib/canvas/use-clipboard"
-import { editTarget } from "@/lib/canvas/edit-target"
+import { editTarget, hasEditableText } from "@/lib/canvas/edit-target"
 import { textBlockHeight } from "@/lib/sketch/text-layout"
 import { unionBounds, type Bounds } from "@/lib/selection"
 import { NodeSketch, SketchPrims } from "./sketch"
@@ -943,11 +943,7 @@ export function Canvas() {
       }
       // double-clicking inside a multi-selection narrows to what you clicked
       if (s.selection.length !== 1 || s.selection[0] !== hitId) s.setSelection([hitId])
-      if (n.type === "text") s.setEditing(hitId)
-      if (n.type === "component") {
-        const def = getDef(n.kind)
-        if (def?.controls.some((c) => c.type === "text")) s.setEditing(hitId)
-      }
+      if (hasEditableText(n)) s.setEditing(hitId)
     },
     [st, pick]
   )
@@ -1274,6 +1270,17 @@ export function Canvas() {
             containerRef.current?.blur()
           }
           break
+        case "Enter": {
+          // Return steps into the words of whatever is selected — the same
+          // edit a double-click opens, without having to aim at the glyphs.
+          // Only on a lone node: with several selected there's no "the" text.
+          if (e.shiftKey || s.selection.length !== 1) break
+          const n = s.nodes[s.selection[0]]
+          if (!n || !hasEditableText(n)) break
+          e.preventDefault()
+          s.setEditing(n.id)
+          break
+        }
         case "Tab": {
           // Tab is how you move between controls. Only claim it when the
           // canvas itself has focus — otherwise a click on the rail traps the
