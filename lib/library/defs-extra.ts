@@ -14,6 +14,40 @@ const num = (p: Props, k: string, fallback = 0): number => Number(p[k] ?? fallba
 
 // -- icon -------------------------------------------------------------------
 
+/**
+ * A short shelf of the glyphs people actually reach for. The full catalogue is
+ * 174 names, which is a dropdown nobody wants to scroll — "custom" hands the
+ * job back to the Custom name field, and is the default so that older icons
+ * (which only ever stored a name) keep drawing the glyph they were saved with.
+ */
+const ICON_PICKS = [
+  "star",
+  "heart",
+  "user",
+  "users",
+  "house",
+  "gear",
+  "bell",
+  "envelope",
+  "magnifying-glass",
+  "check",
+  "x",
+  "plus",
+  "calendar-blank",
+  "clock",
+  "lock",
+  "trash",
+  "image",
+  "file",
+  "folder",
+  "chat-circle",
+  "shopping-cart",
+  "sparkle",
+  "lightning",
+  "globe",
+  "custom",
+]
+
 export const iconDef: ComponentDef = {
   kind: "icon",
   name: "Icon",
@@ -21,9 +55,10 @@ export const iconDef: ComponentDef = {
   group: "Media",
   keywords: ["glyph", "symbol", "phosphor", "pictogram"],
   size: { w: 40, h: 40 },
-  defaults: { name: "star", shape: "none" },
+  defaults: { pick: "custom", name: "star", shape: "none" },
   controls: [
-    { key: "name", label: "Icon name", type: "text" },
+    { key: "pick", label: "Icon", type: "select", options: ICON_PICKS, quick: true },
+    { key: "name", label: "Custom name", type: "text" },
     { key: "shape", label: "Container", type: "select", options: ["none", "circle", "square"], quick: true },
   ],
   render(p, w, h) {
@@ -32,7 +67,10 @@ export const iconDef: ComponentDef = {
     const d = Math.min(w, h)
     if (shape === "circle") prims.push(ellipse((w - d) / 2, (h - d) / 2, d, d))
     else if (shape === "square") prims.push(rect((w - d) / 2, (h - d) / 2, d, d, { r: 6 }))
-    const name = str(p, "name", "star")
+    // "custom" — which is also what a legacy node or a broken-apart icon
+    // resolves to — reads the name field instead
+    const pick = str(p, "pick", "custom")
+    const name = pick && pick !== "custom" ? pick : str(p, "name", "star")
     const inner = shape === "none" ? d : d * 0.55
     if (resolveIconName(name) || name === "logo") {
       prims.push(...icon(name, w / 2, h / 2, inner))
@@ -54,9 +92,10 @@ export const stickyDef: ComponentDef = {
   group: "Display",
   keywords: ["postit", "post-it", "note", "comment", "annotation"],
   size: { w: 160, h: 140 },
-  defaults: { label: "why is this here?", fold: true },
+  defaults: { label: "why is this here?", fold: true, size: "md" },
   controls: [
     { key: "label", label: "Note", type: "text" },
+    { key: "size", label: "Text size", type: "select", options: ["sm", "md", "lg"], quick: true },
     { key: "fold", label: "Folded corner", type: "toggle", quick: true },
   ],
   render(p, w, h) {
@@ -82,7 +121,8 @@ export const stickyDef: ComponentDef = {
       prims.push(rect(0, 0, w, h, { fill: "shade", fillColor: "muted", r: 2 }))
     }
     // wrap the note text by hand — sticky notes are always a bit cramped
-    const size = 14
+    const sizeName = str(p, "size", "md")
+    const size = sizeName === "sm" ? 12 : sizeName === "lg" ? 20 : 14
     const maxChars = Math.max(4, Math.floor((w - 24) / (size * 0.46)))
     const words = str(p, "label", "").split(/\s+/).filter(Boolean)
     const lines: string[] = []
@@ -97,7 +137,7 @@ export const stickyDef: ComponentDef = {
     if (cur) lines.push(cur)
     const maxLines = Math.max(1, Math.floor((h - 24) / (size * 1.35)))
     lines.slice(0, maxLines).forEach((l, i) => {
-      prims.push(text(12, 26 + i * size * 1.35, l, size))
+      prims.push(text(12, 12 + size + i * size * 1.35, l, size))
     })
     return prims
   },
@@ -116,7 +156,7 @@ export const frameDef: ComponentDef = {
   controls: [
     { key: "label", label: "Name", type: "text" },
     { key: "preset", label: "Preset", type: "select", options: ["phone", "tablet", "desktop", "free"], quick: true },
-    { key: "statusBar", label: "Status bar", type: "toggle", quick: true },
+    { key: "statusBar", label: "Top bar", type: "toggle", quick: true },
   ],
   render(p, w, h) {
     const preset = str(p, "preset", "phone")
@@ -124,7 +164,8 @@ export const frameDef: ComponentDef = {
     prims.push(text(0, -8, truncate(str(p, "label", "Screen"), 13, w), 13, { color: "muted" }))
     const r = preset === "phone" ? 22 : preset === "tablet" ? 14 : 6
     prims.push(rect(0, 0, w, h, { r }))
-    if (bool(p, "statusBar") && preset !== "free") {
+    // every preset gets a bar — "free" used to swallow the toggle whole
+    if (bool(p, "statusBar")) {
       if (preset === "desktop") {
         prims.push(line(0, 28, w, 28, { stroke: "faint" }))
         prims.push(ellipse(12, 10, 8, 8, { stroke: "muted" }))
@@ -196,9 +237,21 @@ export const specDef: ComponentDef = {
     const prims: Prim[] = [rect(0, 0, w, h, { stroke: "faint", dashed: true, r: 6 })]
     prims.push(...icon(glyph, 20, 20, 15, { stroke: "muted" }))
     prims.push(text(36, 25, truncate(str(p, "title", "Note"), 14, w - 46), 14, { bold: true }))
+    // The title block is fixed; the copy under it is elastic. Under ~52 tall
+    // there is nowhere for a line to sit that isn't already the title, so the
+    // note becomes a labelled box. Above that, the gap is the leftover room —
+    // it works out to the usual 18 at the shipped height — and once the lines
+    // can't hold a legible distance apart the spare ones are dropped rather
+    // than stacked on each other or run off the floor.
     const n = Math.max(1, Math.min(8, num(p, "lines", 3)))
-    const avail = h - 42
-    prims.push(...loremLines(14, 44, w - 28, n, Math.max(11, avail / n)))
+    const top = 44
+    const room = h - 8 - top
+    if (room >= 0) {
+      const minGap = 6
+      const count = Math.max(1, Math.min(n, Math.floor(room / minGap) + 1))
+      const gap = count > 1 ? Math.min((h - 42) / n, room / (count - 1)) : (h - 42) / n
+      prims.push(...loremLines(14, top, w - 28, count, gap))
+    }
     return prims
   },
 }

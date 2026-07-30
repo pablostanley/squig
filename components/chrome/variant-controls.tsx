@@ -125,8 +125,16 @@ export function VariantControl({
         // the field groups a whole drag into one checkpoint; writing another
         // per tick underneath it would undo the grouping it just did
         onGestureStart={() => st().checkpoint()}
+        // rounded because every variant number is a count, an index or a
+        // percent — components index arrays and divide grids by these, so a
+        // typed "2.5" isn't a smaller 2, it's a broken layout. Dragging and
+        // the arrow keys already step whole units; this catches the typed
+        // path. Geometry fields (x/y/w/h) use MixedNumberField directly and
+        // keep their fractions.
         onCommit={(n) =>
-          setValue(Math.min(control.max ?? Infinity, Math.max(control.min ?? -Infinity, n)), { checkpoint: false })
+          setValue(Math.round(Math.min(control.max ?? Infinity, Math.max(control.min ?? -Infinity, n))), {
+            checkpoint: false,
+          })
         }
       />
     )

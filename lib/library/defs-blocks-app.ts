@@ -24,8 +24,20 @@ import { navbarDef, sidebarDef } from "./defs-nav"
 
 const str = (p: Props, k: string, fallback = ""): string => String(p[k] ?? fallback)
 const bool = (p: Props, k: string): boolean => Boolean(p[k])
+/** For toggles added after the fact — on a node that predates the key,
+ *  `undefined` has to mean "the way it always looked", not "off". */
+const boolOn = (p: Props, k: string): boolean => p[k] === undefined || Boolean(p[k])
 const num = (p: Props, k: string, fallback = 0): number => Number(p[k] ?? fallback)
+const list = (p: Props, k: string, fallback: string): string[] => {
+  const out = str(p, k, fallback)
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
+  return out.length ? out : fallback.split(",").map((s) => s.trim())
+}
 const clamp = (v: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, v))
+/** safe indexed pick from a cycling pool */
+const pick = (pool: string[], i: number): string => pool[((i % pool.length) + pool.length) % pool.length]
 
 function sub(def: ComponentDef, props: Props, x: number, y: number, w: number, h: number): Prim[] {
   return place(def.render({ ...def.defaults, ...props }, w, h), x, y)
@@ -83,6 +95,9 @@ function stepper(x: number, y: number, w: number, h: number, value = "1"): Prim[
   ]
 }
 
+/** Wireframe money — two decimals, one currency, no opinions. */
+const money = (v: number): string => `$${v.toFixed(2)}`
+
 /** Label left, value right — the totals pattern. */
 function ledgerRow(x: number, y: number, w: number, label: string, value: string, strong = false): Prim[] {
   return [
@@ -121,9 +136,9 @@ export const usageMeterDef: ComponentDef = {
   ],
   render(p, w, h) {
     const labels = [str(p, "label", "Seats"), "Storage", "API calls"]
-    const caps = ["14 of 20 used", "3.5 of 10 GB used", "8,800 of 10,000"]
     const vals = [clamp(num(p, "value", 70), 0, 100), 35, 88]
-    const n = clamp(Math.min(num(p, "meters", 2), Math.floor(h / 38)), 1, 3)
+    const caps = [`${Math.round((vals[0] / 100) * 20)} of 20 used`, "3.5 of 10 GB used", "8,800 of 10,000"]
+    const n = clamp(Math.min(num(p, "meters", 2), Math.floor(h / 34)), 1, 3)
     const slot = h / n
     const prims: Prim[] = []
     for (let i = 0; i < n; i++) {
@@ -158,9 +173,11 @@ export const invoiceListDef: ComponentDef = {
     const pad = 14
     const headerH = bool(p, "header") ? 26 : 4
     const avail = h - pad * 2 - headerH
-    const n = clamp(Math.min(num(p, "rows", 4), Math.floor(avail / 32)), 1, 8)
+    const n = clamp(Math.min(num(p, "rows", 4), Math.floor(avail / 24)), 1, 8)
     if (n < 1) return prims
     const rowH = Math.min(46, avail / n)
+    // Tight rows get a shorter badge so it never crowds the hairlines.
+    const badgeH = clamp(rowH - 6, 16, 22)
 
     const iconCx = w - pad - 9
     const showIcon = w > 320
@@ -202,7 +219,7 @@ export const invoiceListDef: ComponentDef = {
       prims.push(text(dateX, cy + 4, dates[i], 12, { color: "muted" }))
       if (descW > 40) prims.push(text(descX, cy + 4, truncate(descs[i], 13, descW), 13))
       prims.push(text(amountRight, cy + 4, amounts[i], 13, { align: "right", bold: true }))
-      if (showStatus) prims.push(...sub(badgeDef, { label: states[i], variant: "outline" }, statusX, cy - 11, statusW, 22))
+      if (showStatus) prims.push(...sub(badgeDef, { label: states[i], variant: "outline" }, statusX, cy - badgeH / 2, statusW, badgeH))
       if (showIcon) prims.push(...icon("download-simple", iconCx, cy, 15, { stroke: "muted" }))
       y += rowH
     }
@@ -246,8 +263,8 @@ export const accountBlockDef: ComponentDef = {
     const labels = ["Display name", "Email", "Where you are", "Short bio"]
     const values = ["Pablo Scribbles", "pablo@squig.sh", "Somewhere warm", "Draws boxes for money"]
     const n = clamp(num(p, "fields", 3), 1, 4)
-    const fieldH = 58
     const footTop = h - 56
+    const fieldH = clamp((footTop - 6 - y - 12 * (n - 1)) / n, 46, 58)
     for (let i = 0; i < n; i++) {
       if (y + fieldH > footTop - 6) break
       prims.push(...sub(inputDef, { label: labels[i], placeholder: values[i], icon: i === 1 ? "mail" : "none" }, pad, y, cw, fieldH))
@@ -335,20 +352,25 @@ export const notificationListDef: ComponentDef = {
   category: "blocks",
   group: "App",
   keywords: ["alerts", "bell", "updates", "unread", "inbox"],
-  size: { w: 420, h: 360 },
-  defaults: { rows: 4, header: true, avatars: true },
+  size: { w: 420, h: 400 },
+  defaults: { rows: 4, header: true, avatars: true, unread: 2, title: "Notifications" },
   controls: [
     { key: "rows", label: "Rows", type: "number", min: 2, max: 6, quick: true },
     { key: "header", label: "Header", type: "toggle", quick: true },
+    { key: "unread", label: "Unread", type: "number", min: 0, max: 6, quick: true },
     { key: "avatars", label: "Avatars", type: "toggle" },
+    { key: "title", label: "Title", type: "text" },
   ],
   render(p, w, h) {
     const prims: Prim[] = [rect(0, 0, w, h)]
     const pad = 14
     let y = pad
+    const nUnread = clamp(num(p, "unread", 2), 0, 6)
     if (bool(p, "header")) {
-      prims.push(text(pad, y + 16, "Notifications", 16, { bold: true }))
-      if (w > 260) prims.push(text(w - pad, y + 16, "Mark all read", 12, { align: "right", color: "muted" }))
+      const link = w > 260 && nUnread > 0 ? "Mark all read" : ""
+      const reserve = link ? textWidth(link, 12) + 12 : 0
+      prims.push(text(pad, y + 16, truncate(str(p, "title", "Notifications"), 16, w - pad * 2 - reserve), 16, { bold: true }))
+      if (link) prims.push(text(w - pad, y + 16, link, 12, { align: "right", color: "muted" }))
       prims.push(hair(pad, y + 28, w - pad * 2))
       y += 38
     }
@@ -372,11 +394,11 @@ export const notificationListDef: ComponentDef = {
     for (let i = 0; i < n; i++) {
       const cy = y + rowH / 2
       if (i > 0) prims.push(hair(pad, y, w - pad * 2))
-      if (i < 2) prims.push(ellipse(pad - 2, cy - 3, 6, 6, { fill: "solid", fillColor: "ink" }))
+      if (i < nUnread) prims.push(ellipse(pad - 2, cy - 3, 6, 6, { fill: "solid", fillColor: "ink" }))
       if (useAvatar) prims.push(...sub(avatarDef, { content: "icon" }, ax, cy - d / 2, d, d))
       else prims.push(...icon(icons[i], ax + d / 2, cy, d * 0.6, { stroke: "muted" }))
       const tw = w - tx - pad - 34
-      prims.push(text(tx, cy - 4, truncate(titles[i], 14, tw), 14, { bold: i < 2 }))
+      prims.push(text(tx, cy - 4, truncate(titles[i], 14, tw), 14, { bold: i < nUnread }))
       prims.push(body(tx, cy + 13, tw * 0.86))
       prims.push(text(w - pad, cy - 4, times[i], 11, { align: "right", color: "muted" }))
       y += rowH
@@ -394,10 +416,11 @@ export const activityFeedDef: ComponentDef = {
   group: "App",
   keywords: ["timeline", "history", "log", "recent", "events"],
   size: { w: 400, h: 320 },
-  defaults: { rows: 4, header: true, avatars: true },
+  defaults: { rows: 4, header: true, avatars: true, title: "Recently" },
   controls: [
     { key: "rows", label: "Entries", type: "number", min: 2, max: 6, quick: true },
     { key: "header", label: "Header", type: "toggle", quick: true },
+    { key: "title", label: "Title", type: "text" },
     { key: "avatars", label: "Avatars", type: "toggle" },
   ],
   render(p, w, h) {
@@ -405,7 +428,7 @@ export const activityFeedDef: ComponentDef = {
     const pad = 16
     let y = pad
     if (bool(p, "header")) {
-      prims.push(text(pad, y + 14, "Recently", 15, { bold: true }))
+      prims.push(text(pad, y + 14, truncate(str(p, "title", "Recently"), 15, w - pad * 2), 15, { bold: true }))
       y += 28
     }
     const avail = h - y - pad
@@ -463,7 +486,7 @@ export const commentsDef: ComponentDef = {
     const composer = bool(p, "composer")
     const composerH = composer ? 62 : 0
     const avail = h - pad * 2 - composerH
-    const n = clamp(Math.min(num(p, "rows", 3), Math.floor(avail / 82)), 1, 4)
+    const n = clamp(Math.min(num(p, "rows", 3), Math.floor(avail / 72)), 1, 4)
     const rowH = Math.min(104, avail / Math.max(1, n))
     const names = ["Maya", "Luis", "Ana", "Kai"]
     const times = ["2h ago", "1h ago", "34m ago", "just now"]
@@ -589,8 +612,9 @@ export const kanbanBoardDef: ComponentDef = {
   group: "App",
   keywords: ["board", "columns", "cards", "tasks", "trello", "backlog"],
   size: { w: 680, h: 420 },
-  defaults: { columns: 3, cards: 3, avatars: true },
+  defaults: { names: "To do, Doing, Done, Nope", columns: 3, cards: 3, avatars: true },
   controls: [
+    { key: "names", label: "Column names (comma-sep)", type: "text" },
     { key: "columns", label: "Columns", type: "number", min: 2, max: 4, quick: true },
     { key: "cards", label: "Cards", type: "number", min: 1, max: 4, quick: true },
     { key: "avatars", label: "Avatars", type: "toggle" },
@@ -600,8 +624,7 @@ export const kanbanBoardDef: ComponentDef = {
     const gap = 14
     const cols = clamp(num(p, "columns", 3), 2, 4)
     const colW = (w - gap * (cols - 1)) / cols
-    const names = ["To do", "Doing", "Done", "Nope"]
-    const counts = ["6", "3", "9", "1"]
+    const names = list(p, "names", "To do, Doing, Done, Nope")
     const tags = ["bug", "copy", "design", "chore", "spike", "ugh"]
     const headH = 30
     const bodyY = headH + 4
@@ -612,10 +635,10 @@ export const kanbanBoardDef: ComponentDef = {
 
     for (let c = 0; c < cols; c++) {
       const x = c * (colW + gap)
-      prims.push(text(x + 2, 18, truncate(names[c], 14, colW - 40), 14, { bold: true }))
-      prims.push(...sub(badgeDef, { label: counts[c], variant: "outline" }, x + colW - 30, 4, 28, 20))
+      prims.push(text(x + 2, 18, truncate(names[c] ?? "Column", 14, colW - 40), 14, { bold: true }))
       prims.push(rect(x, bodyY, colW, bodyH, { stroke: "faint", dashed: true }))
       let y = bodyY + 10
+      let drawn = 0
       const cardW = colW - 20
       for (let i = 0; i < nCards; i++) {
         if (y + cardH > bodyY + bodyH - 8) break
@@ -626,8 +649,10 @@ export const kanbanBoardDef: ComponentDef = {
         if (bool(p, "avatars") && cardW > 120) {
           prims.push(...sub(avatarDef, { content: "icon" }, x + 10 + cardW - 32, fy - 10, 20, 20))
         }
+        drawn++
         y += cardH + 10
       }
+      prims.push(...sub(badgeDef, { label: String(drawn), variant: "outline" }, x + colW - 30, 4, 28, 20))
       if (y + 20 < bodyY + bodyH && colW > 110) {
         prims.push(...icon("plus", x + 22, y + 8, 11, { stroke: "faint" }))
         prims.push(text(x + 34, y + 12, truncate("Add a card", 12, colW - 44), 12, { color: "faint" }))
@@ -646,16 +671,20 @@ export const calendarBlockDef: ComponentDef = {
   group: "App",
   keywords: ["schedule", "week", "month", "events", "agenda", "dates"],
   size: { w: 640, h: 400 },
-  defaults: { view: "week", events: true },
+  defaults: { view: "week", events: true, month: "July" },
   controls: [
+    { key: "month", label: "Month", type: "text" },
     { key: "view", label: "View", type: "select", options: ["week", "month"], quick: true },
     { key: "events", label: "Events", type: "toggle", quick: true },
   ],
   render(p, w, h) {
     const prims: Prim[] = [rect(0, 0, w, h)]
     const headH = Math.min(44, h * 0.14)
-    prims.push(text(16, headH / 2 + 6, "July", 17, { bold: true }))
-    if (w > 260) prims.push(text(16 + textWidth("July", 17) + 10, headH / 2 + 6, "2026", 14, { color: "muted" }))
+    const rightEdge = w > 320 ? w - 150 : w - 60
+    const yearW = w > 260 ? textWidth("2026", 14) + 10 : 0
+    const monthLabel = truncate(str(p, "month", "July"), 17, Math.max(24, rightEdge - 16 - yearW))
+    prims.push(text(16, headH / 2 + 6, monthLabel, 17, { bold: true }))
+    if (w > 260) prims.push(text(16 + textWidth(monthLabel, 17) + 10, headH / 2 + 6, "2026", 14, { color: "muted" }))
     prims.push(...icon("caret-left", w - 46, headH / 2, 13, { stroke: "muted" }))
     prims.push(...icon("caret-right", w - 20, headH / 2, 13, { stroke: "muted" }))
     if (w > 320) {
@@ -744,8 +773,9 @@ export const fileBrowserDef: ComponentDef = {
   group: "App",
   keywords: ["files", "folders", "drive", "documents", "grid", "explorer"],
   size: { w: 640, h: 400 },
-  defaults: { layout: "grid", items: 8, toolbar: true },
+  defaults: { path: "Home, Projects, Doodles", layout: "grid", items: 8, toolbar: true },
   controls: [
+    { key: "path", label: "Path (comma-sep)", type: "text" },
     { key: "layout", label: "Layout", type: "select", options: ["grid", "list"], quick: true },
     { key: "items", label: "Items", type: "number", min: 3, max: 12, quick: true },
     { key: "toolbar", label: "Toolbar", type: "toggle", quick: true },
@@ -754,17 +784,21 @@ export const fileBrowserDef: ComponentDef = {
     const prims: Prim[] = [rect(0, 0, w, h)]
     const pad = 16
     const cw = w - pad * 2
+    const isGrid = str(p, "layout", "grid") === "grid"
     let y = pad
     if (bool(p, "toolbar")) {
-      prims.push(...sub(breadcrumbDef, { items: "Home, Projects, Doodles" }, pad, y, Math.min(cw * 0.55, 240), 24))
+      // Through list() first: an emptied field has to fall back to this def's
+      // path, not to the breadcrumb's own "Home, Library, Data".
+      const crumbs = list(p, "path", "Home, Projects, Doodles").join(", ")
+      prims.push(...sub(breadcrumbDef, { items: crumbs }, pad, y, Math.min(cw * 0.55, 240), 24))
       let rx = w - pad
       if (cw > 380) {
         prims.push(...sub(buttonDef, { label: "New", variant: "filled", size: "sm", icon: "left" }, rx - 84, y - 3, 84, 30))
         rx -= 96
       }
       if (cw > 300) {
-        prims.push(...icon("squares-four", rx - 12, y + 12, 15, { stroke: "ink" }))
-        prims.push(...icon("list-bullets", rx - 38, y + 12, 15, { stroke: "faint" }))
+        prims.push(...icon("squares-four", rx - 12, y + 12, 15, { stroke: isGrid ? "ink" : "faint" }))
+        prims.push(...icon("list-bullets", rx - 38, y + 12, 15, { stroke: isGrid ? "faint" : "ink" }))
       }
       y += 34
       prims.push(hair(pad, y, cw))
@@ -787,14 +821,18 @@ export const fileBrowserDef: ComponentDef = {
     ]
     const n = clamp(num(p, "items", 8), 1, 12)
     const areaH = h - y - pad
+    // Below this the tiles/rows would have to be shorter than their own
+    // contents; the toolbar alone is the honest answer.
+    if (areaH < 24) return prims
 
-    if (str(p, "layout", "grid") === "grid") {
+    if (isGrid) {
       const gap = 14
       const cols = clamp(Math.floor((cw + gap) / (110 + gap)), 2, 6)
       const tileW = (cw - gap * (cols - 1)) / cols
-      const tileH = Math.min(104, tileW * 0.9)
-      const rowsFit = Math.max(1, Math.floor((areaH + gap) / (tileH + gap)))
-      const shown = Math.min(n, cols * rowsFit)
+      const rowsFit = Math.max(1, Math.floor((areaH + gap) / (56 + gap)))
+      const rows = Math.min(Math.ceil(n / cols), rowsFit)
+      const tileH = Math.min(104, tileW * 0.9, (areaH - gap * (rows - 1)) / rows)
+      const shown = Math.min(n, cols * rows)
       for (let i = 0; i < shown; i++) {
         const c = i % cols
         const r = Math.floor(i / cols)
@@ -805,7 +843,7 @@ export const fileBrowserDef: ComponentDef = {
         prims.push(text(x + tileW / 2, ty + tileH - 14, truncate(names[i], 11, tileW - 12), 11, { align: "center" }))
       }
     } else {
-      const rowH = Math.min(40, areaH / Math.max(1, Math.min(n, Math.floor(areaH / 30))))
+      const rowH = Math.min(40, areaH / Math.max(1, Math.min(n, Math.floor(areaH / 26))))
       const shown = Math.min(n, Math.max(1, Math.floor(areaH / rowH)))
       const sizes = ["—", "—", "—", "4.2 MB", "812 KB", "3 KB", "88 KB", "1.1 MB", "2.4 MB", "1 KB", "18 MB", "9 MB"]
       const when = ["today", "today", "yesterday", "Tuesday", "Jul 3", "Jun 28", "Jun 21", "Jun 2", "May 30", "May 4", "Apr 9", "Mar 1"]
@@ -906,11 +944,12 @@ export const onboardingChecklistDef: ComponentDef = {
   group: "App",
   keywords: ["setup", "getting started", "steps", "progress", "todo"],
   size: { w: 380, h: 310 },
-  defaults: { steps: 4, active: 3, progress: true },
+  defaults: { steps: 4, active: 3, progress: true, title: "Almost a real account" },
   controls: [
     { key: "steps", label: "Steps", type: "number", min: 3, max: 5, quick: true },
     { key: "active", label: "Current step", type: "number", min: 1, max: 5, quick: true },
     { key: "progress", label: "Progress bar", type: "toggle" },
+    { key: "title", label: "Title", type: "text" },
   ],
   render(p, w, h) {
     const prims: Prim[] = [rect(0, 0, w, h)]
@@ -919,8 +958,8 @@ export const onboardingChecklistDef: ComponentDef = {
     const n = clamp(num(p, "steps", 4), 3, 5)
     const active = clamp(num(p, "active", 3), 1, n) - 1
     let y = pad + 16
-    prims.push(text(pad, y, truncate("Almost a real account", 16, cw - 70), 16, { bold: true }))
-    prims.push(text(w - pad, y, `${active} of ${n}`, 12, { align: "right", color: "muted" }))
+    prims.push(text(pad, y, truncate(str(p, "title", "Almost a real account"), 16, cw - 70), 16, { bold: true }))
+    prims.push(text(w - pad, y, `${active} of ${n} done`, 12, { align: "right", color: "muted" }))
     y += 14
     if (bool(p, "progress")) {
       prims.push(...sub(progressDef, { value: Math.round((active / n) * 100) }, pad, y, cw, 10))
@@ -959,11 +998,19 @@ export const emptyBlockDef: ComponentDef = {
   group: "App",
   keywords: ["empty", "blank", "nothing", "zero state", "placeholder"],
   size: { w: 360, h: 220 },
-  defaults: { title: "Nothing here yet", icon: "folder", cta: true },
+  defaults: {
+    title: "Nothing here yet",
+    subtitle: "Make one and it shows up right here.",
+    icon: "folder",
+    cta: true,
+    ctaLabel: "Make one",
+  },
   controls: [
     { key: "title", label: "Title", type: "text" },
+    { key: "subtitle", label: "Subtitle", type: "text" },
     { key: "icon", label: "Icon", type: "select", options: ["folder", "file", "magnifying-glass", "star", "sparkle", "bell"], quick: true },
     { key: "cta", label: "Button", type: "toggle", quick: true },
+    { key: "ctaLabel", label: "Button label", type: "text" },
   ],
   render(p, w, h) {
     const prims: Prim[] = [rect(0, 0, w, h, { stroke: "faint", dashed: true })]
@@ -977,11 +1024,14 @@ export const emptyBlockDef: ComponentDef = {
     prims.push(text(w / 2, y, truncate(str(p, "title", "Nothing here yet"), 16, w - 32), 16, { align: "center", bold: true }))
     y += 20
     if (y < h - 6) {
-      prims.push(text(w / 2, y, truncate("Make one and it shows up right here.", 12, w - 32), 12, { align: "center", color: "muted" }))
+      const subtitle = str(p, "subtitle", "Make one and it shows up right here.")
+      prims.push(text(w / 2, y, truncate(subtitle, 12, w - 32), 12, { align: "center", color: "muted" }))
     }
     y += 18
     if (cta && y + 40 < h) {
-      prims.push(...sub(buttonDef, { label: "Make one", variant: "filled", size: "sm" }, w / 2 - 62, y, 124, 34))
+      const label = str(p, "ctaLabel", "Make one")
+      const bw = clamp(textWidth(label, 13) + 40, 124, w - 32)
+      prims.push(...sub(buttonDef, { label, variant: "filled", size: "sm" }, w / 2 - bw / 2, y, bw, 34))
     }
     return prims
   },
@@ -996,10 +1046,12 @@ export const settingsBlockDef: ComponentDef = {
   group: "App",
   keywords: ["preferences", "toggles", "options", "switches", "config"],
   size: { w: 520, h: 330 },
-  defaults: { rows: 4, header: true },
+  defaults: { rows: 4, header: true, title: "Preferences", subcopy: true },
   controls: [
     { key: "rows", label: "Rows", type: "number", min: 2, max: 5, quick: true },
     { key: "header", label: "Header", type: "toggle", quick: true },
+    { key: "title", label: "Title", type: "text" },
+    { key: "subcopy", label: "Sub-copy", type: "toggle", quick: true },
   ],
   render(p, w, h) {
     const prims: Prim[] = [rect(0, 0, w, h)]
@@ -1007,7 +1059,7 @@ export const settingsBlockDef: ComponentDef = {
     const cw = w - pad * 2
     let y = pad
     if (bool(p, "header")) {
-      prims.push(text(pad, y + 16, "Preferences", 16, { bold: true }))
+      prims.push(text(pad, y + 16, truncate(str(p, "title", "Preferences"), 16, cw), 16, { bold: true }))
       prims.push(hair(pad, y + 28, cw))
       y += 38
     }
@@ -1023,14 +1075,15 @@ export const settingsBlockDef: ComponentDef = {
     const avail = h - y - pad
     const n = clamp(Math.min(num(p, "rows", 4), Math.floor(avail / 44)), 1, 5)
     const rowH = Math.min(72, avail / Math.max(1, n))
+    const subcopy = boolOn(p, "subcopy")
     for (let i = 0; i < n; i++) {
       const ry = y + i * rowH
       const cy = ry + rowH / 2
       if (i > 0) prims.push(hair(pad, ry, cw))
       const ctrlW = kinds[i] === "select" ? Math.min(118, cw * 0.3) : 44
       const tw = cw - ctrlW - 24
-      prims.push(text(pad, cy - 4, truncate(titles[i], 14, tw), 14, { bold: true }))
-      if (rowH > 44) prims.push(text(pad, cy + 14, truncate(descs[i], 12, tw), 12, { color: "muted" }))
+      prims.push(text(pad, subcopy ? cy - 4 : cy + 5, truncate(titles[i], 14, tw), 14, { bold: true }))
+      if (subcopy && rowH > 44) prims.push(text(pad, cy + 14, truncate(descs[i], 12, tw), 12, { color: "muted" }))
       if (kinds[i] === "select") {
         prims.push(...sub(selectDef, { showLabel: false, value: "GMT−6" }, w - pad - ctrlW, cy - 16, ctrlW, 32))
       } else {
@@ -1050,8 +1103,9 @@ export const profileHeaderDef: ComponentDef = {
   group: "App",
   keywords: ["profile", "cover", "banner", "bio", "stats", "follow"],
   size: { w: 560, h: 250 },
-  defaults: { cover: true, stats: true, cta: true },
+  defaults: { name: "Pablo Scribbles", cover: true, stats: true, cta: true },
   controls: [
+    { key: "name", label: "Name", type: "text" },
     { key: "cover", label: "Cover", type: "toggle", quick: true },
     { key: "stats", label: "Stats", type: "toggle", quick: true },
     { key: "cta", label: "Button", type: "toggle" },
@@ -1067,12 +1121,22 @@ export const profileHeaderDef: ComponentDef = {
     const d = clamp(h * 0.31, 48, 78)
     const ax = pad
     const ay = coverH ? coverH - d * 0.48 : pad
+    const name = str(p, "name", "Pablo Scribbles")
+    const initials = (
+      name
+        .trim()
+        .split(/\s+/)
+        .map((s) => s[0] ?? "")
+        .join("")
+        .slice(0, 2) || "PS"
+    ).toUpperCase()
     prims.push(ellipse(ax - 5, ay - 5, d + 10, d + 10, { fill: "solid", fillColor: "paper", stroke: "faint" }))
-    prims.push(...sub(avatarDef, { content: "initials", initials: "PS", status: true }, ax, ay, d, d))
+    prims.push(...sub(avatarDef, { content: "initials", initials, status: true }, ax, ay, d, d))
 
     let y = ay + d + 26
-    prims.push(text(pad, y, truncate("Pablo Scribbles", 20, w - pad * 2 - 110), 20, { bold: true }))
-    prims.push(text(pad + textWidth("Pablo Scribbles", 20) + 18, y - 2, "@squiggle", 13, { color: "muted" }))
+    const shownName = truncate(name, 20, w - pad * 2 - 110)
+    prims.push(text(pad, y, shownName, 20, { bold: true }))
+    prims.push(text(pad + textWidth(shownName, 20) + 18, y - 2, "@squiggle", 13, { color: "muted" }))
     y += 20
     if (y < h - 6) {
       prims.push(text(pad, y, truncate("Draws boxes. Occasionally circles. Rarely on time.", 13, w - pad * 2 - 20), 13, { color: "muted" }))
@@ -1108,18 +1172,20 @@ export const commandPaletteBlockDef: ComponentDef = {
   group: "App",
   keywords: ["cmdk", "palette", "quick actions", "spotlight", "shortcut"],
   size: { w: 460, h: 340 },
-  defaults: { rows: 5, hints: true, groups: true },
+  defaults: { rows: 5, hints: true, groups: true, query: "Type a thing…", selected: 1 },
   controls: [
     { key: "rows", label: "Rows", type: "number", min: 3, max: 7, quick: true },
     { key: "hints", label: "Key hints", type: "toggle", quick: true },
+    { key: "selected", label: "Selected row", type: "number", min: 1, max: 7 },
     { key: "groups", label: "Group labels", type: "toggle" },
+    { key: "query", label: "Query", type: "text" },
   ],
   render(p, w, h) {
     const prims: Prim[] = [rect(0, 0, w, h, { fill: "solid", fillColor: "paper" }), rect(0, 0, w, h)]
     const pad = 14
     const searchH = Math.min(52, h * 0.18)
     prims.push(...icon("magnifying-glass", 26, searchH / 2, 16, { stroke: "muted" }))
-    prims.push(text(48, searchH / 2 + 6, truncate("Type a thing…", 15, w - 110), 15, { color: "muted" }))
+    prims.push(text(48, searchH / 2 + 6, truncate(str(p, "query", "Type a thing…"), 15, w - 110), 15, { color: "muted" }))
     if (w > 260) prims.push(...kbd(w - 48, searchH / 2, "esc"))
     prims.push(hair(0, searchH, w))
 
@@ -1128,6 +1194,7 @@ export const commandPaletteBlockDef: ComponentDef = {
     const hints = ["Ctrl N", "/", "Ctrl I", "Ctrl D", "Ctrl E", "Ctrl ,", ""]
     const showGroups = bool(p, "groups")
     const n = clamp(num(p, "rows", 5), 1, 7)
+    const sel = clamp(num(p, "selected", 1), 1, n) - 1
     const groupAt = showGroups ? Math.min(3, n) : -1
     const groupCount = showGroups ? (n > 3 ? 2 : 1) : 0
     const avail = h - searchH - pad
@@ -1139,11 +1206,11 @@ export const commandPaletteBlockDef: ComponentDef = {
         y += 22
       }
       if (y + rowH > h - 4) break
-      if (i === 0) prims.push(rect(6, y, w - 12, rowH - 2, { fill: "shade", fillColor: "faint", stroke: "faint", strokeWidth: 0.8 }))
+      if (i === sel) prims.push(rect(6, y, w - 12, rowH - 2, { fill: "shade", fillColor: "faint", stroke: "faint", strokeWidth: 0.8 }))
       const cy = y + (rowH - 2) / 2
-      prims.push(...icon(names[i], 26, cy, 15, { stroke: i === 0 ? "ink" : "muted" }))
+      prims.push(...icon(names[i], 26, cy, 15, { stroke: i === sel ? "ink" : "muted" }))
       const hw = bool(p, "hints") && hints[i] ? kbdW(hints[i]) + 16 : 0
-      prims.push(text(48, cy + 5, truncate(labels[i], 14, w - 60 - hw), 14, { bold: i === 0 }))
+      prims.push(text(48, cy + 5, truncate(labels[i], 14, w - 60 - hw), 14, { bold: i === sel }))
       if (hw && w > 240) prims.push(...kbd(w - pad - kbdW(hints[i]), cy, hints[i]))
       y += rowH
     }
@@ -1213,8 +1280,9 @@ export const aiChatDef: ComponentDef = {
   group: "AI",
   keywords: ["assistant", "conversation", "bubbles", "chatbot", "thread"],
   size: { w: 460, h: 440 },
-  defaults: { turns: 2, typing: true, composer: true },
+  defaults: { turns: 2, typing: true, composer: true, placeholder: "Ask anything, even the dumb one" },
   controls: [
+    { key: "placeholder", label: "Placeholder", type: "text" },
     { key: "turns", label: "Turns", type: "number", min: 1, max: 3, quick: true },
     { key: "typing", label: "Typing dots", type: "toggle", quick: true },
     { key: "composer", label: "Composer", type: "toggle", quick: true },
@@ -1263,7 +1331,7 @@ export const aiChatDef: ComponentDef = {
       const cy0 = h - pad - 48
       prims.push(rect(pad, cy0, cw, 48))
       prims.push(...icon("paperclip", pad + 22, cy0 + 24, 15, { stroke: "muted" }))
-      prims.push(text(pad + 40, cy0 + 29, truncate("Ask anything, even the dumb one", 14, cw - 96), 14, { color: "muted" }))
+      prims.push(text(pad + 40, cy0 + 29, truncate(str(p, "placeholder", "Ask anything, even the dumb one"), 14, cw - 96), 14, { color: "muted" }))
       prims.push(ellipse(pad + cw - 42, cy0 + 8, 32, 32, { fill: "shade", fillColor: "ink" }))
       prims.push(...icon("paper-plane-tilt", pad + cw - 26, cy0 + 24, 15))
     }
@@ -1280,14 +1348,23 @@ export const aiPromptSuggestionsDef: ComponentDef = {
   group: "AI",
   keywords: ["prompts", "starters", "suggestions", "chips", "ideas"],
   size: { w: 520, h: 120 },
-  defaults: { count: 3, style: "card" },
+  defaults: {
+    count: 3,
+    style: "card",
+    prompts: "Explain this like I'm five, Make it 30% funnier, Write the boring parts, Find the bug I made",
+  },
   controls: [
+    { key: "prompts", label: "Prompts (comma-sep)", type: "text" },
     { key: "count", label: "Suggestions", type: "number", min: 2, max: 4, quick: true },
     { key: "style", label: "Style", type: "select", options: ["card", "pill"], quick: true },
   ],
   render(p, w, h) {
     const prims: Prim[] = []
-    const copy = ["Explain this like I'm five", "Make it 30% funnier", "Write the boring parts", "Find the bug I made"]
+    const copy = list(
+      p,
+      "prompts",
+      "Explain this like I'm five, Make it 30% funnier, Write the boring parts, Find the bug I made",
+    )
     const names = ["graduation-cap", "smiley", "pencil-simple", "bug"]
     const n = clamp(num(p, "count", 3), 2, 4)
 
@@ -1297,7 +1374,7 @@ export const aiPromptSuggestionsDef: ComponentDef = {
       let x = 0
       let y = 0
       for (let i = 0; i < n; i++) {
-        const label = truncate(copy[i], 13, w - 60)
+        const label = truncate(pick(copy, i), 13, w - 60)
         const pw = Math.min(w, textWidth(label, 13) + 46)
         if (x + pw > w && x > 0) {
           x = 0
@@ -1321,7 +1398,7 @@ export const aiPromptSuggestionsDef: ComponentDef = {
       const iy = Math.min(24, ch * 0.26)
       prims.push(...icon(names[i], x + 22, iy, Math.min(16, ch * 0.2), { stroke: "muted" }))
       const ty = Math.min(54, iy + 22)
-      const lines = wrap(copy[i], 13, cw - 28, ch - ty > 22 ? 2 : 1)
+      const lines = wrap(pick(copy, i), 13, cw - 28, ch - ty > 22 ? 2 : 1)
       lines.forEach((l, li) => prims.push(text(x + 14, ty + li * 17, l, 13)))
       if (cw > 110 && ch > 76) prims.push(...icon("arrow-right", x + cw - 20, ch - 16, 12, { stroke: "faint" }))
     }
@@ -1338,8 +1415,9 @@ export const aiResponseDef: ComponentDef = {
   group: "AI",
   keywords: ["assistant", "message", "answer", "code", "reply"],
   size: { w: 460, h: 320 },
-  defaults: { lines: 3, code: true, actions: true },
+  defaults: { name: "Squig", lines: 3, code: true, actions: true },
   controls: [
+    { key: "name", label: "Assistant name", type: "text" },
     { key: "lines", label: "Body lines", type: "number", min: 2, max: 5, quick: true },
     { key: "code", label: "Code block", type: "toggle", quick: true },
     { key: "actions", label: "Actions", type: "toggle", quick: true },
@@ -1348,8 +1426,12 @@ export const aiResponseDef: ComponentDef = {
     const prims: Prim[] = []
     const markD = 28
     prims.push(...aiMark(0, 0, markD))
-    prims.push(text(markD + 12, 19, "Squig", 14, { bold: true }))
-    prims.push(text(markD + 12 + textWidth("Squig", 14) + 10, 19, "just now", 11, { color: "muted" }))
+    const stamp = "just now"
+    const nameX = markD + 12
+    const nameMaxW = Math.max(24, w - nameX - textWidth(stamp, 11) - 20)
+    const who = truncate(str(p, "name", "Squig"), 14, nameMaxW)
+    prims.push(text(nameX, 19, who, 14, { bold: true }))
+    prims.push(text(nameX + textWidth(who, 14) + 10, 19, stamp, 11, { color: "muted" }))
 
     const actions = bool(p, "actions")
     let y = markD + 18
@@ -1397,7 +1479,7 @@ export const aiAgentCardDef: ComponentDef = {
   defaults: { name: "Bug Squisher", status: "running", cta: true },
   controls: [
     { key: "name", label: "Name", type: "text" },
-    { key: "status", label: "Status", type: "select", options: ["running", "idle", "asleep"], quick: true },
+    { key: "status", label: "Status", type: "select", options: ["running", "idle", "failed"], quick: true },
     { key: "cta", label: "Run button", type: "toggle", quick: true },
   ],
   render(p, w, h) {
@@ -1409,8 +1491,12 @@ export const aiAgentCardDef: ComponentDef = {
     const tx = pad + d + 14
     const tw = w - tx - pad
     prims.push(text(tx, pad + 18, truncate(str(p, "name", "Bug Squisher"), 16, tw), 16, { bold: true }))
+    // Three marks at one anchor: solid dot, hollow dot, warning. Anything else
+    // — an older node saved with a status this def no longer offers — reads as
+    // the hollow dot, which is what it drew before.
     const status = str(p, "status", "running")
-    prims.push(ellipse(tx, pad + 28, 8, 8, status === "running" ? { fill: "solid", fillColor: "ink" } : { stroke: "muted" }))
+    if (status === "failed") prims.push(...icon("warning", tx + 4, pad + 32, 11, { stroke: "muted" }))
+    else prims.push(ellipse(tx, pad + 28, 8, 8, status === "running" ? { fill: "solid", fillColor: "ink" } : { stroke: "muted" }))
     prims.push(text(tx + 14, pad + 36, status, 12, { color: "muted" }))
 
     const by = h - 52
@@ -1433,26 +1519,32 @@ export const aiThinkingDef: ComponentDef = {
   category: "blocks",
   group: "AI",
   keywords: ["reasoning", "steps", "spinner", "loading", "chain"],
-  size: { w: 400, h: 180 },
-  defaults: { state: "steps", steps: 3 },
+  size: { w: 400, h: 200 },
+  defaults: { state: "steps", steps: 3, done: false },
   controls: [
     { key: "state", label: "State", type: "select", options: ["steps", "collapsed"], quick: true },
     { key: "steps", label: "Steps", type: "number", min: 2, max: 5, quick: true },
+    { key: "done", label: "Finished", type: "toggle", quick: true },
   ],
   render(p, w, h) {
     const collapsed = str(p, "state", "steps") === "collapsed"
+    const done = bool(p, "done")
     const headH = collapsed ? Math.min(h, 46) : Math.min(44, h * 0.3)
     const prims: Prim[] = [rect(0, 0, w, collapsed ? headH : h)]
     const cy = headH / 2
-    // a spinner: three-quarter arc drawn as a polyline
-    const r = 8
-    const arc: [number, number][] = []
-    for (let a = -90; a <= 180; a += 30) {
-      const rad = (a * Math.PI) / 180
-      arc.push([22 + Math.cos(rad) * r, cy + Math.sin(rad) * r])
+    if (done) {
+      prims.push(...icon("check", 22, cy, 14, { stroke: "muted" }))
+    } else {
+      // a spinner: three-quarter arc drawn as a polyline
+      const r = 8
+      const arc: [number, number][] = []
+      for (let a = -90; a <= 180; a += 30) {
+        const rad = (a * Math.PI) / 180
+        arc.push([22 + Math.cos(rad) * r, cy + Math.sin(rad) * r])
+      }
+      prims.push(poly(arc, false, { stroke: "muted", strokeWidth: 1.6 }))
     }
-    prims.push(poly(arc, false, { stroke: "muted", strokeWidth: 1.6 }))
-    prims.push(text(42, cy + 5, "Thinking about it…", 14))
+    prims.push(text(42, cy + 5, done ? "Thought about it" : "Thinking about it…", 14))
     prims.push(text(w - 44, cy + 5, "4.2s", 11, { align: "right", color: "muted" }))
     prims.push(...icon(collapsed ? "caret-right" : "caret-down", w - 20, cy, 12, { stroke: "muted" }))
     if (collapsed) return prims
@@ -1471,7 +1563,7 @@ export const aiThinkingDef: ComponentDef = {
     for (let i = 0; i < n; i++) {
       const ry = headH + 8 + i * rowH
       const rcy = ry + rowH / 2
-      const current = i === n - 1
+      const current = !done && i === n - 1
       if (current) prims.push(ellipse(16, rcy - 6, 12, 12, { stroke: "muted" }))
       else prims.push(...icon("check", 22, rcy, 12, { stroke: "muted" }))
       if (i < n - 1) prims.push(line(22, rcy + 8, 22, rcy + rowH - 8, { stroke: "faint" }))
@@ -1497,7 +1589,7 @@ export const orderSummaryDef: ComponentDef = {
   defaults: { items: 3, title: true, frame: true },
   controls: [
     { key: "items", label: "Line items", type: "number", min: 1, max: 4, quick: true },
-    { key: "title", label: "Title", type: "toggle", quick: true },
+    { key: "title", label: "Header", type: "toggle", quick: true },
     { key: "frame", label: "Frame", type: "toggle" },
   ],
   render(p, w, h) {
@@ -1511,34 +1603,40 @@ export const orderSummaryDef: ComponentDef = {
       prims.push(hair(pad, y + 26, cw))
       y += 38
     }
-    const items: [string, string][] = [
-      ["1 × Doodle Pad", "$24.00"],
-      ["2 × Fine-tip pens", "$18.00"],
-      ["1 × Sticker chaos", "$6.00"],
-      ["1 × Eraser, deluxe", "$4.00"],
-    ]
-    const totals: [string, string][] = [
-      ["Subtotal", "$48.00"],
-      ["Shipping", "$6.00"],
-      ["Tax, sadly", "$4.32"],
+    const items: [string, number][] = [
+      ["1 × Doodle Pad", 24],
+      ["2 × Fine-tip pens", 18],
+      ["1 × Sticker chaos", 6],
+      ["1 × Eraser, deluxe", 4],
     ]
     const n = clamp(num(p, "items", 3), 1, 4)
-    const bottomBlock = 3 * 20 + 34
+    const bottomBlock = 3 * 20 + 38
+    let subtotal = 0
     for (let i = 0; i < n; i++) {
-      if (y + 22 > h - pad - bottomBlock) break
-      prims.push(...ledgerRow(pad, y + 12, cw, items[i][0], items[i][1]))
+      // The first line always draws: totals summing to nothing read as broken,
+      // not as "small".
+      if (i > 0 && y + 22 > h - pad - bottomBlock) break
+      subtotal += items[i][1]
+      prims.push(...ledgerRow(pad, y + 12, cw, items[i][0], money(items[i][1])))
       y += 24
     }
+    const totals: [string, number][] = [
+      ["Subtotal", subtotal],
+      ["Shipping", 6],
+      ["Tax, sadly", subtotal * 0.09],
+    ]
     y = Math.max(y, h - pad - bottomBlock)
     prims.push(hair(pad, y, cw))
     y += 18
-    for (const [label, value] of totals) {
+    let extras = 0
+    for (let i = 0; i < totals.length; i++) {
       if (y + 14 > h - pad - 26) break
-      prims.push(...ledgerRow(pad, y, cw, label, value))
+      if (i > 0) extras += totals[i][1]
+      prims.push(...ledgerRow(pad, y, cw, totals[i][0], money(totals[i][1])))
       y += 20
     }
     prims.push(hair(pad, y - 4, cw))
-    prims.push(...ledgerRow(pad, Math.min(y + 18, h - pad - 2), cw, "Total", "$58.32", true))
+    prims.push(...ledgerRow(pad, Math.min(y + 18, h - pad - 2), cw, "Total", money(subtotal + extras), true))
     return prims
   },
 }
@@ -1554,7 +1652,7 @@ export const cartDef: ComponentDef = {
   size: { w: 560, h: 430 },
   defaults: { items: 3, totals: true, cta: true },
   controls: [
-    { key: "items", label: "Items", type: "number", min: 1, max: 4, quick: true },
+    { key: "items", label: "Items", type: "number", min: 0, max: 4, quick: true },
     { key: "totals", label: "Totals", type: "toggle", quick: true },
     { key: "cta", label: "Checkout button", type: "toggle", quick: true },
   ],
@@ -1562,22 +1660,25 @@ export const cartDef: ComponentDef = {
     const prims: Prim[] = [rect(0, 0, w, h)]
     const pad = 16
     const cw = w - pad * 2
-    let y = pad
-    prims.push(text(pad, y + 16, "Your cart", 18, { bold: true }))
-    prims.push(text(w - pad, y + 16, "3 things", 12, { align: "right", color: "muted" }))
-    prims.push(hair(pad, y + 28, cw))
-    y += 38
-
     const cta = bool(p, "cta")
     const totals = bool(p, "totals")
     const footH = (totals ? 74 : 0) + (cta ? 52 : 0)
     const names = ["Doodle Pad", "Fine-tip pens", "Sticker chaos pack", "Eraser, deluxe"]
     const variants = ["A5 · dotted", "Pack of 4 · black", "38 stickers", "Pink, obviously"]
-    const prices = ["$24.00", "$18.00", "$6.00", "$4.00"]
-    const avail = h - y - pad - footH
-    const n = clamp(Math.min(num(p, "items", 3), Math.floor(avail / 66)), 0, 4)
+    const prices = [24, 18, 6, 4]
+    const avail = h - (pad + 38) - pad - footH
+    // 58 is the shortest row that still fits the thumbnail and both lines of
+    // text — at 66 the fourth item had nowhere to go at the default height.
+    const want = clamp(num(p, "items", 3), 0, 4)
+    const n = clamp(Math.min(want, Math.floor(avail / 58)), 0, 4)
     const rowH = n > 0 ? Math.min(84, avail / n) : 0
     const showStepper = w > 420
+
+    let y = pad
+    prims.push(text(pad, y + 16, "Your cart", 18, { bold: true }))
+    prims.push(text(w - pad, y + 16, `${n} thing${n === 1 ? "" : "s"}`, 12, { align: "right", color: "muted" }))
+    prims.push(hair(pad, y + 28, cw))
+    y += 38
 
     for (let i = 0; i < n; i++) {
       const ry = y + i * rowH
@@ -1594,16 +1695,33 @@ export const cartDef: ComponentDef = {
       prims.push(text(tx, cy - 4, truncate(names[i], 14, tw), 14, { bold: true }))
       prims.push(text(tx, cy + 14, truncate(variants[i], 12, tw), 12, { color: "muted" }))
       if (showStepper) prims.push(...stepper(stepX, cy - 14, 84, 28, String(i === 1 ? 2 : 1)))
-      prims.push(text(priceX, cy + 4, prices[i], 14, { align: "right", bold: true }))
+      prims.push(text(priceX, cy + 4, money(prices[i]), 14, { align: "right", bold: true }))
       prims.push(...icon("x", rightEdge + 12, cy, 12, { stroke: "faint" }))
+    }
+
+    // Only when the cart is actually empty. A cart squeezed too short for one
+    // row drops to n === 0 as well, and that already drew nothing — an old node
+    // shouldn't sprout an empty state just because it got resized.
+    if (want === 0 && avail > 56) {
+      const bandH = avail - 6
+      prims.push(rect(pad, y, cw, bandH, { fill: "shade", fillColor: "faint" }))
+      prims.push(...icon("shopping-cart", w / 2, y + bandH / 2 - 12, 24, { stroke: "faint" }))
+      prims.push(
+        text(w / 2, y + bandH / 2 + 20, truncate("Nothing in here yet", 14, cw - 32), 14, {
+          align: "center",
+          color: "muted",
+        }),
+      )
     }
 
     const fy = h - pad - footH + 10
     if (totals) {
+      const subtotal = prices.slice(0, n).reduce((s, v) => s + v, 0)
+      const shipping = n > 0 ? 6 : 0
       prims.push(hair(pad, fy - 12, cw))
-      prims.push(...ledgerRow(pad, fy + 6, cw, "Subtotal", "$48.00"))
-      prims.push(...ledgerRow(pad, fy + 26, cw, "Shipping", "$6.00"))
-      prims.push(...ledgerRow(pad, fy + 50, cw, "Total", "$54.00", true))
+      prims.push(...ledgerRow(pad, fy + 6, cw, "Subtotal", money(subtotal)))
+      prims.push(...ledgerRow(pad, fy + 26, cw, "Shipping", money(shipping)))
+      prims.push(...ledgerRow(pad, fy + 50, cw, "Total", money(subtotal + shipping), true))
     }
     if (cta) {
       prims.push(...sub(buttonDef, { label: "Check out", variant: "filled" }, pad, h - pad - 42, cw, 42))
@@ -1621,19 +1739,23 @@ export const checkoutDef: ComponentDef = {
   group: "Commerce",
   keywords: ["payment", "pay", "card", "billing", "order"],
   size: { w: 720, h: 520 },
-  defaults: { summary: true, express: true },
+  defaults: { title: "Checkout", summary: true, express: true, items: 3 },
   controls: [
+    { key: "title", label: "Title", type: "text" },
     { key: "summary", label: "Order summary", type: "toggle", quick: true },
+    { key: "items", label: "Summary items", type: "number", min: 1, max: 4, quick: true },
     { key: "express", label: "Express pay", type: "toggle", quick: true },
   ],
   render(p, w, h) {
     const prims: Prim[] = [rect(0, 0, w, h)]
     const pad = clamp(w * 0.035, 16, 26)
+    const items = clamp(num(p, "items", 3), 1, 4)
+    const due = [24, 18, 6, 4].slice(0, items).reduce((s, v) => s + v, 0)
     const withSummary = bool(p, "summary") && w > 480
     const sumW = withSummary ? clamp(w * 0.36, 220, 280) : 0
     const cw = w - pad * 2 - (sumW ? sumW + 24 : 0)
     let y = pad + 18
-    prims.push(text(pad, y, "Checkout", 20, { bold: true }))
+    prims.push(text(pad, y, truncate(str(p, "title", "Checkout"), 20, cw), 20, { bold: true }))
     y += 18
 
     if (bool(p, "express") && cw > 240) {
@@ -1669,12 +1791,12 @@ export const checkoutDef: ComponentDef = {
       prims.push(...sub(inputDef, { label: "Name on card", placeholder: "Pablo Scribbles" }, pad, y, cw, fieldH))
       y += fieldH + 12
     }
-    prims.push(...sub(buttonDef, { label: "Pay $58.32", variant: "filled" }, pad, h - pad - payH - 20, cw, payH))
+    prims.push(...sub(buttonDef, { label: `Pay ${money(due + 6 + due * 0.09)}`, variant: "filled" }, pad, h - pad - payH - 20, cw, payH))
     prims.push(text(pad + cw / 2, h - pad - 4, "Cancel any time. We won't be weird about it.", 11, { align: "center", color: "muted" }))
 
     if (withSummary) {
       const sx = w - pad - sumW
-      prims.push(...sub(orderSummaryDef, { items: 3, title: true, frame: true }, sx, pad, sumW, h - pad * 2))
+      prims.push(...sub(orderSummaryDef, { items, title: true, frame: true }, sx, pad, sumW, h - pad * 2))
     }
     return prims
   },
@@ -1689,8 +1811,10 @@ export const productDetailDef: ComponentDef = {
   group: "Commerce",
   keywords: ["product", "pdp", "gallery", "buy", "add to cart"],
   size: { w: 720, h: 460 },
-  defaults: { thumbs: true, options: true, rating: true },
+  defaults: { title: "The Doodle Pad", price: "$24.00", thumbs: true, options: true, rating: true },
   controls: [
+    { key: "title", label: "Title", type: "text" },
+    { key: "price", label: "Price", type: "text" },
     { key: "thumbs", label: "Thumbnails", type: "toggle", quick: true },
     { key: "options", label: "Options", type: "toggle", quick: true },
     { key: "rating", label: "Rating", type: "toggle" },
@@ -1719,7 +1843,7 @@ export const productDetailDef: ComponentDef = {
     let y = pad + 16
     prims.push(text(x, y, "STATIONERY", 10, { color: "muted", bold: true }))
     y += 24
-    for (const l of wrap("The Doodle Pad", 24, rw, 2)) {
+    for (const l of wrap(str(p, "title", "The Doodle Pad"), 24, rw, 2)) {
       prims.push(text(x, y, l, 24, { bold: true }))
       y += 28
     }
@@ -1728,8 +1852,9 @@ export const productDetailDef: ComponentDef = {
       prims.push(text(x + 5 * 15 + 8, y, "128 opinions", 11, { color: "muted" }))
       y += 22
     }
-    prims.push(text(x, y + 12, "$24.00", 22, { bold: true }))
-    const oldX = x + textWidth("$24.00", 22) + 22
+    const price = truncate(str(p, "price", "$24.00"), 22, rw - 90)
+    prims.push(text(x, y + 12, price, 22, { bold: true }))
+    const oldX = x + textWidth(price, 22) + 22
     prims.push(text(oldX, y + 12, "$32.00", 14, { color: "muted" }))
     prims.push(line(oldX - 2, y + 7, oldX + textWidth("$32.00", 14) + 2, y + 7, { stroke: "muted", strokeWidth: 1.2 }))
     y += 32
@@ -1773,11 +1898,12 @@ export const productGridDef: ComponentDef = {
   group: "Commerce",
   keywords: ["catalog", "shop", "listing", "cards", "store"],
   size: { w: 660, h: 440 },
-  defaults: { cols: 3, rows: 2, price: true },
+  defaults: { cols: 3, rows: 2, price: true, rating: true },
   controls: [
     { key: "cols", label: "Columns", type: "number", min: 2, max: 4, quick: true },
     { key: "rows", label: "Rows", type: "number", min: 1, max: 3, quick: true },
     { key: "price", label: "Prices", type: "toggle", quick: true },
+    { key: "rating", label: "Rating", type: "toggle" },
   ],
   render(p, w, h) {
     const prims: Prim[] = []
@@ -1813,7 +1939,7 @@ export const productGridDef: ComponentDef = {
         prims.push(...icon("image", x + cw / 2, y + imgH / 2, Math.min(36, imgH * 0.34), { stroke: "faint" }))
         if (imgH + 28 < ch) prims.push(text(x + 12, y + imgH + 22, truncate(names[i % names.length], 13, cw - 24), 13))
         if (showPrice && imgH + 50 < ch) prims.push(text(x + 12, y + imgH + 42, prices[i % prices.length], 15, { bold: true }))
-        if (ch - imgH > 60) prims.push(...starRow(x + cw - 74, y + imgH + 38, 10, 5))
+        if (boolOn(p, "rating") && ch - imgH > 60) prims.push(...starRow(x + cw - 74, y + imgH + 38, 10, 5))
       }
     }
     return prims
@@ -1829,11 +1955,13 @@ export const paymentMethodsDef: ComponentDef = {
   group: "Commerce",
   keywords: ["cards", "wallet", "saved cards", "billing", "default"],
   size: { w: 480, h: 280 },
-  defaults: { cards: 2, addRow: true, header: true },
+  defaults: { cards: 2, addRow: true, header: true, title: "Payment methods", defaultCard: 1 },
   controls: [
     { key: "cards", label: "Cards", type: "number", min: 1, max: 4, quick: true },
     { key: "addRow", label: "Add row", type: "toggle", quick: true },
     { key: "header", label: "Header", type: "toggle" },
+    { key: "defaultCard", label: "Default card", type: "number", min: 1, max: 4 },
+    { key: "title", label: "Title", type: "text" },
   ],
   render(p, w, h) {
     const prims: Prim[] = [rect(0, 0, w, h)]
@@ -1841,7 +1969,7 @@ export const paymentMethodsDef: ComponentDef = {
     const cw = w - pad * 2
     let y = pad
     if (bool(p, "header")) {
-      prims.push(text(pad, y + 14, "Payment methods", 16, { bold: true }))
+      prims.push(text(pad, y + 14, truncate(str(p, "title", "Payment methods"), 16, cw), 16, { bold: true }))
       y += 28
     }
     const brands = ["Visa ···· 4242", "Mastercard ···· 8210", "Amex ···· 0031", "Visa ···· 7749"]
@@ -1849,19 +1977,36 @@ export const paymentMethodsDef: ComponentDef = {
     const addRow = bool(p, "addRow")
     const addH = addRow ? 56 : 0
     const avail = h - y - pad - addH
-    const n = clamp(Math.min(num(p, "cards", 2), Math.floor(avail / 58)), 1, 4)
+    // Rows keep their roomy two-line height while they fit. Past that they
+    // compress — expiry moves onto the name line — so 3 and 4 cards still show
+    // up instead of being quietly dropped.
+    const want = clamp(num(p, "cards", 2), 1, 4)
+    const roomy = Math.floor(avail / 58)
+    const n = want <= roomy ? want : clamp(Math.min(want, Math.floor(avail / 38)), 1, 4)
     const rowH = Math.min(70, avail / Math.max(1, n))
+    const dflt = clamp(num(p, "defaultCard", 1), 1, n) - 1
     for (let i = 0; i < n; i++) {
       const ry = y + i * rowH
       const bh = Math.min(58, rowH - 8)
       const cy = ry + bh / 2
-      prims.push(rect(pad, ry, cw, bh, i === 0 ? { strokeWidth: 1.6 } : { stroke: "muted" }))
+      // Below this the expiry baseline would sit on the card's bottom edge.
+      const stacked = bh >= 44
+      prims.push(rect(pad, ry, cw, bh, i === dflt ? { strokeWidth: 1.6 } : { stroke: "muted" }))
       prims.push(...icon("credit-card", pad + 28, cy, 19, { stroke: "muted" }))
       const tx = pad + 52
       const tw = cw - 52 - (w > 380 ? 110 : 30)
-      prims.push(text(tx, cy - 3, truncate(brands[i], 14, tw), 14, { bold: true }))
-      prims.push(text(tx, cy + 15, expiries[i], 11, { color: "muted" }))
-      if (i === 0 && w > 380) prims.push(...sub(badgeDef, { label: "Default", variant: "outline" }, pad + cw - 96, cy - 11, 66, 22))
+      if (stacked) {
+        prims.push(text(tx, cy - 3, truncate(brands[i], 14, tw), 14, { bold: true }))
+        prims.push(text(tx, cy + 15, expiries[i], 11, { color: "muted" }))
+      } else {
+        const brand = truncate(brands[i], 14, tw)
+        prims.push(text(tx, cy + 5, brand, 14, { bold: true }))
+        const bw = textWidth(brand, 14)
+        if (bw + 12 + textWidth(expiries[i], 11) <= tw) {
+          prims.push(text(tx + bw + 12, cy + 4, expiries[i], 11, { color: "muted" }))
+        }
+      }
+      if (i === dflt && w > 380) prims.push(...sub(badgeDef, { label: "Default", variant: "outline" }, pad + cw - 96, cy - 11, 66, 22))
       prims.push(...icon("dots-three", pad + cw - 18, cy, 15, { stroke: "muted" }))
     }
     if (addRow) {
@@ -1887,14 +2032,17 @@ export const appShellDef: ComponentDef = {
   group: "Screens",
   keywords: ["layout", "sidebar", "topbar", "frame", "skeleton", "admin"],
   size: { w: 1000, h: 660 },
-  defaults: { sidebar: true, topbar: true, placeholder: true },
+  defaults: { title: "Projects", subtitle: "Three of them are the same project.", sidebar: true, topbar: true, placeholder: true },
   controls: [
     { key: "sidebar", label: "Sidebar", type: "toggle", quick: true },
     { key: "topbar", label: "Topbar", type: "toggle", quick: true },
     { key: "placeholder", label: "Placeholder", type: "toggle", quick: true },
+    { key: "title", label: "Title", type: "text" },
+    { key: "subtitle", label: "Subtitle", type: "text" },
   ],
   render(p, w, h) {
     const prims: Prim[] = [rect(0, 0, w, h)]
+    const title = str(p, "title", "Projects")
     const sw = bool(p, "sidebar") ? clamp(w * 0.22, 160, 230) : 0
     const th = bool(p, "topbar") ? 58 : 0
     if (sw) {
@@ -1902,7 +2050,7 @@ export const appShellDef: ComponentDef = {
     }
     if (th) {
       prims.push(rect(sw, 0, w - sw, th))
-      prims.push(...sub(breadcrumbDef, { items: "Workspace, Projects" }, sw + 20, th / 2 - 12, Math.min(240, (w - sw) * 0.4), 24))
+      prims.push(...sub(breadcrumbDef, { items: `Workspace, ${title}` }, sw + 20, th / 2 - 12, Math.min(240, (w - sw) * 0.4), 24))
       let rx = w - 18
       prims.push(...sub(avatarDef, { content: "initials", initials: "PS" }, rx - 32, th / 2 - 16, 32, 32))
       rx -= 46
@@ -1918,13 +2066,17 @@ export const appShellDef: ComponentDef = {
     const cx = sw + pad
     const cw = w - sw - pad * 2
     let y = th + pad
-    prims.push(text(cx, y + 16, "Projects", 22, { bold: true }))
+    prims.push(text(cx, y + 16, truncate(title, 22, Math.max(20, cw - 160)), 22, { bold: true }))
     prims.push(...sub(buttonDef, { label: "New project", variant: "filled", size: "sm", icon: "left" }, cx + cw - 148, y - 2, 148, 36))
     y += 46
-    prims.push(text(cx, y, "Three of them are the same project.", 12, { color: "muted" }))
-    y += 20
+    const subtitle = str(p, "subtitle", "Three of them are the same project.")
+    if (subtitle) {
+      prims.push(text(cx, y, truncate(subtitle, 12, cw), 12, { color: "muted" }))
+      y += 20
+    }
     if (bool(p, "placeholder") && h - y - pad > 90) {
-      prims.push(...sub(emptyBlockDef, { title: "No projects yet", icon: "folder", cta: true }, cx, y, cw, h - y - pad))
+      const emptyTitle = title.trim() ? `No ${title.trim().toLowerCase()} yet` : "Nothing here yet"
+      prims.push(...sub(emptyBlockDef, { title: emptyTitle, icon: "folder", cta: true }, cx, y, cw, h - y - pad))
     }
     return prims
   },
@@ -1939,18 +2091,25 @@ export const landingPageDef: ComponentDef = {
   group: "Screens",
   keywords: ["marketing", "hero", "features", "website", "home", "site"],
   size: { w: 1000, h: 830 },
-  defaults: { hero: "split", features: 3, footer: true },
+  defaults: { navbar: true, hero: "split", features: 3, footer: true, headline: "Wireframes that look like you meant it", brand: "" },
   controls: [
+    { key: "navbar", label: "Navbar", type: "toggle" },
     { key: "hero", label: "Hero", type: "select", options: ["split", "center"], quick: true },
     { key: "features", label: "Features", type: "number", min: 2, max: 4, quick: true },
     { key: "footer", label: "Footer", type: "toggle", quick: true },
+    { key: "headline", label: "Headline", type: "text" },
+    { key: "brand", label: "Product name", type: "text" },
   ],
   render(p, w, h) {
     const prims: Prim[] = [rect(0, 0, w, h)]
     const pad = clamp(w * 0.06, 24, 72)
     const cw = w - pad * 2
-    const navH = Math.min(64, h * 0.09)
-    prims.push(...sub(navbarDef, { links: "Product, Pricing, Docs, Blog", search: false, avatar: false, cta: true }, 0, 0, w, navH))
+    const headline = str(p, "headline", "Wireframes that look like you meant it")
+    // Old nodes predate the toggle and have no `navbar` key — they keep their navbar.
+    const navH = p.navbar === false ? 0 : Math.min(64, h * 0.09)
+    if (navH) {
+      prims.push(...sub(navbarDef, { brand: str(p, "brand"), links: "Product, Pricing, Docs, Blog", search: false, avatar: false, cta: true }, 0, 0, w, navH))
+    }
 
     const footerH = bool(p, "footer") ? Math.min(150, h * 0.19) : 0
     const ctaH = Math.min(130, h * 0.16)
@@ -1961,7 +2120,7 @@ export const landingPageDef: ComponentDef = {
     let y = navH + Math.min(48, heroH * 0.16)
     if (str(p, "hero", "split") === "split" && cw > 520) {
       const colW = cw * 0.48
-      for (const l of wrap("Wireframes that look like you meant it", 34, colW, 3)) {
+      for (const l of wrap(headline, 34, colW, 3)) {
         prims.push(text(pad, y, l, 34, { bold: true }))
         y += 40
       }
@@ -1976,7 +2135,7 @@ export const landingPageDef: ComponentDef = {
       prims.push(rect(ix, navH + Math.min(48, heroH * 0.16) - 8, iw, ih, { fill: "shade", fillColor: "faint" }))
       prims.push(...icon("image", ix + iw / 2, navH + Math.min(48, heroH * 0.16) - 8 + ih / 2, 54, { stroke: "faint" }))
     } else {
-      for (const l of wrap("Wireframes that look like you meant it", 32, cw * 0.72, 2)) {
+      for (const l of wrap(headline, 32, cw * 0.72, 2)) {
         prims.push(text(w / 2, y, l, 32, { align: "center", bold: true }))
         y += 38
       }
@@ -2019,10 +2178,12 @@ export const landingPageDef: ComponentDef = {
       const foy = h - footerH
       prims.push(hair(0, foy, w))
       prims.push(...icon("logo", pad + 12, foy + 34, 22))
-      prims.push(text(pad + 32, foy + 40, "squig", 16, { bold: true }))
-      prims.push(text(pad, foy + footerH - 20, "© a person who draws boxes", 11, { color: "muted" }))
       const cols = 4
       const fw = Math.min(120, (cw - 160) / cols)
+      const brand = str(p, "brand").trim() || "squig"
+      const brandMaxW = Math.max(40, w - pad - cols * fw - 20 - (pad + 32))
+      prims.push(text(pad + 32, foy + 40, truncate(brand, 16, brandMaxW), 16, { bold: true }))
+      prims.push(text(pad, foy + footerH - 20, "© a person who draws boxes", 11, { color: "muted" }))
       for (let c = 0; c < cols; c++) {
         const x = w - pad - (cols - c) * fw
         if (x < pad + 140) continue
@@ -2047,21 +2208,23 @@ export const chatScreenDef: ComponentDef = {
   group: "Screens",
   keywords: ["messages", "dm", "conversation", "messenger", "slack"],
   size: { w: 1000, h: 660 },
-  defaults: { convos: 6, sidebar: true, composer: true },
+  defaults: { convos: 6, sidebar: true, composer: true, who: "Maya" },
   controls: [
     { key: "convos", label: "Conversations", type: "number", min: 3, max: 8, quick: true },
     { key: "sidebar", label: "List pane", type: "toggle", quick: true },
     { key: "composer", label: "Composer", type: "toggle", quick: true },
+    { key: "who", label: "Talking to", type: "text" },
   ],
   render(p, w, h) {
     const prims: Prim[] = [rect(0, 0, w, h)]
+    const who = str(p, "who", "Maya")
     const lw = bool(p, "sidebar") ? clamp(w * 0.29, 200, 310) : 0
     if (lw) {
       prims.push(line(lw, 0, lw, h, { stroke: "faint" }))
       prims.push(text(18, 34, "Messages", 18, { bold: true }))
       prims.push(...icon("pencil-simple", lw - 24, 28, 16, { stroke: "muted" }))
       prims.push(...sub(inputDef, { showLabel: false, icon: "search", placeholder: "Search people" }, 16, 50, lw - 32, 34))
-      const names = ["Maya", "Luis", "Ana", "Kai", "Design crew", "Mom", "Robot", "Nobody"]
+      const names = [who, "Luis", "Ana", "Kai", "Design crew", "Mom", "Robot", "Nobody"]
       const previews = [
         "ok but hear me out…",
         "merged, finally",
@@ -2094,8 +2257,8 @@ export const chatScreenDef: ComponentDef = {
     const cw = w - lw
     const headH = 62
     prims.push(hair(cx, headH, cw))
-    prims.push(...sub(avatarDef, { content: "initials", initials: "MA", status: true }, cx + 18, headH / 2 - 18, 36, 36))
-    prims.push(text(cx + 66, headH / 2 - 1, "Maya", 16, { bold: true }))
+    prims.push(...sub(avatarDef, { content: "initials", initials: who.slice(0, 2).toUpperCase(), status: true }, cx + 18, headH / 2 - 18, 36, 36))
+    prims.push(text(cx + 66, headH / 2 - 1, truncate(who, 16, cw - 170), 16, { bold: true }))
     prims.push(text(cx + 66, headH / 2 + 16, "typing, allegedly", 11, { color: "muted" }))
     prims.push(...icon("phone", cx + cw - 88, headH / 2, 16, { stroke: "muted" }))
     prims.push(...icon("video-camera", cx + cw - 56, headH / 2, 16, { stroke: "muted" }))
@@ -2114,7 +2277,7 @@ export const chatScreenDef: ComponentDef = {
       const mine = i % 2 === 1
       const bx = mine ? cx + cw - pad - bw : cx + pad + 44
       if (!mine) {
-        prims.push(...sub(avatarDef, { content: "initials", initials: "MA" }, cx + pad, y + bh - 32, 32, 32))
+        prims.push(...sub(avatarDef, { content: "initials", initials: who.slice(0, 2).toUpperCase() }, cx + pad, y + bh - 32, 32, 32))
       }
       if (mine) prims.push(rect(bx, y, bw, bh, { fill: "shade", fillColor: "faint", stroke: "faint", strokeWidth: 0.8 }))
       prims.push(rect(bx, y, bw, bh))
@@ -2144,11 +2307,12 @@ export const inboxScreenDef: ComponentDef = {
   group: "Screens",
   keywords: ["mail", "email", "reading pane", "three column", "client"],
   size: { w: 1040, h: 680 },
-  defaults: { rows: 6, pane: true, folders: true },
+  defaults: { rows: 6, pane: true, folders: true, subject: "Re: the thing we said we'd do" },
   controls: [
     { key: "rows", label: "Messages", type: "number", min: 3, max: 8, quick: true },
     { key: "pane", label: "Reading pane", type: "toggle", quick: true },
     { key: "folders", label: "Folder rail", type: "toggle", quick: true },
+    { key: "subject", label: "Subject", type: "text" },
   ],
   render(p, w, h) {
     const prims: Prim[] = [rect(0, 0, w, h)]
@@ -2192,7 +2356,7 @@ export const inboxScreenDef: ComponentDef = {
     prims.push(...icon("arrow-u-up-left", rx + rw - 96, 30, 16, { stroke: "muted" }))
     prims.push(...icon("trash", rx + rw - 62, 30, 16, { stroke: "muted" }))
     prims.push(...icon("dots-three", rx + rw - 28, 30, 16, { stroke: "muted" }))
-    for (const l of wrap("Re: the thing we said we'd do", 20, rw - pad * 2 - 120, 2)) {
+    for (const l of wrap(str(p, "subject", "Re: the thing we said we'd do"), 20, rw - pad * 2 - 120, 2)) {
       prims.push(text(rx + pad, y, l, 20, { bold: true }))
       y += 26
     }
@@ -2224,8 +2388,9 @@ export const profileScreenDef: ComponentDef = {
   group: "Screens",
   keywords: ["profile", "user page", "portfolio", "tabs", "grid"],
   size: { w: 960, h: 720 },
-  defaults: { cards: 6, tabs: true, navbar: true },
+  defaults: { name: "Pablo Scribbles", cards: 6, tabs: true, navbar: true },
   controls: [
+    { key: "name", label: "Name", type: "text" },
     { key: "cards", label: "Cards", type: "number", min: 2, max: 9, quick: true },
     { key: "tabs", label: "Tabs", type: "toggle", quick: true },
     { key: "navbar", label: "Navbar", type: "toggle" },
@@ -2238,7 +2403,7 @@ export const profileScreenDef: ComponentDef = {
     }
     const pad = clamp(w * 0.04, 20, 40)
     const headerH = clamp(h * 0.32, 180, 250)
-    prims.push(...sub(profileHeaderDef, { cover: true, stats: true, cta: true }, pad, navH + 18, w - pad * 2, headerH))
+    prims.push(...sub(profileHeaderDef, { name: str(p, "name", "Pablo Scribbles"), cover: true, stats: true, cta: true }, pad, navH + 18, w - pad * 2, headerH))
     let y = navH + 18 + headerH + 18
     if (bool(p, "tabs") && y + 48 < h) {
       prims.push(...sub(tabsDef, { labels: "Boards, Liked, About", active: 1 }, pad, y, Math.min(360, w - pad * 2), 40))
@@ -2252,7 +2417,8 @@ export const profileScreenDef: ComponentDef = {
     if (availH < 90) return prims
     const cols = clamp(Math.floor((w - pad * 2 + gap) / (240 + gap)), 1, 4)
     const cardW = (w - pad * 2 - gap * (cols - 1)) / cols
-    const rowsFit = Math.max(1, Math.floor((availH + gap) / (170 + gap)))
+    const rowsNeeded = Math.ceil(n / cols)
+    const rowsFit = Math.max(1, Math.min(rowsNeeded, Math.floor((availH + gap) / (110 + gap))))
     const cardH = Math.min(210, (availH - gap * (rowsFit - 1)) / rowsFit)
     const shown = Math.min(n, cols * rowsFit)
     for (let i = 0; i < shown; i++) {

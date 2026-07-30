@@ -29,6 +29,37 @@ const mid = (top: number, bh: number, size: number): number => top + bh / 2 + si
 /** safe indexed pick from a cycling pool */
 const pick = (pool: string[], i: number): string => pool[((i % pool.length) + pool.length) % pool.length]
 
+/** seconds as m:ss, the way a player writes them */
+const mmss = (s: number): string => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`
+
+/** the glyph a trend select points at */
+const trendIcon = (trend: string): string =>
+  trend === "up" ? "arrow-up" : trend === "down" ? "arrow-down" : "minus"
+
+/**
+ * Sign a delta to agree with the trend beside it.
+ *
+ * A card reading "↓ +12.5%" is the kind of thing nobody notices in a review and
+ * everybody notices in a screenshot. So an unsigned delta picks up the trend's
+ * sign — but a sign the user typed themselves is left exactly as typed, because
+ * arguing with someone's own input is worse than the contradiction.
+ */
+const signDelta = (delta: string, trend: string): string => {
+  const d = delta.trim()
+  if (!d || /^[+-]/.test(d)) return delta
+  return trend === "up" ? `+${d}` : trend === "down" ? `-${d}` : d
+}
+
+/**
+ * A sparkline that agrees with the trend. One wobble, read three ways: as drawn
+ * it falls to the right, mirrored it climbs, flattened it just twitches along
+ * the middle. Reusing the one shape keeps all three looking hand-drawn by the
+ * same hand.
+ */
+const SPARK = [0.7, 0.5, 0.62, 0.34, 0.46, 0.2, 0.1]
+const sparkVals = (trend: string): number[] =>
+  trend === "up" ? SPARK : trend === "down" ? SPARK.map((v) => 1 - v) : SPARK.map((v) => 0.5 + (v - 0.5) * 0.22)
+
 const FAINT_FILL: PrimOpts = { fill: "solid", fillColor: "faint", stroke: "faint", strokeWidth: 0.8 }
 const PAPER_FILL: PrimOpts = { fill: "solid", fillColor: "paper" }
 const INK_FILL: PrimOpts = { fill: "shade", fillColor: "ink" }
@@ -80,14 +111,14 @@ export const buttonGroupDef: ComponentDef = {
   group: "Buttons",
   keywords: ["segmented", "control", "toggle", "switcher"],
   size: { w: 240, h: 36 },
-  defaults: { labels: "Day, Week, Month", count: 3, active: 2 },
+  defaults: { labels: "Day, Week, Month", active: 2 },
   controls: [
     { key: "labels", label: "Labels (comma-sep)", type: "text" },
-    { key: "count", label: "Segments", type: "number", min: 2, max: 6, quick: true },
     { key: "active", label: "Active", type: "number", min: 1, max: 6, quick: true },
   ],
   render(p, w, h) {
     const labels = list(p, "labels", "Day, Week, Month")
+    // Segments follow the labels now; nodes saved with the old Segments control keep their count.
     const n = clamp(Math.round(num(p, "count", labels.length)), 2, 6)
     const active = clamp(Math.round(num(p, "active", 1)), 1, n) - 1
     const segW = w / n
@@ -279,10 +310,18 @@ export const formFieldDef: ComponentDef = {
   group: "Forms",
   keywords: ["label", "helper", "error", "validation", "input"],
   size: { w: 260, h: 86 },
-  defaults: { label: "Email", placeholder: "you@company.com", helper: true, error: false, required: true },
+  defaults: {
+    label: "Email",
+    placeholder: "you@company.com",
+    message: "That doesn't look like an email",
+    helper: true,
+    error: false,
+    required: true,
+  },
   controls: [
     { key: "label", label: "Label", type: "text" },
     { key: "placeholder", label: "Placeholder", type: "text" },
+    { key: "message", label: "Error text", type: "text" },
     { key: "helper", label: "Helper text", type: "toggle", quick: true },
     { key: "error", label: "Error", type: "toggle", quick: true },
     { key: "required", label: "Required", type: "toggle" },
@@ -313,7 +352,8 @@ export const formFieldDef: ComponentDef = {
     if (helper) {
       const hs = clamp(helperH * 0.6, 9, 12)
       const hy = labelH + fieldH + helperH * 0.72
-      if (err) prims.push(text(1, hy, truncate("That doesn't look like an email", hs, w - 4), hs))
+      if (err)
+        prims.push(text(1, hy, truncate(str(p, "message", "That doesn't look like an email"), hs, w - 4), hs))
       else prims.push(line(1, hy - hs * 0.35, Math.min(w, w * 0.72), hy - hs * 0.35, { stroke: "muted", strokeWidth: 1.2 }))
     }
     return prims
@@ -412,15 +452,16 @@ export const fileUploadDef: ComponentDef = {
   group: "Forms",
   keywords: ["dropzone", "drag", "drop", "attach", "files"],
   size: { w: 280, h: 150 },
-  defaults: { variant: "dropzone", hint: "PNG, JPG or PDF up to 10 MB", files: 2 },
+  defaults: { hint: "PNG, JPG or PDF up to 10 MB", files: 0 },
   controls: [
-    { key: "variant", label: "Variant", type: "select", options: ["dropzone", "with files"], quick: true },
-    { key: "files", label: "Files", type: "number", min: 1, max: 4, quick: true },
+    { key: "files", label: "Files", type: "number", min: 0, max: 4, quick: true },
     { key: "hint", label: "Hint", type: "text" },
   ],
   render(p, w, h) {
-    const withFiles = str(p, "variant", "dropzone") === "with files"
-    const files = withFiles ? clamp(Math.round(num(p, "files", 2)), 1, 4) : 0
+    // Nodes dropped before Files went live carry `variant: "dropzone"` and an inert
+    // files: 2 — honour the saved bare dropzone until someone moves the control.
+    const legacyZone = str(p, "variant", "") === "dropzone" && num(p, "files", 0) === 2
+    const files = legacyZone ? 0 : clamp(Math.round(num(p, "files", 0)), 0, 4)
     const zoneH = files ? Math.max(30, h - Math.min(files * 32 + 8, h * 0.56)) : h
     const listH = h - zoneH
     const rowH = files ? Math.max(12, (listH - 8) / files) : 0
@@ -463,11 +504,12 @@ export const datePickerDef: ComponentDef = {
   group: "Forms",
   keywords: ["calendar", "day", "when", "schedule", "input"],
   size: { w: 220, h: 62 },
-  defaults: { label: "Starts on", showLabel: true, value: "Mar 4, 2026", range: false },
+  defaults: { label: "Starts on", showLabel: true, value: "Mar 4, 2026", endValue: "Mar 18", range: false },
   controls: [
     { key: "label", label: "Label", type: "text" },
     { key: "showLabel", label: "Show label", type: "toggle", quick: true },
     { key: "value", label: "Value", type: "text" },
+    { key: "endValue", label: "End date", type: "text" },
     { key: "range", label: "Range", type: "toggle", quick: true },
   ],
   render(p, w, h) {
@@ -482,7 +524,8 @@ export const datePickerDef: ComponentDef = {
     prims.push(rect(0, top, w, fieldH))
     const isz = clamp(fieldH * 0.42, 11, 17)
     prims.push(...icon("calendar-blank", 14 + isz / 2, top + fieldH / 2, isz, { stroke: "muted" }))
-    const value = bool(p, "range") ? `${str(p, "value", "Mar 4")} – Mar 18` : str(p, "value", "Mar 4, 2026")
+    const start = str(p, "value", "Mar 4, 2026")
+    const value = bool(p, "range") ? `${start} – ${str(p, "endValue", "Mar 18")}` : start
     const fs = clamp(fieldH * 0.38, 10, 14)
     const tx = 22 + isz
     prims.push(text(tx, mid(top, fieldH, fs), truncate(value, fs, Math.max(10, w - tx - 24)), fs))
@@ -640,6 +683,14 @@ export const colorSwatchRowDef: ComponentDef = {
       const step = ramp[Math.round((i / (n - 1)) * (ramp.length - 1))] ?? ramp[0]
       const o: PrimOpts = { ...step, strokeWidth: i === sel ? 2.4 : 1 }
       prims.push(round ? ellipse(x, y, d, d, o) : rect(x, y, d, d, o))
+      if (i !== sel) continue
+      // A heavier border is all the mark the pale swatches need, but on the
+      // dark end of the ramp it disappears into the fill. So the selected one
+      // also gets a paper disc punched into it — inside the swatch, so nothing
+      // spills past the row — with a tick on top once there's room to draw one.
+      const md = Math.min(d * 0.56, 20)
+      prims.push(ellipse(x + (d - md) / 2, y + (d - md) / 2, md, md, { fill: "solid", fillColor: "paper" }))
+      if (md > 9) prims.push(...icon("check", x + d / 2, y + d / 2, md * 0.68))
     }
     return prims
   },
@@ -911,15 +962,15 @@ export const accordionDef: ComponentDef = {
   group: "Display",
   keywords: ["faq", "collapse", "expand", "disclosure", "details"],
   size: { w: 300, h: 220 },
-  defaults: { labels: "What is squig?, How much is it?, Can I export?, Refund policy", count: 4, expanded: 1 },
+  defaults: { labels: "What is squig?, How much is it?, Can I export?, Refund policy", expanded: 1 },
   controls: [
     { key: "labels", label: "Rows (comma-sep)", type: "text" },
-    { key: "count", label: "Rows", type: "number", min: 2, max: 6, quick: true },
     { key: "expanded", label: "Expanded", type: "number", min: 0, max: 6, quick: true },
   ],
   render(p, w, h) {
     const labels = list(p, "labels", "What is squig?, How much is it?, Can I export?, Refund policy")
-    const n = clamp(Math.round(num(p, "count", 4)), 2, 6)
+    // Rows follow the labels now; nodes saved with the old Rows control keep their count.
+    const n = clamp(Math.round(num(p, "count", labels.length)), 2, 6)
     const expanded = clamp(Math.round(num(p, "expanded", 1)), 0, n)
     const wantBody = expanded >= 1
     let headerH = wantBody ? Math.min(46, h / (n + 1)) : h / n
@@ -1108,6 +1159,8 @@ const TREE_ROWS: { d: number; folder: boolean; open: boolean; name: string }[] =
   { d: 0, folder: false, open: false, name: "package.json" },
 ]
 
+const TREE_NAMES = TREE_ROWS.map((r) => r.name).join(", ")
+
 export const treeViewDef: ComponentDef = {
   kind: "tree-view",
   name: "Tree view",
@@ -1115,12 +1168,14 @@ export const treeViewDef: ComponentDef = {
   group: "Display",
   keywords: ["file", "folder", "explorer", "nested", "sidebar", "directory"],
   size: { w: 220, h: 190 },
-  defaults: { count: 8, selected: 3 },
+  defaults: { names: TREE_NAMES, count: 8, selected: 3 },
   controls: [
+    { key: "names", label: "Rows (comma-sep)", type: "text" },
     { key: "count", label: "Rows", type: "number", min: 3, max: 10, quick: true },
     { key: "selected", label: "Selected", type: "number", min: 0, max: 10, quick: true },
   ],
   render(p, w, h) {
+    const names = list(p, "names", TREE_NAMES)
     const n = clamp(Math.round(num(p, "count", 8)), 3, 10)
     const selected = clamp(Math.round(num(p, "selected", 3)), 0, n) - 1
     const rowH = clamp(h / n, 16, 30)
@@ -1129,17 +1184,19 @@ export const treeViewDef: ComponentDef = {
     const prims: Prim[] = []
     for (let i = 0; i < n; i++) {
       const r = TREE_ROWS[i % TREE_ROWS.length]
+      const name = names[i] ?? r.name
+      const folder = !name.includes(".")
       const y = i * rowH
       if (y + rowH > h + 1) break
       if (i === selected) prims.push(rect(0, y + 1, w, rowH - 2, FAINT_FILL))
       let ix = 2 + r.d * indent
-      if (r.folder) prims.push(...icon(r.open ? "caret-down" : "caret-right", ix + 5, y + rowH / 2, 9, { stroke: "muted" }))
+      if (folder) prims.push(...icon(r.open ? "caret-down" : "caret-right", ix + 5, y + rowH / 2, 9, { stroke: "muted" }))
       ix += 13
-      prims.push(...icon(r.folder ? "folder" : "file-text", ix + 7, y + rowH / 2, clamp(rowH * 0.55, 10, 14), {
-        stroke: r.folder ? "ink" : "muted",
+      prims.push(...icon(folder ? "folder" : "file-text", ix + 7, y + rowH / 2, clamp(rowH * 0.55, 10, 14), {
+        stroke: folder ? "ink" : "muted",
       }))
       const tx = ix + 17
-      prims.push(text(tx, mid(y, rowH, fs), truncate(r.name, fs, Math.max(8, w - tx - 6)), fs, { bold: r.folder }))
+      prims.push(text(tx, mid(y, rowH, fs), truncate(name, fs, Math.max(8, w - tx - 6)), fs, { bold: folder }))
     }
     return prims
   },
@@ -1161,6 +1218,7 @@ export const listItemDef: ComponentDef = {
     leading: "avatar",
     icon: "folder",
     trailing: "chevron",
+    trailingText: "",
     divider: true,
   },
   controls: [
@@ -1169,12 +1227,14 @@ export const listItemDef: ComponentDef = {
     { key: "showSubtitle", label: "Subtitle", type: "toggle", quick: true },
     { key: "leading", label: "Leading", type: "select", options: ["avatar", "icon", "none"], quick: true },
     { key: "trailing", label: "Trailing", type: "select", options: ["chevron", "switch", "badge", "button", "meta", "none"], quick: true },
+    { key: "trailingText", label: "Trailing text", type: "text" },
     { key: "icon", label: "Icon", type: "select", options: ["folder", "file-text", "bell", "lock", "star", "clock"] },
     { key: "divider", label: "Divider", type: "toggle" },
   ],
   render(p, w, h) {
     const leading = str(p, "leading", "avatar")
     const trailing = str(p, "trailing", "chevron")
+    const tl = str(p, "trailingText", "")
     const showSub = bool(p, "showSubtitle") && h > 44
     const padX = 12
     const prims: Prim[] = []
@@ -1204,20 +1264,23 @@ export const listItemDef: ComponentDef = {
       prims.push(ellipse(right - 3 - (th - 6), ty + 3, th - 6, th - 6))
       right -= tw + 10
     } else if (trailing === "badge") {
-      const bw = 44
+      const label = tl || "New"
+      const bw = clamp(advance(label, 11) + 18, 44, Math.max(44, right - x - 40))
       const bh = 20
       prims.push(pill(right - bw, (h - bh) / 2, bw, bh))
-      prims.push(text(right - bw / 2, h / 2 + 4, "New", 11, { align: "center" }))
+      prims.push(text(right - bw / 2, h / 2 + 4, truncate(label, 11, bw - 10), 11, { align: "center" }))
       right -= bw + 10
     } else if (trailing === "button") {
-      const bw = 64
+      const label = tl || "Open"
+      const bw = clamp(advance(label, 12) + 22, 64, Math.max(64, right - x - 40))
       const bh = Math.min(30, h - 12)
       prims.push(rect(right - bw, (h - bh) / 2, bw, bh))
-      prims.push(text(right - bw / 2, h / 2 + 4, "Open", 12, { align: "center" }))
+      prims.push(text(right - bw / 2, h / 2 + 4, truncate(label, 12, bw - 10), 12, { align: "center" }))
       right -= bw + 10
     } else if (trailing === "meta") {
-      prims.push(text(right, h / 2 + 4, "2h", 11, { align: "right", color: "muted" }))
-      right -= 30
+      const label = tl || "2h"
+      prims.push(text(right, h / 2 + 4, truncate(label, 11, Math.max(20, right - x - 30)), 11, { align: "right", color: "muted" }))
+      right -= Math.max(30, advance(label, 11) + 10)
     }
     const tw = Math.max(24, right - x - 6)
     const ts = clamp(h * 0.24, 12, 16)
@@ -1368,15 +1431,18 @@ export const skeletonDef: ComponentDef = {
     const bar = (x: number, y: number, bw: number, bh: number): Prim => rect(x, y, Math.max(4, bw), Math.max(4, bh), FAINT_FILL)
     const prims: Prim[] = []
     if (variant === "card") {
-      const imgH = clamp(h * 0.56, 30, h - 46)
+      const imgH = clamp(h * 0.56, 30, Math.max(30, h - 14 - n * 9))
       prims.push(bar(0, 0, w, imgH))
-      const rest = h - imgH - 14
-      const bh = clamp(rest / 3 - 8, 7, 14)
-      const widths = [0.92, 0.76, 0.5]
-      for (let i = 0; i < 3; i++) {
-        const y = imgH + 14 + i * (bh + 8)
+      const rest = Math.max(9, h - imgH - 14)
+      // never more bars than the leftover strip can space out, or they'd stack on each other
+      const rows = clamp(Math.floor(rest / 5), 1, n)
+      const step = rest / rows
+      const bh = clamp(step - Math.min(8, step * 0.35), 4, 14)
+      const widths = [0.92, 0.76, 0.5, 0.84, 0.66, 0.9, 0.58, 0.8]
+      for (let i = 0; i < rows; i++) {
+        const y = imgH + 14 + i * step
         if (y + bh > h + 1) break
-        prims.push(bar(0, y, w * widths[i], bh))
+        prims.push(bar(0, y, w * widths[i % widths.length], bh))
       }
       return prims
     }
@@ -1418,8 +1484,8 @@ export const spinnerDef: ComponentDef = {
   defaults: { style: "ring", showLabel: false, label: "Loading…" },
   controls: [
     { key: "style", label: "Style", type: "select", options: ["ring", "dots"], quick: true },
-    { key: "showLabel", label: "Label", type: "toggle", quick: true },
-    { key: "label", label: "Text", type: "text" },
+    { key: "showLabel", label: "Show label", type: "toggle", quick: true },
+    { key: "label", label: "Label", type: "text" },
   ],
   render(p, w, h) {
     const showLabel = bool(p, "showLabel")
@@ -1472,13 +1538,31 @@ export const cardStatDef: ComponentDef = {
   group: "Display",
   keywords: ["kpi", "metric", "number", "dashboard", "card"],
   size: { w: 230, h: 124 },
-  defaults: { label: "Monthly revenue", value: "$12,480", delta: "+12.5%", trend: "up", showIcon: true, spark: true },
+  defaults: {
+    label: "Monthly revenue",
+    value: "$12,480",
+    // unsigned on purpose — the Trend control signs it, so the arrow and the
+    // number can't disagree. Type your own "+" or "-" and that wins.
+    delta: "12.5%",
+    period: "vs last month",
+    trend: "up",
+    showIcon: true,
+    icon: "currency-dollar",
+    spark: true,
+  },
   controls: [
     { key: "label", label: "Label", type: "text" },
     { key: "value", label: "Value", type: "text" },
     { key: "delta", label: "Delta", type: "text" },
+    { key: "period", label: "Period", type: "text" },
     { key: "trend", label: "Trend", type: "select", options: ["up", "down", "flat"], quick: true },
     { key: "showIcon", label: "Icon", type: "toggle", quick: true },
+    {
+      key: "icon",
+      label: "Glyph",
+      type: "select",
+      options: ["currency-dollar", "users", "chart-line", "shopping-cart", "clock", "eye"],
+    },
     { key: "spark", label: "Sparkline", type: "toggle", quick: true },
   ],
   render(p, w, h) {
@@ -1489,7 +1573,7 @@ export const cardStatDef: ComponentDef = {
     if (showIcon) {
       const d = 26
       prims.push(rect(w - pad - d, pad, d, d, { stroke: "faint" }))
-      prims.push(...icon("currency-dollar", w - pad - d / 2, pad + d / 2, 14, { stroke: "muted" }))
+      prims.push(...icon(str(p, "icon", "currency-dollar"), w - pad - d / 2, pad + d / 2, 14, { stroke: "muted" }))
     }
     const vs = clamp(h * 0.26, 18, 34)
     const vy = pad + 18 + vs
@@ -1498,17 +1582,18 @@ export const cardStatDef: ComponentDef = {
     const dy = Math.min(h - pad - 2, vy + 22)
     if (dy > vy + 12) {
       const trend = str(p, "trend", "up")
-      const delta = str(p, "delta", "+12.5%")
-      prims.push(...icon(trend === "up" ? "arrow-up" : trend === "down" ? "arrow-down" : "minus", pad + 6, dy - 4, 12))
+      const delta = signDelta(str(p, "delta", "12.5%"), trend)
+      prims.push(...icon(trendIcon(trend), pad + 6, dy - 4, 12))
       prims.push(text(pad + 18, dy, truncate(delta, 12, w * 0.4), 12, { bold: true }))
       const px = pad + 18 + advance(delta, 12) + 10
       const periodW = w - pad - px - (spark ? w * 0.3 : 0)
-      if (periodW > 26) prims.push(text(px, dy, truncate("vs last month", 12, periodW), 12, { color: "muted" }))
+      if (periodW > 26)
+        prims.push(text(px, dy, truncate(str(p, "period", "vs last month"), 12, periodW), 12, { color: "muted" }))
       if (spark) {
         const sw = w * 0.26
         const sx = w - pad - sw
         const sh = 20
-        const vals = [0.7, 0.5, 0.62, 0.34, 0.46, 0.2, 0.1]
+        const vals = sparkVals(trend)
         const pts: [number, number][] = vals.map((v, i) => [sx + (sw / (vals.length - 1)) * i, dy - 12 + sh * v])
         prims.push(poly(pts, false, { strokeWidth: 1.6, stroke: "muted", roughness: 1.4 }))
       }
@@ -1531,8 +1616,8 @@ export const cardProfileDef: ComponentDef = {
     { key: "name", label: "Name", type: "text" },
     { key: "role", label: "Role", type: "text" },
     { key: "layout", label: "Layout", type: "select", options: ["centered", "row"], quick: true },
-    { key: "action", label: "Action", type: "toggle", quick: true },
-    { key: "cta", label: "Button", type: "text" },
+    { key: "action", label: "Button", type: "toggle", quick: true },
+    { key: "cta", label: "Button label", type: "text" },
   ],
   render(p, w, h) {
     const pad = clamp(w * 0.07, 12, 18)
@@ -1588,10 +1673,11 @@ export const cardMediaDef: ComponentDef = {
   group: "Display",
   keywords: ["image", "thumbnail", "cover", "card", "preview"],
   size: { w: 250, h: 240 },
-  defaults: { title: "A weekend in the fog", badge: true, meta: true },
+  defaults: { title: "A weekend in the fog", badge: true, badgeLabel: "Travel", meta: true },
   controls: [
     { key: "title", label: "Title", type: "text" },
     { key: "badge", label: "Badge", type: "toggle", quick: true },
+    { key: "badgeLabel", label: "Badge text", type: "text" },
     { key: "meta", label: "Meta row", type: "toggle", quick: true },
   ],
   render(p, w, h) {
@@ -1601,10 +1687,11 @@ export const cardMediaDef: ComponentDef = {
     prims.push(rect(0, 0, w, imgH, { fill: "shade", fillColor: "faint" }))
     prims.push(...icon("image", w / 2, imgH / 2, clamp(Math.min(w, imgH) * 0.24, 18, 46), { stroke: "muted" }))
     if (bool(p, "badge") && imgH > 40) {
-      const bw = 56
+      const label = str(p, "badgeLabel", "Travel")
       const bh = 20
+      const bw = clamp(advance(label, 10) + 16, 34, Math.min(Math.max(34, w - pad * 2), 120))
       prims.push(pill(pad, pad, bw, bh, PAPER_FILL), pill(pad, pad, bw, bh))
-      prims.push(text(pad + bw / 2, pad + bh / 2 + 4, "Travel", 10, { align: "center" }))
+      prims.push(text(pad + bw / 2, pad + bh / 2 + 4, truncate(label, 10, bw - 10), 10, { align: "center" }))
     }
     const meta = bool(p, "meta")
     const metaY = h - pad - 2
@@ -1641,9 +1728,10 @@ export const cardPricingDef: ComponentDef = {
   controls: [
     { key: "tier", label: "Tier", type: "text" },
     { key: "price", label: "Price", type: "text" },
+    { key: "period", label: "Period", type: "text" },
     { key: "features", label: "Features", type: "number", min: 1, max: 6, quick: true },
     { key: "popular", label: "Popular", type: "toggle", quick: true },
-    { key: "cta", label: "Button", type: "text" },
+    { key: "cta", label: "Button label", type: "text" },
   ],
   render(p, w, h) {
     const popular = bool(p, "popular")
@@ -1739,13 +1827,15 @@ export const cardProductDef: ComponentDef = {
   group: "Display",
   keywords: ["shop", "commerce", "buy", "price", "cart", "card"],
   size: { w: 220, h: 270 },
-  defaults: { title: "Squig Tote", price: "$28", badge: true, rating: true, cta: "icon" },
+  defaults: { title: "Squig Tote", price: "$28", badge: true, badgeLabel: "Sale", rating: true, cta: "icon", ctaLabel: "Add to cart" },
   controls: [
     { key: "title", label: "Title", type: "text" },
     { key: "price", label: "Price", type: "text" },
     { key: "badge", label: "Badge", type: "toggle", quick: true },
+    { key: "badgeLabel", label: "Badge text", type: "text" },
     { key: "rating", label: "Rating", type: "toggle", quick: true },
     { key: "cta", label: "Action", type: "select", options: ["icon", "button"], quick: true },
+    { key: "ctaLabel", label: "Button label", type: "text" },
   ],
   render(p, w, h) {
     const pad = 14
@@ -1754,10 +1844,12 @@ export const cardProductDef: ComponentDef = {
     prims.push(rect(0, 0, w, imgH, { fill: "shade", fillColor: "faint" }))
     prims.push(...icon("image", w / 2, imgH / 2, clamp(Math.min(w, imgH) * 0.24, 18, 46), { stroke: "muted" }))
     if (bool(p, "badge") && imgH > 40) {
-      const bw = 46
+      const bl = str(p, "badgeLabel", "Sale")
+      const maxBw = Math.max(24, w - pad * 2)
+      const bw = clamp(advance(bl, 10) + 20, Math.min(46, maxBw), maxBw)
       const bh = 20
       prims.push(pill(pad, pad, bw, bh, PAPER_FILL), pill(pad, pad, bw, bh))
-      prims.push(text(pad + bw / 2, pad + bh / 2 + 4, "Sale", 10, { align: "center" }))
+      prims.push(text(pad + bw / 2, pad + bh / 2 + 4, truncate(bl, 10, bw - 10), 10, { align: "center" }))
     }
     let y = imgH + pad + 12
     prims.push(text(pad, y, truncate(str(p, "title", ""), 15, w - pad * 2), 15, { bold: true }))
@@ -1780,7 +1872,11 @@ export const cardProductDef: ComponentDef = {
     } else {
       const bw = Math.min(w - pad * 2 - priceW - 8, 116)
       prims.push(rect(w - pad - bw, by, bw, btnD, INK_FILL))
-      prims.push(text(w - pad - bw / 2, by + btnD / 2 + 4, truncate("Add to cart", 12, bw - 10), 12, { align: "center" }))
+      prims.push(
+        text(w - pad - bw / 2, by + btnD / 2 + 4, truncate(str(p, "ctaLabel", "Add to cart"), 12, bw - 10), 12, {
+          align: "center",
+        })
+      )
     }
     return prims
   },
@@ -1795,37 +1891,49 @@ export const cardBlogDef: ComponentDef = {
   group: "Display",
   keywords: ["article", "post", "author", "tag", "card", "read"],
   size: { w: 260, h: 280 },
-  defaults: { title: "Why wireframes should look unfinished", tag: "Design", author: "Pablo S." },
+  defaults: { title: "Why wireframes should look unfinished", tag: "Design", author: "Pablo S.", image: true, footer: true },
   controls: [
     { key: "title", label: "Title", type: "text" },
     { key: "tag", label: "Tag", type: "text" },
     { key: "author", label: "Author", type: "text" },
+    { key: "image", label: "Image", type: "toggle", quick: true },
+    { key: "footer", label: "Byline", type: "toggle", quick: true },
   ],
   render(p, w, h) {
     const pad = clamp(w * 0.06, 14, 18)
     const prims: Prim[] = [rect(0, 0, w, h)]
-    const imgH = clamp(h * 0.38, 40, Math.max(40, h - 130))
-    prims.push(rect(0, 0, w, imgH, { fill: "shade", fillColor: "faint" }))
-    prims.push(...icon("image", w / 2, imgH / 2, clamp(Math.min(w, imgH) * 0.26, 18, 44), { stroke: "muted" }))
-    let y = imgH + pad + 8
-    const tw = Math.min(w - pad * 2, advance(str(p, "tag", "Design"), 10) + 18)
-    const tag = truncate(str(p, "tag", "Design"), 10, Math.max(6, tw - 14))
-    prims.push(pill(pad, y - 13, tw, 20, { stroke: "muted" }))
-    prims.push(text(pad + tw / 2, y + 1, tag, 10, { align: "center", color: "muted" }))
-    y += 24
+    const showImage = bool(p, "image")
+    const showFooter = bool(p, "footer")
+    let y = pad + 8
+    if (showImage) {
+      const imgH = clamp(h * 0.38, 40, Math.max(40, h - 130))
+      prims.push(rect(0, 0, w, imgH, { fill: "shade", fillColor: "faint" }))
+      prims.push(...icon("image", w / 2, imgH / 2, clamp(Math.min(w, imgH) * 0.26, 18, 44), { stroke: "muted" }))
+      y = imgH + pad + 8
+    }
+    const tagText = str(p, "tag", "Design").trim()
+    if (tagText) {
+      const tw = Math.min(w - pad * 2, advance(tagText, 10) + 18)
+      prims.push(pill(pad, y - 13, tw, 20, { stroke: "muted" }))
+      prims.push(text(pad + tw / 2, y + 1, truncate(tagText, 10, Math.max(6, tw - 14)), 10, { align: "center", color: "muted" }))
+      y += 24
+    }
     const ts = clamp(w * 0.07, 13, 18)
     prims.push(text(pad, y, truncate(str(p, "title", ""), ts, w - pad * 2), ts, { bold: true }))
     y += 8
     const d = 26
     const footY = h - pad - d
-    const lines = clamp(Math.floor((footY - y - 12) / 14), 0, 3)
+    const bodyBottom = showFooter ? footY : h - pad
+    const lines = clamp(Math.floor((bodyBottom - y - 12) / 14), 0, 5)
     if (lines > 0) prims.push(...loremLines(pad, y + 12, w - pad * 2, lines, 14))
-    prims.push(ellipse(pad, footY, d, d))
-    prims.push(...icon("user", pad + d / 2, footY + d / 2, d * 0.5, { stroke: "muted" }))
-    const ax = pad + d + 10
-    const aw = Math.max(20, w - ax - pad)
-    prims.push(text(ax, footY + 11, truncate(str(p, "author", ""), 12, aw), 12, { bold: true }))
-    prims.push(text(ax, footY + 25, truncate("Mar 4 · 6 min read", 10, aw), 10, { color: "muted" }))
+    if (showFooter) {
+      prims.push(ellipse(pad, footY, d, d))
+      prims.push(...icon("user", pad + d / 2, footY + d / 2, d * 0.5, { stroke: "muted" }))
+      const ax = pad + d + 10
+      const aw = Math.max(20, w - ax - pad)
+      prims.push(text(ax, footY + 11, truncate(str(p, "author", ""), 12, aw), 12, { bold: true }))
+      prims.push(text(ax, footY + 25, truncate("Mar 4 · 6 min read", 10, aw), 10, { color: "muted" }))
+    }
     return prims
   },
 }
@@ -1929,6 +2037,25 @@ export const menubarDef: ComponentDef = {
 
 // -- context menu -----------------------------------------------------------
 
+/** The shortcuts everyone already knows, keyed by the verb the row starts with. */
+const SHORTCUT_WORDS = new Map<string, string>([
+  ["cut", "⌘X"],
+  ["copy", "⌘C"],
+  ["paste", "⌘V"],
+  ["duplicate", "⌘D"],
+  ["delete", "⌫"],
+  ["remove", "⌫"],
+  ["share", ""],
+])
+
+/** ⌘ + first letter for anything else that starts with a letter, nothing otherwise. */
+const shortcutFor = (label: string): string => {
+  const first = label.trim().split(/\s+/)[0] ?? ""
+  const known = SHORTCUT_WORDS.get(first.toLowerCase())
+  if (known !== undefined) return known
+  return /^[a-z]/i.test(first) ? `⌘${first.charAt(0).toUpperCase()}` : ""
+}
+
 export const contextMenuDef: ComponentDef = {
   kind: "context-menu",
   name: "Context menu",
@@ -1947,7 +2074,6 @@ export const contextMenuDef: ComponentDef = {
     const n = items.length
     const shortcuts = bool(p, "shortcuts")
     const hover = clamp(Math.round(num(p, "hover", 2)), 0, n) - 1
-    const SC = ["⌘X", "⌘C", "⌘V", "⌘D", "", "⌫"]
     const pad = 6
     const submenu = n >= 3 ? n - 2 : -1
     let seps = [1, n - 2].filter((s, i, arr) => s > 0 && s < n - 1 && arr.indexOf(s) === i)
@@ -1970,8 +2096,9 @@ export const contextMenuDef: ComponentDef = {
       )
       if (i === submenu) {
         prims.push(...icon("caret-right", w - 14, y + rowH / 2, 10, { stroke: "muted" }))
-      } else if (shortcuts && SC[i]) {
-        prims.push(text(w - 12, mid(y, rowH, 11), SC[i], 11, { align: "right", color: "muted" }))
+      } else if (shortcuts) {
+        const sc = shortcutFor(pick(items, i))
+        if (sc) prims.push(text(w - 12, mid(y, rowH, 11), sc, 11, { align: "right", color: "muted" }))
       }
       y += rowH
       if (seps.indexOf(i) !== -1) {
@@ -1992,9 +2119,15 @@ export const commandMenuDef: ComponentDef = {
   group: "Navigation",
   keywords: ["palette", "cmdk", "spotlight", "search", "quick actions"],
   size: { w: 360, h: 280 },
-  defaults: { placeholder: "Type a command or search…", count: 5, footer: true },
+  defaults: {
+    placeholder: "Type a command or search…",
+    items: "New project, Open folder, Invite teammate, Settings, New doc, Deploy site, Ask the agent, Recent files",
+    count: 5,
+    footer: true,
+  },
   controls: [
     { key: "placeholder", label: "Placeholder", type: "text" },
+    { key: "items", label: "Results (comma-sep)", type: "text" },
     { key: "count", label: "Results", type: "number", min: 2, max: 8, quick: true },
     { key: "footer", label: "Footer", type: "toggle", quick: true },
   ],
@@ -2017,7 +2150,7 @@ export const commandMenuDef: ComponentDef = {
     const headerH = 18
     const rowH = clamp((bodyBottom - bodyTop - headerH * 2) / n, 20, 34)
     const ICONS = ["plus", "folder", "user-plus", "gear", "file-text", "rocket-launch", "magic-wand", "clock"]
-    const LABELS = ["New project", "Open folder", "Invite teammate", "Settings", "New doc", "Deploy site", "Ask the agent", "Recent files"]
+    const items = list(p, "items", "New project, Open folder, Invite teammate, Settings, New doc, Deploy site, Ask the agent, Recent files")
     const KB = ["⌘N", "⌘O", "⌘I", "⌘,", "⌘D", "", "", ""]
     const secondAt = Math.ceil(n / 2)
     let y = bodyTop
@@ -2029,7 +2162,7 @@ export const commandMenuDef: ComponentDef = {
       if (y + rowH > bodyBottom) break
       if (i === 0) prims.push(rect(6, y + 1, w - 12, rowH - 2, FAINT_FILL))
       prims.push(...icon(pick(ICONS, i), 22, y + rowH / 2, 14, { stroke: "muted" }))
-      prims.push(text(40, mid(y, rowH, 13), truncate(pick(LABELS, i), 13, Math.max(10, w - 100)), 13))
+      prims.push(text(40, mid(y, rowH, 13), truncate(pick(items, i), 13, Math.max(10, w - 100)), 13))
       const kb = KB[i % KB.length]
       if (kb) prims.push(text(w - 14, mid(y, rowH, 11), kb, 11, { align: "right", color: "muted" }))
       y += rowH
@@ -2207,7 +2340,8 @@ export const statDef: ComponentDef = {
   group: "Data",
   keywords: ["metric", "kpi", "number", "delta", "figure"],
   size: { w: 180, h: 86 },
-  defaults: { label: "Active users", value: "8,240", delta: "+4.2%", trend: "up", period: "vs last week" },
+  // delta unsigned — Trend signs it, so the arrow and the number always agree
+  defaults: { label: "Active users", value: "8,240", delta: "4.2%", trend: "up", period: "vs last week" },
   controls: [
     { key: "label", label: "Label", type: "text" },
     { key: "value", label: "Value", type: "text" },
@@ -2223,8 +2357,8 @@ export const statDef: ComponentDef = {
     const dy = vy + 20
     if (dy <= h) {
       const trend = str(p, "trend", "up")
-      const delta = str(p, "delta", "")
-      prims.push(...icon(trend === "up" ? "arrow-up" : trend === "down" ? "arrow-down" : "minus", 6, dy - 4, 12))
+      const delta = signDelta(str(p, "delta", ""), trend)
+      prims.push(...icon(trendIcon(trend), 6, dy - 4, 12))
       const dw = advance(delta, 12)
       prims.push(text(18, dy, truncate(delta, 12, w * 0.45), 12, { bold: true }))
       const px = 18 + dw + 10
@@ -2243,8 +2377,9 @@ export const dataTableDef: ComponentDef = {
   group: "Data",
   keywords: ["grid", "rows", "sort", "filter", "select", "pagination", "crud"],
   size: { w: 540, h: 320 },
-  defaults: { rows: 5, toolbar: true, footer: true, selected: 2 },
+  defaults: { cols: "Name, Status, Amount", rows: 5, toolbar: true, footer: true, selected: 2 },
   controls: [
+    { key: "cols", label: "Columns (comma-sep)", type: "text" },
     { key: "rows", label: "Rows", type: "number", min: 1, max: 10, quick: true },
     { key: "toolbar", label: "Toolbar", type: "toggle", quick: true },
     { key: "footer", label: "Footer", type: "toggle", quick: true },
@@ -2288,10 +2423,14 @@ export const dataTableDef: ComponentDef = {
     prims.push(line(0, tTop + headerH, w, tTop + headerH, { stroke: "faint" }))
     prims.push(rect(cbW / 2 - 7, tTop + headerH / 2 - 7, 14, 14, { stroke: "muted" }))
     prims.push(...icon("minus", cbW / 2, tTop + headerH / 2, 10))
-    prims.push(text(colX[0], mid(tTop, headerH, 12), "Name", 12, { bold: true }))
-    prims.push(...icon("caret-up-down", colX[0] + advance("Name", 12) + 13, tTop + headerH / 2, 10, { stroke: "muted" }))
-    prims.push(text(colX[1], mid(tTop, headerH, 12), "Status", 12, { bold: true }))
-    prims.push(text(cbW + contentW - 6, mid(tTop, headerH, 12), "Amount", 12, { align: "right", bold: true }))
+    const cols = list(p, "cols", "Name, Status, Amount")
+    const hName = truncate(cols[0] ?? "Name", 12, Math.max(16, contentW * 0.46 - 30))
+    const hStatus = truncate(cols[1] ?? "Status", 12, Math.max(16, contentW * 0.28 - 8))
+    const hAmount = truncate(cols[2] ?? "Amount", 12, Math.max(16, cbW + contentW - 6 - colX[2]))
+    prims.push(text(colX[0], mid(tTop, headerH, 12), hName, 12, { bold: true }))
+    prims.push(...icon("caret-up-down", colX[0] + advance(hName, 12) + 13, tTop + headerH / 2, 10, { stroke: "muted" }))
+    prims.push(text(colX[1], mid(tTop, headerH, 12), hStatus, 12, { bold: true }))
+    prims.push(text(cbW + contentW - 6, mid(tTop, headerH, 12), hAmount, 12, { align: "right", bold: true }))
     const bodyTop = tTop + headerH
     const bodyH = Math.max(16, h - footerH - bodyTop)
     const rowH = bodyH / rows
@@ -2340,6 +2479,9 @@ export const dataTableDef: ComponentDef = {
 
 // -- key/value list ---------------------------------------------------------
 
+const KV_KEYS = "Plan, Seats, Renews, Owner, Region, Status, Created, Support"
+const KV_VALS = "Pro, 12, Mar 4 2026, Pablo S., us-east-1, Active, Jan 2024, Priority"
+
 export const kvListDef: ComponentDef = {
   kind: "kv-list",
   name: "Key/value list",
@@ -2347,8 +2489,10 @@ export const kvListDef: ComponentDef = {
   group: "Data",
   keywords: ["details", "definition", "properties", "summary", "meta"],
   size: { w: 260, h: 170 },
-  defaults: { count: 5, dividers: true, layout: "row" },
+  defaults: { keys: KV_KEYS, values: KV_VALS, count: 5, dividers: true, layout: "row" },
   controls: [
+    { key: "keys", label: "Keys (comma-sep)", type: "text" },
+    { key: "values", label: "Values (comma-sep)", type: "text" },
     { key: "count", label: "Rows", type: "number", min: 2, max: 8, quick: true },
     { key: "layout", label: "Layout", type: "select", options: ["row", "stacked"], quick: true },
     { key: "dividers", label: "Dividers", type: "toggle", quick: true },
@@ -2357,8 +2501,8 @@ export const kvListDef: ComponentDef = {
     const n = clamp(Math.round(num(p, "count", 5)), 2, 8)
     const dividers = bool(p, "dividers")
     const stacked = str(p, "layout", "row") === "stacked"
-    const KEYS = ["Plan", "Seats", "Renews", "Owner", "Region", "Status", "Created", "Support"]
-    const VALS = ["Pro", "12", "Mar 4, 2026", "Pablo S.", "us-east-1", "Active", "Jan 2024", "Priority"]
+    const KEYS = list(p, "keys", KV_KEYS)
+    const VALS = list(p, "values", KV_VALS)
     const rowH = h / n
     const prims: Prim[] = []
     for (let i = 0; i < n; i++) {
@@ -2383,6 +2527,9 @@ export const kvListDef: ComponentDef = {
 
 // -- video player -----------------------------------------------------------
 
+/** the clip this player has always been playing: 4:03 */
+const TOTAL_S = 243
+
 export const videoPlayerDef: ComponentDef = {
   kind: "video-player",
   name: "Video player",
@@ -2390,11 +2537,12 @@ export const videoPlayerDef: ComponentDef = {
   group: "Media",
   keywords: ["play", "movie", "scrubber", "youtube", "embed"],
   size: { w: 320, h: 200 },
-  defaults: { controls: true, progress: 35, title: false },
+  defaults: { controls: true, progress: 35, title: false, titleText: "How we draw squiggles" },
   controls: [
     { key: "controls", label: "Controls", type: "toggle", quick: true },
     { key: "progress", label: "Progress", type: "number", min: 0, max: 100, quick: true },
     { key: "title", label: "Title overlay", type: "toggle", quick: true },
+    { key: "titleText", label: "Title", type: "text" },
   ],
   render(p, w, h) {
     const controls = bool(p, "controls") && h > 90
@@ -2406,20 +2554,25 @@ export const videoPlayerDef: ComponentDef = {
     prims.push(ellipse(w / 2 - d / 2, stageH / 2 - d / 2, d, d))
     prims.push(...icon("play", w / 2 + d * 0.04, stageH / 2, d * 0.4))
     if (bool(p, "title")) {
-      prims.push(text(14, 24, truncate("How we draw squiggles", 13, w - 28), 13, { bold: true }))
+      prims.push(text(14, 24, truncate(str(p, "titleText", "How we draw squiggles"), 13, w - 28), 13, { bold: true }))
     }
     if (controls) {
       prims.push(line(0, stageH, w, stageH, { stroke: "faint" }))
       const sx = 12
       const sw = Math.max(20, w - 24)
       const sy = stageH + 11
-      const prog = clamp(num(p, "progress", 35), 0, 100) / 100
+      const pct = clamp(num(p, "progress", 35), 0, 100)
+      const prog = pct / 100
       prims.push(line(sx, sy, sx + sw, sy, { stroke: "faint", strokeWidth: 2 }))
       prims.push(line(sx, sy, sx + sw * prog, sy, { strokeWidth: 2.4 }))
       prims.push(ellipse(sx + sw * prog - 5, sy - 5, 10, 10, { fill: "solid", fillColor: "ink" }))
       const ry = stageH + cH - 10
       prims.push(...icon("play", 16, ry, 12))
-      prims.push(text(30, ry + 4, "1:24 / 4:03", 10, { color: "muted" }))
+      // Progress arrives as a whole percent, which on a 4:03 clip covers a band
+      // about two and a half seconds wide rather than one instant. Read the
+      // start of the band, so 35% keeps saying 1:24 and a full bar says 4:03.
+      const el = pct >= 100 ? TOTAL_S : Math.max(0, Math.ceil(((pct - 0.5) / 100) * TOTAL_S))
+      prims.push(text(30, ry + 4, `${mmss(el)} / ${mmss(TOTAL_S)}`, 10, { color: "muted" }))
       prims.push(...icon("arrows-out", w - 16, ry, 12, { stroke: "muted" }))
     }
     return prims
@@ -2523,10 +2676,11 @@ export const mapDef: ComponentDef = {
   group: "Media",
   keywords: ["location", "pin", "streets", "geo", "address"],
   size: { w: 300, h: 220 },
-  defaults: { pins: 1, label: true, controls: true },
+  defaults: { pins: 1, label: true, labelText: "You are here", controls: true },
   controls: [
     { key: "pins", label: "Pins", type: "number", min: 1, max: 3, quick: true },
     { key: "label", label: "Label", type: "toggle", quick: true },
+    { key: "labelText", label: "Label text", type: "text" },
     { key: "controls", label: "Zoom controls", type: "toggle", quick: true },
   ],
   render(p, w, h) {
@@ -2564,15 +2718,18 @@ export const mapDef: ComponentDef = {
       prims.push(ellipse(px - sz * 0.3, py + sz * 0.22, sz * 0.6, sz * 0.2, { stroke: "faint" }))
       prims.push(...icon("map-pin", px, py - sz * 0.15, sz))
     }
+    const zoom = bool(p, "controls") && h > 110
     if (bool(p, "label") && w > 160) {
-      const lw = Math.min(w * 0.42, 118)
+      const labelText = str(p, "labelText", "You are here")
       const lh = 26
-      const lx = clamp(w * 0.5 - lw / 2, 8, w - lw - 8)
+      // a long label grows both ways from centre — stop it short of the zoom stack
+      const lw = clamp(advance(labelText, 12) + 26, 60, Math.max(60, w - (zoom ? 92 : 16)))
+      const lx = clamp(w * 0.5 - lw / 2, 8, Math.max(8, w - lw - 8))
       const ly = clamp(h * 0.5 - base * 0.85 - lh, 6, h - lh - 6)
       prims.push(rect(lx, ly, lw, lh, PAPER_FILL), rect(lx, ly, lw, lh))
-      prims.push(text(lx + lw / 2, ly + lh / 2 + 4, truncate("You are here", 12, lw - 12), 12, { align: "center" }))
+      prims.push(text(lx + lw / 2, ly + lh / 2 + 4, truncate(labelText, 12, lw - 12), 12, { align: "center" }))
     }
-    if (bool(p, "controls") && h > 110) {
+    if (zoom) {
       const cw = 26
       const chh = 52
       const cx = w - 12 - cw
