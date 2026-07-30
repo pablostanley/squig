@@ -32,6 +32,7 @@ import { getDef, renderComponent } from "@/lib/library/registry"
 import { exportDoc } from "@/lib/file-io"
 import { copyAsPngWithNotice } from "@/lib/export-image"
 import { ContextRow } from "./context-row"
+import { EmptyCanvas } from "./empty-canvas"
 import { TextEditOverlay } from "./text-edit-overlay"
 
 const MIN_ZOOM = 0.1
@@ -1509,15 +1510,7 @@ export function Canvas() {
       <ContextRow selectedNodes={selectedNodes} viewport={v} busy={!!gestureKind} />
 
       {/* empty-canvas nudge */}
-      {order.length === 0 && !placing && (
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-          <p className="max-w-xs -rotate-2 text-center text-xl" style={{ color: "var(--sq-muted)", fontFamily: "var(--sq-font)" }}>
-            draw the idea
-            <br />
-            before shipping the code.
-          </p>
-        </div>
-      )}
+      {order.length === 0 && !placing && <EmptyCanvas />}
     </div>
   )
 }
