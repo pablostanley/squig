@@ -74,7 +74,7 @@ export const THEMES = {
     select: "#E8622F",
   },
   plum: {
-    label: "Plum",
+    label: "Ditto purple",
     bg: "#FCF9FC",
     paper: "#FFFFFF",
     ink: "#71268A",
@@ -86,7 +86,7 @@ export const THEMES = {
     select: "#D9A441",
   },
   marigold: {
-    label: "Marigold",
+    label: "Safelight amber",
     bg: "#FDFAF2",
     paper: "#FFFFFF",
     ink: "#B26A0F",
@@ -98,7 +98,7 @@ export const THEMES = {
     select: "#2438FF",
   },
   graphite: {
-    label: "Graphite",
+    label: "Carbon black",
     bg: "#FCFCFA",
     paper: "#FFFFFF",
     ink: "#2D2A26",
