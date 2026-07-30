@@ -130,7 +130,6 @@ const TEXT_STYLES = [
 export function Inspector() {
   const nodes = useSquig((s) => s.nodes)
   const selection = useSquig((s) => s.selection)
-  const total = useSquig((s) => s.order.length)
 
   const selected = selection.map((id) => nodes[id]).filter(Boolean) as SquigNode[]
   const empty = selected.length === 0
@@ -145,13 +144,7 @@ export function Inspector() {
         ? (getDef((selected[0] as ComponentNode).kind)?.name ?? (selected[0] as ComponentNode).kind)
         : selected[0].type
 
-  const subtitle = empty
-    ? total === 0
-      ? "empty canvas"
-      : `${total} ${total === 1 ? "layer" : "layers"}`
-    : selected.length > 1
-      ? selectionSummary(selected)
-      : undefined
+  const subtitle = selected.length > 1 ? selectionSummary(selected) : undefined
 
   return (
     <Panel className="absolute top-4 right-4 z-30 max-h-[calc(100vh-2rem)] w-[272px]">
