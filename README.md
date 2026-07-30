@@ -2,7 +2,7 @@
 
 A wireframing tool for people who think by drawing.
 
-**[Open squig →](https://squig-theta.vercel.app)**
+**[Try it live at squig.sh →](https://squig.sh)**
 
 ![A squig canvas: a landing page wireframe drawn in blue ink — nav, hero, feature row, footer — with the tool's rail on the left and the page inspector on the right](docs/hero.jpg)
 
