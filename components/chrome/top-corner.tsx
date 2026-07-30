@@ -13,7 +13,7 @@
 import { useRef } from "react"
 import { useSquig } from "@/lib/store"
 import { exportDoc, importDoc } from "@/lib/file-io"
-import { CaretDownIcon } from "@phosphor-icons/react"
+import { ArrowUpRightIcon, CaretDownIcon } from "@phosphor-icons/react"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -108,6 +108,22 @@ export function TopCorner() {
           <DropdownMenuSeparator />
           <DropdownMenuItem variant="destructive" onClick={() => st().clearCanvas()}>
             Clear canvas
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          {/* squig is open source — the one row in here that leaves the app */}
+          <DropdownMenuItem
+            render={
+              <a
+                href="https://github.com/pablostanley/squig"
+                target="_blank"
+                rel="noreferrer noopener"
+              />
+            }
+          >
+            Contribute on GitHub
+            <DropdownMenuShortcut className="pl-4">
+              <ArrowUpRightIcon className="size-3.5" />
+            </DropdownMenuShortcut>
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
