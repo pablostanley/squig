@@ -213,6 +213,18 @@ export function primsToPaths(
   return { paths, texts, crisp }
 }
 
+/**
+ * Turn a mirrored run over about its own anchor — the flipped-text-layer case.
+ * Scaling about the anchor rather than the origin is what keeps the words on
+ * the spot they were drawn instead of throwing them off the far side of the
+ * node.
+ */
+function mirrorGlyphs(t: Extract<Prim, { t: "text" }>): string | undefined {
+  if (!t.mirrorX && !t.mirrorY) return undefined
+  const [sx, sy] = [t.mirrorX ? -1 : 1, t.mirrorY ? -1 : 1]
+  return `translate(${t.x * (1 - sx)} ${t.y * (1 - sy)}) scale(${sx} ${sy})`
+}
+
 export const SketchPrims = memo(function SketchPrims({
   prims,
   seed,
@@ -270,6 +282,7 @@ export const SketchPrims = memo(function SketchPrims({
             textDecoration={t.underline ? "underline" : undefined}
             fill={INK[t.color ?? "ink"]}
             textAnchor={t.align === "center" ? "middle" : t.align === "right" ? "end" : "start"}
+            transform={mirrorGlyphs(t)}
           >
             {t.text}
           </text>

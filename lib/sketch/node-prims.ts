@@ -95,7 +95,13 @@ export function basePrims(node: SquigNode): Prim[] {
   }
 }
 
-/** Everything a node draws, in node-local coordinates, flips applied. */
+/**
+ * Everything a node draws, in node-local coordinates, flips applied.
+ *
+ * A text layer flips for real — the words turn over. Everywhere else the words
+ * are labels on a wireframe and stay readable while the layout mirrors around
+ * them; see mirrorPrims.
+ */
 export function nodePrims(node: SquigNode): Prim[] {
-  return mirrorPrims(basePrims(node), node.w, node.h, !!node.flipX, !!node.flipY)
+  return mirrorPrims(basePrims(node), node.w, node.h, !!node.flipX, !!node.flipY, node.type === "text")
 }
