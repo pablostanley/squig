@@ -673,6 +673,15 @@ export function Canvas() {
       s.setSelection(g.collapseTo)
     }
 
+    // an ⌥-drag copy hands ⌘D the distance it travelled, so the next one
+    // lands the same way again. cloneIds and sourceIds share an index.
+    if (g.kind === "move" && g.cloneIds) {
+      s.rememberDuplicate(
+        g.cloneIds,
+        Object.fromEntries(g.cloneIds.map((id, i) => [id, g.sourcePos[g.sourceIds[i]]]))
+      )
+    }
+
     teardownGesture()
   }, [st, stopAutoPan, teardownGesture])
 

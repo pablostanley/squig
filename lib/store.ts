@@ -4,6 +4,7 @@ import { create } from "zustand"
 import { nanoid } from "nanoid"
 import type { ComponentNode, SquigNode, TextAlign, TextNode, Tool, Viewport, ShapeKind } from "./types"
 import { normalizeFill, screenToWorld, unionBox } from "./types"
+import { repeatStep, type DupTrail } from "./canvas/duplicate"
 import { getDef } from "./library/registry"
 import { breakApart } from "./library/break-apart"
 import {
@@ -98,6 +99,10 @@ interface SquigState {
   linkOpen: boolean
   /** private clipboard — ⌘C/⌘X/⌘V never touch the system one */
   clipboard: SquigNode[]
+  /** the last copies made, and where each one started life. ⌘D reads the gap
+   *  between the two and repeats it, so an ⌥-drag (or a duplicate you then
+   *  moved) becomes a step you can march across the board. */
+  dupTrail: DupTrail | null
   /** a one-line flash in the corner; the id makes a repeat of the same words
    *  count as a new message */
   notice: { id: number; text: string } | null
@@ -139,6 +144,8 @@ interface SquigState {
   revertToCheckpoint: () => void
   /** clone the selection in place and select the clones — the alt-drag primitive */
   cloneSelectionInPlace: () => string[]
+  /** remember copies and their origins, so ⌘D can repeat the move that followed */
+  rememberDuplicate: (ids: string[], from: DupTrail["from"]) => void
   distributeSelected: (axis: "h" | "v") => void
   selectAll: () => void
   selectNone: () => void
@@ -416,6 +423,7 @@ export const useSquig = create<SquigState>((set, get) => ({
   shortcutsOpen: false,
   linkOpen: false,
   clipboard: [],
+  dupTrail: null,
   notice: null,
   past: [],
   future: [],
@@ -583,19 +591,30 @@ export const useSquig = create<SquigState>((set, get) => ({
   deleteSelected: () => get().removeNodes(get().selection),
 
   duplicateSelected: (offset = 16) => {
-    const { selection, nodes, order } = get()
+    const { selection, nodes, order, dupTrail } = get()
     const src = order.filter((id) => selection.includes(id)).map((id) => nodes[id])
     if (!src.length) return []
+
+    // ⌘D on the copies you just made repeats the gap you put between them and
+    // their originals; anything else gets the polite diagonal nudge
+    const step = repeatStep(dupTrail, selection, nodes) ?? { dx: offset, dy: offset }
     get().checkpoint()
-    const clones = cloneNodes(src, offset, offset)
+    const clones = cloneNodes(src, step.dx, step.dy)
     set((s) => ({
       nodes: { ...s.nodes, ...Object.fromEntries(clones.map((c) => [c.id, c])) },
       order: [...s.order, ...clones.map((c) => c.id)],
       selection: clones.map((c) => c.id),
+      // where these copies came from, so the next ⌘D can measure the same way
+      dupTrail: {
+        ids: clones.map((c) => c.id),
+        from: Object.fromEntries(clones.map((c, i) => [c.id, { x: src[i].x, y: src[i].y }])),
+      },
     }))
     scheduleSave(get)
     return clones.map((c) => c.id)
   },
+
+  rememberDuplicate: (ids, from) => set({ dupTrail: ids.length ? { ids, from } : null }),
 
   bringToFront: (ids) => {
     if (!ids.length) return

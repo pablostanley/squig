@@ -9,6 +9,7 @@
 
 import { resizeBounds, scaleNodes, MIN_SIZE, type Handle } from "../lib/canvas/transform.ts"
 import { hitsPoint, hitsRect, pickAt, pickInRect, pickTolerance } from "../lib/canvas/hit-test.ts"
+import { repeatStep } from "../lib/canvas/duplicate.ts"
 import type { SquigNode } from "../lib/types.ts"
 
 let passed = 0
@@ -288,6 +289,46 @@ const apply = (ns: SquigNode[], patches: Record<string, Partial<SquigNode>>): Sq
   check("a near-horizontal arrow is grabbable a few px off its line", hitsPoint(flat, 150, 4, 1))
   check("but not from far away", !hitsPoint(flat, 150, 40, 1))
   check("tolerance for lines ignores their thickness", pickTolerance(1, flat) === pickTolerance(1))
+}
+
+// -- the step ⌘D repeats ----------------------------------------------------
+
+{
+  const byId = (list: SquigNode[]) => Object.fromEntries(list.map((n) => [n.id, n]))
+
+  // a copy dragged 120 to the right and 40 down
+  const copy = rect("copy", 120, 40, 40, 20)
+  const trail = { ids: ["copy"], from: { copy: { x: 0, y: 0 } } }
+  const nodes = byId([rect("src", 0, 0, 40, 20), copy])
+
+  const step = repeatStep(trail, ["copy"], nodes)
+  check("the drag that made the copy is the step", step?.dx === 120 && step?.dy === 40)
+
+  check("nothing to repeat without a trail", repeatStep(null, ["copy"], nodes) === null)
+  check("a different selection forgets the step", repeatStep(trail, ["src"], nodes) === null)
+  check(
+    "widening the selection forgets it too",
+    repeatStep(trail, ["copy", "src"], nodes) === null
+  )
+  check(
+    "a deleted copy leaves nothing to measure",
+    repeatStep(trail, ["copy"], byId([rect("src", 0, 0, 40, 20)])) === null
+  )
+
+  // dropped back where it started: repeating zero would stack copies invisibly
+  const inPlace = byId([rect("copy", 0, 0, 40, 20)])
+  check("a copy left on its original gives no step", repeatStep(trail, ["copy"], inPlace) === null)
+
+  // moving the copy after the fact grows the step — duplicate, nudge, ⌘D
+  const nudged = byId([rect("copy", 150, 40, 40, 20)])
+  const grown = repeatStep(trail, ["copy"], nudged)
+  check("moving the copy afterwards updates the step", grown?.dx === 150 && grown?.dy === 40)
+
+  // several copies march as one, so the first of them measures for all
+  const pair = { ids: ["c1", "c2"], from: { c1: { x: 0, y: 0 }, c2: { x: 50, y: 0 } } }
+  const pairNodes = byId([rect("c1", 0, 90, 40, 20), rect("c2", 50, 90, 40, 20)])
+  const pairStep = repeatStep(pair, ["c2", "c1"], pairNodes)
+  check("selection order doesn't matter", pairStep?.dx === 0 && pairStep?.dy === 90)
 }
 
 // ---------------------------------------------------------------------------
