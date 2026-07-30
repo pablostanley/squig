@@ -128,7 +128,7 @@ function EmptyState() {
     <>
       <div className="border-b border-border/60 p-gutter">
         <PanelNote>
-          drop a component, scribble a shape, make a mess. it&apos;s a wireframe, not the Sistine Chapel.
+          drop a component, scribble a shape, try it three ways. it&apos;s a wireframe, not the Sistine Chapel.
         </PanelNote>
       </div>
       <PanelSection id="settings" title="Settings">

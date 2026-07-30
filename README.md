@@ -7,8 +7,10 @@ hand-drawing every button from scratch. squig sits in between: an infinite
 canvas where you drag in real UI components, but everything renders as a
 hand-drawn sketch.
 
-The sketchy look is the whole point. It signals "this is not decided yet," so
-people give feedback on structure instead of arguing about corner radius.
+The sketchy look is the whole point. It's a napkin, not a mockup — nothing
+looks decided, so people give feedback on the idea instead of the corner
+radius, and you can try a layout three ways in the time one polished version
+takes.
 
 ## What's in it
 
