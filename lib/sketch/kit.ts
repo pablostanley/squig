@@ -84,6 +84,13 @@ export type Prim =
       italic?: boolean
       underline?: boolean
       maxW?: number
+      /**
+       * Print the glyphs mirrored, about the anchor — what a flipped text
+       * layer asks for. Set by mirrorPrims, never by a def: a wireframe label
+       * always stays readable (see mirrorPrims).
+       */
+      mirrorX?: boolean
+      mirrorY?: boolean
     }
   /**
    * Raw SVG path data in a square viewBox, drawn crisp (not roughened) —
@@ -150,12 +157,16 @@ export function place(prims: Prim[], dx: number, dy: number): Prim[] {
 /**
  * Mirror a batch of prims inside a w×h box.
  *
- * Layout flips; glyphs don't. Mirroring the whole node with `scale(-1, 1)`
- * would be one line, but it would also print every label backwards, and a
- * wireframe with backwards labels reads as a bug rather than as a flip. So the
- * geometry moves and the text stays upright, swapping its alignment instead.
+ * By default layout flips and glyphs don't: a wireframe printing its labels
+ * backwards reads as a rendering bug rather than as a flip, so the geometry
+ * moves and the text stays upright, swapping its alignment instead.
+ *
+ * `glyphs` turns that off, for the one case where the words *are* the drawing:
+ * a text layer. There the run mirrors about its own anchor, which puts the same
+ * ink in the same place as the upright treatment — only backwards, which is the
+ * whole point of flipping it.
  */
-export function mirrorPrims(prims: Prim[], w: number, h: number, fx: boolean, fy: boolean): Prim[] {
+export function mirrorPrims(prims: Prim[], w: number, h: number, fx: boolean, fy: boolean, glyphs = false): Prim[] {
   if (!fx && !fy) return prims
   const mx = (x: number) => (fx ? w - x : x)
   const my = (y: number) => (fy ? h - y : y)
@@ -171,6 +182,12 @@ export function mirrorPrims(prims: Prim[], w: number, h: number, fx: boolean, fy
       case "poly":
         return { ...p, pts: p.pts.map(([px, py]) => [mx(px), my(py)] as [number, number]) }
       case "text": {
+        // Mirrored glyphs turn over about the anchor, so the anchor itself
+        // moves like any other point and the alignment stays as authored —
+        // right-aligned text mirrors to the left edge by turning over, not by
+        // becoming left-aligned. The baseline maps straight across too: the
+        // upside-down run hangs its ascenders below the line.
+        if (glyphs) return { ...p, x: mx(p.x), y: my(p.y), mirrorX: fx, mirrorY: fy }
         // a left-anchored run grows rightward; mirrored, it has to end where it started
         const align = fx
           ? p.align === "center"

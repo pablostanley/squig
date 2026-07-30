@@ -35,6 +35,13 @@ const UNPRESSED = "text-muted-foreground hover:bg-accent hover:text-foreground"
 const SEGMENT =
   "flex h-ctl-sm min-w-0 flex-1 items-center justify-center gap-1 rounded-chrome-xs px-1.5 text-label transition-colors outline-none select-none focus-visible:ring-2 focus-visible:ring-[var(--sq-ink)]/40 disabled:pointer-events-none disabled:opacity-40"
 
+/** The sunken rail segments sit in. Shared so every track is the same track. */
+const TRACK = "flex w-full min-w-0 items-center gap-0.5 rounded-chrome-md border bg-muted/40 p-[3px]"
+
+/** A standalone toggle's own metrics — a square you press, with no rail. */
+const ICON_TOGGLE =
+  "flex size-ctl shrink-0 items-center justify-center rounded-chrome-sm text-label transition-colors outline-none focus-visible:ring-2 focus-visible:ring-[var(--sq-ink)]/40 disabled:pointer-events-none disabled:opacity-35"
+
 export interface SegmentOption<T extends string> {
   value: T
   /** tooltip and accessible name — always a word, even when the face is a glyph */
@@ -72,11 +79,7 @@ export function Segmented<T extends string>({
         const picked = next[0] as T | undefined
         if (picked !== undefined) onChange(picked)
       }}
-      className={cn(
-        "flex w-full min-w-0 items-center gap-0.5 rounded-chrome-md border bg-muted/40 p-[3px]",
-        shared.mixed ? "border-dashed border-border" : "border-transparent",
-        className
-      )}
+      className={cn(TRACK, shared.mixed ? "border-dashed border-border" : "border-transparent", className)}
     >
       {options.map((o) => (
         <Toggle
@@ -96,6 +99,37 @@ export function Segmented<T extends string>({
 // ---------------------------------------------------------------------------
 
 /**
+ * A rail of toggles that don't exclude each other — bold, italic, underline.
+ *
+ * Same clothes as `Segmented`, different grammar: there's no one answer here,
+ * just switches sharing a track. They wear the track anyway. A row of bare
+ * glyphs sitting directly above a segmented row reads as two different kinds of
+ * control, when picking a weight and picking an alignment are the same kind of
+ * choice made about the same words.
+ *
+ * Mixed lives on the segment rather than the track — one of three can disagree
+ * without saying anything about the other two — so this shell has no state of
+ * its own. Fill it with `IconToggle segment`.
+ */
+export function SegmentedToggles({
+  ariaLabel,
+  children,
+  className,
+}: {
+  ariaLabel: string
+  children: React.ReactNode
+  className?: string
+}) {
+  return (
+    <div role="group" aria-label={ariaLabel} className={cn(TRACK, "border-transparent", className)}>
+      {children}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+
+/**
  * A standalone on/off/mixed toggle — bold, italic, arrowheads, dashed lines.
  *
  * Mixed is drawn as a dashed outline rather than a third visual state, so it
@@ -107,6 +141,7 @@ export function IconToggle({
   pressed,
   mixed = false,
   disabled,
+  segment = false,
   onPressedChange,
   children,
   className,
@@ -117,6 +152,8 @@ export function IconToggle({
   pressed: boolean
   mixed?: boolean
   disabled?: boolean
+  /** take a segment's metrics — for sitting inside a `SegmentedToggles` track */
+  segment?: boolean
   onPressedChange: (next: boolean) => void
   children: React.ReactNode
   className?: string
@@ -134,7 +171,7 @@ export function IconToggle({
       title={title}
       className={(state) =>
         cn(
-          "flex size-ctl shrink-0 items-center justify-center rounded-chrome-sm text-label transition-colors outline-none focus-visible:ring-2 focus-visible:ring-[var(--sq-ink)]/40 disabled:pointer-events-none disabled:opacity-35",
+          segment ? SEGMENT : ICON_TOGGLE,
           state.pressed ? PRESSED : UNPRESSED,
           mixed && "border border-dashed border-border",
           className

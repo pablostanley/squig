@@ -29,6 +29,39 @@ export function writeNodes(dt: DataTransfer, nodes: readonly SquigNode[]): void 
   dt.setData("text/plain", wordsOf(nodes) || json)
 }
 
+/**
+ * Copy from a click rather than a keystroke — the palette and the menu.
+ *
+ * There is no copy event to hang this on: the palette's own input has the
+ * focus by then, and a copy aimed at a text field is that field's business.
+ * So the same two carriers go on through the async clipboard instead, and
+ * squig's private one is filled either way, so ⇧⌘V still has something to put
+ * back even where the browser refuses the write.
+ */
+export function copySelection(): void {
+  const s = useSquig.getState()
+  const sel = s.order.filter((id) => s.selection.includes(id)).map((id) => s.nodes[id]).filter(Boolean)
+  if (!sel.length) return
+  s.copySelected()
+  const json = encodeNodes(sel)
+  try {
+    void navigator.clipboard.write([
+      new ClipboardItem({
+        "text/html": new Blob([payloadHtml(json)], { type: "text/html" }),
+        "text/plain": new Blob([wordsOf(sel) || json], { type: "text/plain" }),
+      }),
+    ])
+  } catch {
+    // squig's own clipboard already has it; the system one can sit this out
+  }
+}
+
+/** Cut from a click — the same copy, and then the layers go. */
+export function cutSelection(): void {
+  copySelection()
+  useSquig.getState().deleteSelected()
+}
+
 // -- pictures ---------------------------------------------------------------
 
 /**
@@ -278,7 +311,12 @@ async function place(c: Incoming, at?: [number, number], inPlace = false): Promi
       const node = await imageNodeFrom(blob, blob instanceof File ? blob.name : undefined)
       if (node) made.push(node)
     }
-    if (!made.length) return false
+    // a picture that won't decode leaves the canvas exactly as it was, so the
+    // paste would otherwise read as a keystroke that did nothing
+    if (!made.length) {
+      s.setNotice(c.images.length > 1 ? "couldn't read those pictures" : "couldn't read that picture")
+      return false
+    }
     // the pointer may well have moved while those were decoding, so the
     // position captured when the paste began is the one that counts. With no
     // pointer at all we're aiming at the middle of the view, and "top-left

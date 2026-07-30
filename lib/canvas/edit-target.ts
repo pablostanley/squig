@@ -83,11 +83,14 @@ function locateLabel(node: ComponentNode, key: string): { prim: TextPrim; index:
 /**
  * A text node's own geometry.
  *
- * Flips are handled the way mirrorPrims handles them — layout moves, glyphs
- * stay upright — so a mirrored node edits where it prints. A flipped *multi*-
- * line node is the one case that can't be honest: the renderer stacks its
- * lines bottom-up, and a textarea only stacks one way, so the editor sits on
- * the topmost baseline and the lines read in typing order.
+ * A flipped node prints its words mirrored, but you edit them the right way
+ * round — a backwards caret helps nobody. The editor stands upright on the
+ * same patch of canvas the mirrored run covers, which is why the alignment is
+ * swapped here even though the prims keep theirs: an upright right-aligned run
+ * ends where a mirrored left-aligned one does. A flipped *multi*-line node is
+ * the one case that can't be honest: the renderer stacks its lines bottom-up,
+ * and a textarea only stacks one way, so the editor sits on the topmost
+ * baseline and the lines read in typing order.
  */
 function textNodeTarget(node: TextNode): EditTarget {
   const lines = node.text.split("\n")

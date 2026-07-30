@@ -213,6 +213,18 @@ export function primsToPaths(
   return { paths, texts, crisp }
 }
 
+/**
+ * Turn a mirrored run over about its own anchor — the flipped-text-layer case.
+ * Scaling about the anchor rather than the origin is what keeps the words on
+ * the spot they were drawn instead of throwing them off the far side of the
+ * node.
+ */
+export function mirrorGlyphs(t: Extract<Prim, { t: "text" }>): string | undefined {
+  if (!t.mirrorX && !t.mirrorY) return undefined
+  const [sx, sy] = [t.mirrorX ? -1 : 1, t.mirrorY ? -1 : 1]
+  return `translate(${t.x * (1 - sx)} ${t.y * (1 - sy)}) scale(${sx} ${sy})`
+}
+
 export const SketchPrims = memo(function SketchPrims({
   prims,
   seed,
@@ -270,6 +282,7 @@ export const SketchPrims = memo(function SketchPrims({
             textDecoration={t.underline ? "underline" : undefined}
             fill={INK[t.color ?? "ink"]}
             textAnchor={t.align === "center" ? "middle" : t.align === "right" ? "end" : "start"}
+            transform={mirrorGlyphs(t)}
           >
             {t.text}
           </text>
@@ -333,7 +346,7 @@ export const NodeSketch = memo(function NodeSketch({
           // it should squash the picture, the way dragging any other node does
           preserveAspectRatio="none"
           // a flip is a property of the node, so the pixels turn with the frame
-          transform={flipTransform(node.w, node.h, node.flipX, node.flipY)}
+          transform={mirrorBox(node.w, node.h, node.flipX, node.flipY)}
         />
       )}
       <SketchPrims prims={prims} seed={node.seed} hiddenText={hiddenText} />
@@ -341,8 +354,12 @@ export const NodeSketch = memo(function NodeSketch({
   )
 })
 
-/** Mirror about the node's own box — same flip the prims get, in SVG terms. */
-function flipTransform(w: number, h: number, flipX?: boolean, flipY?: boolean): string | undefined {
+/**
+ * Mirror a picture about its own box — the same flip mirrorPrims gives the
+ * marks, in SVG terms. Exported because the PNG export has to draw the same
+ * picture the same way round, into a file rather than onto the canvas.
+ */
+export function mirrorBox(w: number, h: number, flipX?: boolean, flipY?: boolean): string | undefined {
   if (!flipX && !flipY) return undefined
   const sx = flipX ? -1 : 1
   const sy = flipY ? -1 : 1

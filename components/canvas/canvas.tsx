@@ -32,6 +32,7 @@ import { unionBounds, type Bounds } from "@/lib/selection"
 import { NodeSketch, SketchPrims } from "./sketch"
 import { getDef, renderComponent } from "@/lib/library/registry"
 import { exportDoc } from "@/lib/file-io"
+import { copyAsPngWithNotice } from "@/lib/export-image"
 import { ContextRow } from "./context-row"
 import { TextEditOverlay } from "./text-edit-overlay"
 
@@ -1147,10 +1148,15 @@ export function Canvas() {
             e.preventDefault()
             s.toggleTextStyle("underline")
             return
-          // C, X and V are deliberately absent: preventing their default is
-          // what would stop the browser's copy/cut/paste events from firing,
-          // and those are where the clipboard actually happens — see
-          // lib/canvas/use-clipboard
+          // ⌘⇧C is the picture, and that one is ours to intercept. Plain ⌘C
+          // is the objects, and so are ⌘X and ⌘V: they ride the browser's own
+          // copy/cut/paste events, which preventing the default here is
+          // exactly what would stop from firing. See lib/canvas/use-clipboard.
+          case "KeyC":
+            if (!e.shiftKey) return
+            e.preventDefault()
+            copyAsPngWithNotice()
+            return
           // one step on its own; all the way with ⌥ (Mac) or ⇧ (Windows)
           case "BracketRight":
             e.preventDefault()

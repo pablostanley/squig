@@ -5,11 +5,12 @@
 // ---------------------------------------------------------------------------
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
-import { pasteFromSystem } from "@/lib/clipboard"
+import { copySelection, pasteFromSystem } from "@/lib/clipboard"
 import { useSquig } from "@/lib/store"
 import { screenToWorld } from "@/lib/types"
 import { getDef } from "@/lib/library/registry"
 import { kbd } from "@/lib/shortcuts"
+import { copyAsPngWithNotice } from "@/lib/export-image"
 import {
   AlignBottomSimpleIcon,
   AlignCenterHorizontalSimpleIcon,
@@ -33,6 +34,7 @@ import {
   EyeSlashIcon,
   FlipHorizontalIcon,
   FlipVerticalIcon,
+  ImageIcon,
   KeyboardIcon,
   LinkBreakIcon,
   LinkSimpleIcon,
@@ -112,7 +114,8 @@ export function CanvasContextMenu() {
   if (menu.nodeId) {
     entries = [
       { label: "Duplicate", hint: kbd("mod+d"), icon: CopyIcon, run: () => st().duplicateSelected() },
-      { label: "Copy", hint: kbd("mod+c"), icon: CopySimpleIcon, run: () => st().copySelected() },
+      { label: "Copy", hint: kbd("mod+c"), icon: CopySimpleIcon, run: copySelection },
+      { label: "Copy as PNG", hint: kbd("mod+shift+c"), icon: ImageIcon, run: copyAsPngWithNotice },
       ...(targets.length > 1
         ? [{ label: "Group", hint: kbd("mod+g"), icon: BoundingBoxIcon, run: () => st().groupSelected() } as Entry]
         : []),
@@ -160,6 +163,9 @@ export function CanvasContextMenu() {
       // always offered now: whatever is on the system clipboard is something
       // this can paste, and there is no way to know what that is from here
       { label: "Paste here", hint: kbd("mod+v"), icon: ClipboardTextIcon, run: () => pasteAt(menu.x, menu.y) },
+      ...(Object.keys(nodes).length
+        ? [{ label: "Copy canvas as PNG", hint: kbd("mod+shift+c"), icon: ImageIcon, run: copyAsPngWithNotice } as Entry]
+        : []),
       { separator: true },
       { label: "Undo", hint: kbd("mod+z"), icon: ArrowUUpLeftIcon, run: () => st().undo() },
       { label: "Redo", hint: kbd("mod+shift+z"), icon: ArrowUUpRightIcon, run: () => st().redo() },

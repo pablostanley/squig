@@ -2,7 +2,7 @@
 
 import { create } from "zustand"
 import { nanoid } from "nanoid"
-import type { ComponentNode, SquigNode, TextNode, Tool, Viewport, ShapeKind } from "./types"
+import type { ComponentNode, SquigNode, TextAlign, TextNode, Tool, Viewport, ShapeKind } from "./types"
 import { normalizeFill, screenToWorld, unionBox } from "./types"
 import { getDef } from "./library/registry"
 import { breakApart } from "./library/break-apart"
@@ -98,6 +98,9 @@ interface SquigState {
   linkOpen: boolean
   /** private clipboard — ⌘C/⌘X/⌘V never touch the system one */
   clipboard: SquigNode[]
+  /** a one-line flash in the corner; the id makes a repeat of the same words
+   *  count as a new message */
+  notice: { id: number; text: string } | null
 
   past: DocSnapshot[]
   future: DocSnapshot[]
@@ -123,6 +126,7 @@ interface SquigState {
   setUiHidden: (on: boolean) => void
   setShortcutsOpen: (on: boolean) => void
   setLinkOpen: (on: boolean) => void
+  setNotice: (text: string | null) => void
 
   /** snapshot current doc onto the undo stack (call once at gesture start) */
   checkpoint: () => void
@@ -163,6 +167,7 @@ interface SquigState {
   detachSelected: () => void
   flipSelected: (axis: "x" | "y") => void
   toggleTextStyle: (style: "bold" | "italic" | "underline") => void
+  setTextAlign: (align: TextAlign) => void
   setLinkOnSelection: (url: string) => void
 
   copySelected: () => void
@@ -411,6 +416,7 @@ export const useSquig = create<SquigState>((set, get) => ({
   shortcutsOpen: false,
   linkOpen: false,
   clipboard: [],
+  notice: null,
   past: [],
   future: [],
 
@@ -469,6 +475,7 @@ export const useSquig = create<SquigState>((set, get) => ({
   setUiHidden: (on) => set({ uiHidden: on }),
   setShortcutsOpen: (on) => set({ shortcutsOpen: on, commandOpen: false, contextMenu: null }),
   setLinkOpen: (on) => set({ linkOpen: on, contextMenu: null }),
+  setNotice: (text) => set((s) => ({ notice: text === null ? null : { id: (s.notice?.id ?? 0) + 1, text } })),
 
   checkpoint: () => {
     set((s) => {
@@ -809,6 +816,16 @@ export const useSquig = create<SquigState>((set, get) => ({
     // mixed selection turns everything on first, like every text editor ever
     const on = texts.some((n) => !n[style])
     get().updateNodes(Object.fromEntries(texts.map((n) => [n.id, { [style]: on } as Partial<SquigNode>])))
+  },
+
+  setTextAlign: (align) => {
+    const { selection, nodes } = get()
+    const texts = selection.map((id) => nodes[id]).filter((n) => n?.type === "text") as TextNode[]
+    if (!texts.length) return
+    // already unanimous — pressing the segment it's already on isn't an edit
+    if (texts.every((n) => (n.align ?? "left") === align)) return
+    get().checkpoint()
+    get().updateNodes(Object.fromEntries(texts.map((n) => [n.id, { align } as Partial<SquigNode>])))
   },
 
   setLinkOnSelection: (url) => {

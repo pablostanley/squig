@@ -15,7 +15,7 @@
 // ---------------------------------------------------------------------------
 
 import { useSquig } from "@/lib/store"
-import type { ArrowNode, ComponentNode, FillTone, ShapeNode, SquigNode, StrokeWeight, TextAlign, TextNode } from "@/lib/types"
+import type { ArrowNode, ComponentNode, FillTone, ShapeNode, SquigNode, StrokeWeight, TextNode } from "@/lib/types"
 import { normalizeFill } from "@/lib/types"
 import { getDef } from "@/lib/library/registry"
 import { selectionSummary, shared, sharedControls, sharedNumber, unionBounds } from "@/lib/selection"
@@ -24,8 +24,9 @@ import { fitTextBox } from "@/lib/canvas/text-reflow"
 import { VariantControl } from "./variant-controls"
 import { MixedNumberField, MixedSwitch, MixedTextField } from "./mixed-fields"
 import { AlignRow } from "./align-row"
+import { ALIGN_OPTIONS, TextStyleToggles, sharedAlign } from "./text-controls"
 import { Panel, PanelFooter, PanelHeader, PanelNote, PanelSection, Row, StackRow } from "@/components/ui/panel"
-import { IconAction, IconToggle, Segmented, type SegmentOption } from "@/components/ui/segmented"
+import { IconAction, Segmented, type SegmentOption } from "@/components/ui/segmented"
 import { Switch } from "@/components/ui/switch"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -35,12 +36,6 @@ import {
   FlipVerticalIcon,
   LinkBreakIcon,
   SelectionAllIcon,
-  TextAlignCenterIcon,
-  TextAlignLeftIcon,
-  TextAlignRightIcon,
-  TextBIcon,
-  TextItalicIcon,
-  TextUnderlineIcon,
   TrashIcon,
 } from "@phosphor-icons/react"
 import { kbd } from "@/lib/shortcuts"
@@ -120,25 +115,6 @@ const STROKE_OPTIONS: readonly SegmentOption<StrokeWeight>[] = [
   { value: "regular", label: "Regular pen", content: <PenChip height={1.75} /> },
   { value: "heavy", label: "Heavy pen", content: <PenChip height={3} /> },
 ]
-
-/**
- * Three, not four: squig text doesn't wrap, so there is no justify to be had —
- * a line ends where you pressed Return. What these do decide is which edge the
- * run is pinned to, which is the edge that holds still while you type.
- */
-const ALIGN_OPTIONS: readonly SegmentOption<TextAlign>[] = [
-  { value: "left", label: "Align left", content: <TextAlignLeftIcon className="size-4" /> },
-  { value: "center", label: "Align centre", content: <TextAlignCenterIcon className="size-4" /> },
-  { value: "right", label: "Align right", content: <TextAlignRightIcon className="size-4" /> },
-]
-
-/** Drawn as icons, not as styled letters — a glyph small enough to fit the
-    toggle is too small to read as bold-versus-regular at a glance. */
-const TEXT_STYLES = [
-  { key: "bold", label: "Bold", icon: TextBIcon },
-  { key: "italic", label: "Italic", icon: TextItalicIcon },
-  { key: "underline", label: "Underline", icon: TextUnderlineIcon },
-] as const
 
 // ---------------------------------------------------------------------------
 
@@ -399,27 +375,13 @@ function SelectionEditor({ selected }: { selected: SquigNode[] }) {
             <Segmented
               ariaLabel="Text alignment"
               options={ALIGN_OPTIONS}
-              shared={shared(texts.map((n) => n.align ?? "left"))}
-              onChange={(align) => patch((n) => (n.type === "text" ? ({ align } as Partial<SquigNode>) : null))}
+              shared={sharedAlign(texts)}
+              onChange={(align) => st().setTextAlign(align)}
             />
           </Row>
 
           <Row label="Style">
-            {TEXT_STYLES.map(({ key, label, icon: Icon }) => {
-              const on = shared(texts.map((n) => !!n[key]))
-              return (
-                <IconToggle
-                  key={key}
-                  label={label}
-                  hint={kbd(`mod+${key[0]}`)}
-                  pressed={!on.mixed && on.value}
-                  mixed={on.mixed}
-                  onPressedChange={() => st().toggleTextStyle(key)}
-                >
-                  <Icon className="size-4" />
-                </IconToggle>
-              )
-            })}
+            <TextStyleToggles texts={texts} />
           </Row>
 
           {/* A link is a value, not a mode — so it gets a field showing where
