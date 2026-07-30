@@ -108,7 +108,28 @@ export interface ArrowNode extends BaseNode, Outlined {
   head: boolean
 }
 
-export type SquigNode = ComponentNode | ShapeNode | DrawNode | TextNode | ArrowNode
+/**
+ * A picture someone pasted in. The only node that isn't drawn by hand: a
+ * screenshot you're wireframing around has to stay legible, so it prints as
+ * itself and gets a drawn frame instead — a photo taped to the napkin.
+ *
+ * The pixels live in the document as a data URL. That keeps a file one
+ * self-contained thing you can export and open anywhere, at the cost of
+ * needing every paste re-encoded down to a size a browser will hold; see
+ * lib/clipboard.ts.
+ */
+export interface ImageNode extends BaseNode {
+  type: "image"
+  /** data:image/… — nothing else is ever put here, or ever read back out */
+  src: string
+  /** the pixels' own size — the ratio the box started life at */
+  naturalW: number
+  naturalH: number
+  /** the file it came from, when the clipboard said */
+  name?: string
+}
+
+export type SquigNode = ComponentNode | ShapeNode | DrawNode | TextNode | ArrowNode | ImageNode
 
 export interface Viewport {
   x: number

@@ -311,11 +311,40 @@ export const NodeSketch = memo(function NodeSketch({
         // w and align place the anchor, so a resize or a realignment is a
         // different set of marks even when the words haven't changed
         return `t:${node.text}:${node.fontSize}:${node.w}:${node.align ?? ""}:${flip}:${node.bold ? 1 : 0}${node.italic ? 1 : 0}${node.underline || node.link ? 1 : 0}`
+      case "image":
+        // the src doesn't shape a single mark — only the frame's box does
+        return `i:${node.w}:${node.h}:${flip}`
     }
   }, [node])
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const prims = useMemo<Prim[]>(() => nodePrims(node), [shapeKey, node.type])
 
-  return <SketchPrims prims={prims} seed={node.seed} hiddenText={hiddenText} />
+  return (
+    <>
+      {node.type === "image" && (
+        <image
+          href={node.src}
+          x={0}
+          y={0}
+          width={node.w}
+          height={node.h}
+          // the box is the truth about how big this is — a resize that squashes
+          // it should squash the picture, the way dragging any other node does
+          preserveAspectRatio="none"
+          // a flip is a property of the node, so the pixels turn with the frame
+          transform={flipTransform(node.w, node.h, node.flipX, node.flipY)}
+        />
+      )}
+      <SketchPrims prims={prims} seed={node.seed} hiddenText={hiddenText} />
+    </>
+  )
 })
+
+/** Mirror about the node's own box — same flip the prims get, in SVG terms. */
+function flipTransform(w: number, h: number, flipX?: boolean, flipY?: boolean): string | undefined {
+  if (!flipX && !flipY) return undefined
+  const sx = flipX ? -1 : 1
+  const sy = flipY ? -1 : 1
+  return `translate(${flipX ? w : 0} ${flipY ? h : 0}) scale(${sx} ${sy})`
+}

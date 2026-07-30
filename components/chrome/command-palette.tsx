@@ -9,6 +9,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useSquig } from "@/lib/store"
 import { ALL_DEFS, matches, type ComponentDef } from "@/lib/library/registry"
 import { SketchPrims } from "@/components/canvas/sketch"
+import { pasteFromSystem } from "@/lib/clipboard"
 import { exportDoc, importDoc } from "@/lib/file-io"
 import { relativeTime } from "@/lib/files"
 import { kbd } from "@/lib/shortcuts"
@@ -113,7 +114,7 @@ function Palette() {
       { id: "dup", label: "Duplicate", hint: kbd("mod+d"), section: "Edit", icon: CopyIcon, disabled: !hasSel, run: () => st().duplicateSelected() },
       { id: "copy", label: "Copy", hint: kbd("mod+c"), section: "Edit", icon: CopyIcon, disabled: !hasSel, run: () => st().copySelected() },
       { id: "cut", label: "Cut", hint: kbd("mod+x"), section: "Edit", icon: ScissorsIcon, disabled: !hasSel, run: () => st().cutSelected() },
-      { id: "paste", label: "Paste", hint: kbd("mod+v"), section: "Edit", icon: ClipboardIcon, run: () => st().pasteClipboard() },
+      { id: "paste", label: "Paste", hint: kbd("mod+v"), section: "Edit", keywords: "image picture screenshot", icon: ClipboardIcon, run: () => void pasteFromSystem() },
       { id: "del", label: "Delete", hint: kbd("del"), section: "Edit", icon: TrashIcon, disabled: !hasSel, run: () => st().deleteSelected() },
       { id: "group", label: "Group", hint: kbd("mod+g"), section: "Edit", keywords: "combine bundle", icon: BoundingBoxIcon, disabled: selection.length < 2, run: () => st().groupSelected() },
       { id: "ungroup", label: "Ungroup", hint: kbd("mod+shift+g"), section: "Edit", keywords: "split apart", icon: LinkBreakIcon, disabled: !hasGroup, run: () => st().ungroupSelected() },

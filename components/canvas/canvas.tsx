@@ -24,6 +24,8 @@ import { computeSnap, computeResizeSnap, makeSnapRect, type GuideLine, type Snap
 import { useSpacebarPan } from "@/lib/canvas/use-spacebar-pan"
 import { HANDLES, HANDLE_CURSORS, handleOffset, resizeBounds, scaleNodes, type Handle } from "@/lib/canvas/transform"
 import { pickAt, pickInRect } from "@/lib/canvas/hit-test"
+import { canvasOwnsKeyboard } from "@/lib/canvas/keyboard-owner"
+import { useClipboard } from "@/lib/canvas/use-clipboard"
 import { editTarget } from "@/lib/canvas/edit-target"
 import { textBlockHeight } from "@/lib/sketch/text-layout"
 import { unionBounds, type Bounds } from "@/lib/selection"
@@ -134,35 +136,6 @@ type Gesture =
 const canAutoPan = (g: Gesture | null) =>
   !!g && (g.kind === "marquee" || g.kind === "move" || g.kind === "resize" || g.kind === "create")
 
-/**
- * Does the canvas get to act on this keystroke?
- *
- * Only two things take the keyboard away: somewhere you're typing, and an open
- * menu/listbox/dialog whose own typeahead would otherwise fire alongside the
- * tool hotkeys. Radix portals those outside the panel's DOM subtree, so this
- * looks for their roles document-wide rather than walking up from the target.
- *
- * Deliberately NOT here: chrome buttons, which keep DOM focus after a click —
- * gating on those meant one tap on the rail silently killed every shortcut.
- * Tooltips are excluded too: they're `role="tooltip"`, and hovering the button
- * that advertises a hotkey must not be what stops the hotkey working.
- */
-// NOT `[role=combobox]`: that is Radix's Select *trigger*, which sits in the
-// inspector permanently and keeps focus after use — matching it would kill the
-// keyboard for good. The open listbox it portals in is what matters.
-const KEYBOARD_OWNERS = "[role=dialog],[role=menu],[role=listbox]"
-
-function canvasOwnsKeyboard(target: EventTarget | null): boolean {
-  const el = target as HTMLElement | null
-  if (el && el !== document.body) {
-    const tag = el.tagName
-    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return false
-    if (el.isContentEditable) return false
-    if (el.closest?.(KEYBOARD_OWNERS)) return false
-  }
-  return !document.querySelector(KEYBOARD_OWNERS)
-}
-
 export function Canvas() {
   const containerRef = useRef<HTMLDivElement>(null)
   const gestureRef = useRef<Gesture | null>(null)
@@ -206,6 +179,8 @@ export function Canvas() {
   const [gestureKind, setGestureKind] = useState<Gesture["kind"] | null>(null)
 
   const { isSpacebarHeld } = useSpacebarPan()
+  // ⌘C/⌘X/⌘V live on the browser's clipboard events, not in onKey below
+  useClipboard(pointerWorld)
 
   const st = useSquig.getState
 
@@ -1172,25 +1147,10 @@ export function Canvas() {
             e.preventDefault()
             s.toggleTextStyle("underline")
             return
-          case "KeyC":
-            e.preventDefault()
-            s.copySelected()
-            return
-          case "KeyX":
-            e.preventDefault()
-            s.cutSelected()
-            return
-          case "KeyV": {
-            e.preventDefault()
-            if (e.shiftKey) {
-              // paste in place — right back where it was copied from
-              const cb = s.clipboard
-              if (cb.length) s.pasteClipboard([Math.min(...cb.map((n) => n.x)), Math.min(...cb.map((n) => n.y))])
-            } else {
-              s.pasteClipboard(pointerWorld.current ?? undefined)
-            }
-            return
-          }
+          // C, X and V are deliberately absent: preventing their default is
+          // what would stop the browser's copy/cut/paste events from firing,
+          // and those are where the clipboard actually happens — see
+          // lib/canvas/use-clipboard
           // one step on its own; all the way with ⌥ (Mac) or ⇧ (Windows)
           case "BracketRight":
             e.preventDefault()

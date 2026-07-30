@@ -35,6 +35,9 @@ const FILL_OPTS: Record<FillTone, PrimOpts | undefined> = {
  */
 const PEN_SCALE: Record<StrokeWeight, number> = { light: 0.65, regular: 1, heavy: 1.7 }
 
+/** How far a picture's frame is drawn outside the picture, in world units. */
+const FRAME_GAP = 2.5
+
 /** Merge a node's outline settings into the options for one of its marks. */
 function outline(node: Outlined, baseWidth: number, o?: PrimOpts): PrimOpts {
   return {
@@ -76,6 +79,17 @@ export function basePrims(node: SquigNode): Prim[] {
         })
       }
       return out
+    }
+    // the picture itself is drawn by the renderer, which is the one thing here
+    // that isn't made of pen marks. What the hand contributes is the frame
+    // around it, so a pasted screenshot still sits on the same paper.
+    //
+    // Drawn just outside the box rather than on it: half a line sitting on the
+    // picture disappears into whatever colour it happens to land on, and a red
+    // screenshot in a red ink would come out with no frame at all.
+    case "image": {
+      const g = FRAME_GAP
+      return [{ t: "rect", x: -g, y: -g, w: node.w + g * 2, h: node.h + g * 2, r: 2, o: { stroke: "muted" } }]
     }
     case "text": {
       const anchor = textAnchorX(node.align, node.w)

@@ -169,6 +169,8 @@ interface SquigState {
   cutSelected: () => void
   /** paste at a world point, or nudged off the original when none is given */
   pasteClipboard: (at?: [number, number]) => void
+  /** the same, for layers that came from somewhere other than this canvas */
+  pasteNodes: (nodes: readonly SquigNode[], at?: [number, number]) => void
 
   zoomBy: (factor: number, center?: [number, number]) => void
   zoomTo100: () => void
@@ -229,6 +231,9 @@ function sanitize(
     // shapes stored a boolean fill before they had a tonal ladder; upgrade on
     // the way in so nothing downstream has to know the old spelling existed
     if (node.type === "shape") node.fill = normalizeFill(node.fill)
+    // an imported file is a stranger's document: a picture in it carries its
+    // own pixels or it doesn't render at all — never a URL we'd go and fetch
+    if (node.type === "image" && !/^data:image\//i.test(node.src ?? "")) continue
     clean[id] = node
   }
   const seen = new Set<string>()
@@ -831,13 +836,14 @@ export const useSquig = create<SquigState>((set, get) => ({
     get().deleteSelected()
   },
 
-  pasteClipboard: (at) => {
-    const { clipboard } = get()
-    if (!clipboard.length) return
-    const box = unionBox(clipboard)!
+  pasteClipboard: (at) => get().pasteNodes(get().clipboard, at),
+
+  pasteNodes: (list, at) => {
+    if (!list.length) return
+    const box = unionBox([...list])!
     const [dx, dy] = at ? [at[0] - box.minX, at[1] - box.minY] : [16, 16]
     get().checkpoint()
-    const clones = cloneNodes(clipboard, dx, dy)
+    const clones = cloneNodes([...list], dx, dy)
     set((s) => ({
       nodes: { ...s.nodes, ...Object.fromEntries(clones.map((c) => [c.id, c])) },
       order: [...s.order, ...clones.map((c) => c.id)],

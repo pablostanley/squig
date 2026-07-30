@@ -31,6 +31,12 @@ component and its pieces become editable primitives. One-way, on purpose.
 **⌘K searches everything.** Tools, actions, and every component and block, in
 one sheet. Enter drops it in the middle of your view.
 
+**Paste whatever you've got.** ⌘V takes the clipboard and puts it where the
+pointer is: a screenshot to wireframe around, a paragraph of copy, or layers
+copied out of another squig tab. Pictures land as themselves inside a drawn
+frame — a reference you can't read is no reference — and get shrunk on the way
+in, so a retina screenshot doesn't eat the drawer.
+
 **Your files stay in your browser.** Every document autosaves as you draw, and
 the file menu keeps a list of the recent ones to open again. New file starts a
 new document rather than painting over the last one. The drawer holds the last
