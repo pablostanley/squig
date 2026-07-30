@@ -1513,6 +1513,47 @@ export function Canvas() {
 /** roughly three handles' worth of box, below which they'd overlap into mush */
 const HANDLE_ROOM = 34
 
+/** the white square you actually see, in screen px */
+const HANDLE_DOT = 10
+
+/**
+ * How far past the selection box a handle still answers to the pointer.
+ *
+ * Nothing else is grabbable out there, so the handles may as well be greedy
+ * in that direction — aiming at a 10px square is the whole problem.
+ */
+const GRAB_OUT = 8
+
+/** and how far inward, at most — see `grabPad` for why it's a maximum */
+const GRAB_IN = 8
+
+/**
+ * Inward slop along one axis, in screen px.
+ *
+ * Reaching inward is where handles compete with each other, so the pad shrinks
+ * on small boxes: `crowded` says a third handle sits halfway along this axis,
+ * which halves the room each one gets. Without this a 40px box would resize
+ * from its middle handle when you aimed at its corner.
+ */
+function grabPad(len: number, crowded: boolean): number {
+  const room = (crowded ? len / 4 : len / 2) - HANDLE_DOT / 2
+  return Math.max(0, Math.min(GRAB_IN, room))
+}
+
+/** The handle's hit rect and the offset of its dot inside it, in screen px. */
+function handleHitBox(hd: Handle, w: number, h: number, padX: number, padY: number) {
+  const [hx, hy] = handleOffset(hd, w, h)
+  const r = HANDLE_DOT / 2
+  const span = (edgeLow: boolean, edgeHigh: boolean, pad: number): [number, number] => {
+    const lo = -r - (edgeLow ? GRAB_OUT : pad)
+    const hi = r + (edgeHigh ? GRAB_OUT : pad)
+    return [lo, hi - lo]
+  }
+  const [dx, width] = span(hd.includes("w"), hd.includes("e"), padX)
+  const [dy, height] = span(hd.includes("n"), hd.includes("s"), padY)
+  return { left: hx + dx, top: hy + dy, width, height, dotLeft: -dx - r, dotTop: -dy - r }
+}
+
 function SelectionOverlay({
   selectedNodes,
   viewport,
@@ -1550,6 +1591,10 @@ function SelectionOverlay({
     return true
   }
 
+  // the n/s handles are the ones that crowd the x axis, and e/w the y axis
+  const padX = grabPad(w, showWide)
+  const padY = grabPad(h, showTall)
+
   return (
     <>
       {/* each member gets a hairline, so you can see exactly what's in the set */}
@@ -1572,22 +1617,41 @@ function SelectionOverlay({
         <div className="pointer-events-none absolute" style={{ left, top, width: w, height: h }}>
           <div className="absolute inset-0 rounded-sm" style={{ border: "2px solid var(--sq-select)" }} />
           {showHandles &&
-            HANDLES.filter(visible).map((hd) => {
-              const [hx, hy] = handleOffset(hd, w, h)
-              return (
-                <div
-                  key={hd}
-                  className="pointer-events-auto absolute h-2.5 w-2.5 rounded-[3px] bg-white"
-                  style={{
-                    left: hx - 5,
-                    top: hy - 5,
-                    cursor: HANDLE_CURSORS[hd],
-                    border: "2px solid var(--sq-select)",
-                  }}
-                  onPointerDown={(e) => onStartResize(hd, e)}
-                />
-              )
-            })}
+            // Corners last, so they sit on top: their pads can meet a side's on
+            // a tight box, and a mis-grab costs more on a corner than a side.
+            // Ordering does it — a z-index here would also lift the handles
+            // over the panels that come after the canvas.
+            HANDLES.filter(visible)
+              .slice()
+              .sort((a, b) => a.length - b.length)
+              .map((hd) => {
+                const box = handleHitBox(hd, w, h, padX, padY)
+                return (
+                  <div
+                    key={hd}
+                    className="pointer-events-auto absolute"
+                    style={{
+                      left: box.left,
+                      top: box.top,
+                      width: box.width,
+                      height: box.height,
+                      cursor: HANDLE_CURSORS[hd],
+                    }}
+                    onPointerDown={(e) => onStartResize(hd, e)}
+                  >
+                    <div
+                      className="pointer-events-none absolute rounded-[3px] bg-white"
+                      style={{
+                        left: box.dotLeft,
+                        top: box.dotTop,
+                        width: HANDLE_DOT,
+                        height: HANDLE_DOT,
+                        border: "2px solid var(--sq-select)",
+                      }}
+                    />
+                  </div>
+                )
+              })}
         </div>
       )}
     </>

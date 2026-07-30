@@ -12,22 +12,32 @@ import { normalizeFill, type SquigNode } from "../types"
 import type { Bounds } from "../selection"
 
 /**
- * Forgiveness, in world units, for a pointer aimed at a stroke.
+ * How far off a stroke the pointer may be and still count, in screen px.
  *
- * It scales with zoom so it stays ~4 screen px, but it can't grow without
- * bound: at 0.1 zoom an unclamped halo would be 40 world units, wide enough
- * that every node's collar overlaps its neighbour's and no gap is left to
- * start a marquee from.
+ * A 1px outline is not a target anyone can aim at, so the collar does the
+ * aiming for you. 8px is about a fingertip's worth of slop at 1:1 and matches
+ * what other design tools give you.
  */
+const SLOP_PX = 8
+
+/**
+ * The collar can't grow without bound as you zoom out: at 0.1 zoom an
+ * unclamped 8px halo would be 80 world units, wide enough that every node's
+ * collar overlaps its neighbour's and no gap is left to start a marquee from.
+ */
+const MAX_SLOP_WORLD = 14
+
+/** Forgiveness, in world units, for a pointer aimed at a stroke. */
 export function pickTolerance(zoom: number, n?: SquigNode): number {
-  const base = Math.min(4 / Math.max(zoom, 0.01), 8)
+  const base = Math.min(SLOP_PX / Math.max(zoom, 0.01), MAX_SLOP_WORLD)
   if (!n) return base
   // Lines are thin on purpose. A horizontal arrow is ~2 units tall, and
   // shrinking its collar to match would leave a 2px-tall target you can
   // basically never hit — the collar exists precisely for this case.
   if (n.type === "arrow" || n.type === "draw") return base
-  // for areas, never let the collar swallow the node it belongs to
-  return Math.min(base, Math.max(1, 0.25 * Math.min(n.w, n.h)))
+  // For areas, never let the collar swallow the node it belongs to: a hollow
+  // shape has to keep a see-through core, or you can't marquee inside it.
+  return Math.min(base, Math.max(1, 0.35 * Math.min(n.w, n.h)))
 }
 
 function inBox(x: number, y: number, b: Bounds, tol: number): boolean {
@@ -131,12 +141,18 @@ export function hitsPoint(n: SquigNode, x: number, y: number, zoom: number): boo
     const rx = n.w / 2
     const ry = n.h / 2
     if (rx <= 0 || ry <= 0) return true
-    const nx = (x - (n.x + rx)) / rx
-    const ny = (y - (n.y + ry)) / ry
+    const cx = n.x + rx
+    const cy = n.y + ry
+    const nx = (x - cx) / rx
+    const ny = (y - cy) / ry
     const r = Math.hypot(nx, ny)
-    // tolerance expressed in the normalised space of the smaller radius
-    const band = tol / Math.max(1e-6, Math.min(rx, ry))
-    return Math.abs(r - 1) <= band
+    // dead centre of a squashed ellipse: nearest ink is the short radius away
+    if (r < 1e-6) return Math.min(rx, ry) <= tol
+    // Project onto the ring along the ray from the centre and measure in world
+    // units. Measuring in normalised units instead would stretch the collar by
+    // rx/ry, so a 400×40 ellipse would answer to clicks 80 units off its end.
+    const d = Math.hypot((x - cx) * (1 - 1 / r), (y - cy) * (1 - 1 / r))
+    return d <= tol
   }
 
   // unfilled rect — the outline is the target, the middle is see-through

@@ -25,7 +25,7 @@ function close(a: number, b: number, eps = 1e-6) {
 
 // -- fixtures ---------------------------------------------------------------
 
-const rect = (id: string, x: number, y: number, w: number, h: number, fill = false): SquigNode => ({
+const rect = (id: string, x: number, y: number, w: number, h: number, filled = false): SquigNode => ({
   id,
   type: "shape",
   shape: "rect",
@@ -33,7 +33,19 @@ const rect = (id: string, x: number, y: number, w: number, h: number, fill = fal
   y,
   w,
   h,
-  fill,
+  fill: filled ? "strong" : "none",
+  seed: 1,
+})
+
+const ellipse = (id: string, x: number, y: number, w: number, h: number): SquigNode => ({
+  id,
+  type: "shape",
+  shape: "ellipse",
+  x,
+  y,
+  w,
+  h,
+  fill: "none",
   seed: 1,
 })
 
@@ -204,6 +216,33 @@ const apply = (ns: SquigNode[], patches: Record<string, Partial<SquigNode>>): Sq
   )
   check("a marquee crossing its outline does grab it", hitsRect(hollow, { x: -10, y: 100, w: 50, h: 50 }, 1))
   check("a marquee inside a filled rect grabs it", hitsRect(solid, { x: 100, y: 100, w: 50, h: 50 }, 1))
+}
+
+{
+  // the thing this whole collar exists for: aiming at a 1px outline
+  const hollow = rect("hollow", 0, 0, 400, 300)
+  check("an unfilled rect answers to a click just outside its edge", hitsPoint(hollow, -6, 150, 1))
+  check("and to one just inside", hitsPoint(hollow, 6, 150, 1))
+  check("but the middle is still see-through", !hitsPoint(hollow, 40, 150, 1))
+
+  // a small shape keeps a see-through core rather than going solid
+  const small = rect("small", 0, 0, 30, 30)
+  check("a small unfilled rect still has a transparent middle", !hitsPoint(small, 15, 15, 1))
+}
+
+{
+  const ring = ellipse("ring", 0, 0, 200, 200)
+  check("an ellipse is grabbable a few px off its ring", hitsPoint(ring, 100, 6, 1))
+  check("an ellipse is hollow in the middle", !hitsPoint(ring, 100, 100, 1))
+  check("the corner of an ellipse's box is empty", !hitsPoint(ring, 4, 4, 1))
+
+  // the collar is measured in world units, not in the ellipse's own squashed
+  // space — otherwise a wide, flat ellipse answers to clicks a long way past
+  // the end of its major axis
+  const flat = ellipse("flat", 0, 0, 400, 40)
+  check("a squashed ellipse is grabbable at the end of its major axis", hitsPoint(flat, 398, 20, 1))
+  check("but not far past it", !hitsPoint(flat, 460, 20, 1))
+  check("its flat side is grabbable too", hitsPoint(flat, 200, 44, 1))
 }
 
 {
