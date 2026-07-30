@@ -1498,9 +1498,9 @@ export function Canvas() {
       {order.length === 0 && !placing && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
           <p className="max-w-xs -rotate-2 text-center text-xl" style={{ color: "var(--sq-muted)", fontFamily: "var(--sq-font)" }}>
-            draw the idea.
+            draw the idea
             <br />
-            the pixels can wait.
+            before shipping the code.
           </p>
         </div>
       )}
