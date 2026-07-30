@@ -2,6 +2,10 @@
 
 A wireframing tool for people who think by drawing.
 
+**[Open squig →](https://squig-theta.vercel.app)**
+
+![A squig canvas: a landing page wireframe drawn in blue ink — nav, hero, feature row, footer — with the tool's rail on the left and the page inspector on the right](docs/hero.jpg)
+
 Open Figma and you get sucked into high fidelity. Open tldraw and you're
 hand-drawing every button from scratch. squig sits in between: an infinite
 canvas where you drag in real UI components, but everything renders as a
@@ -77,6 +81,11 @@ pnpm install
 pnpm dev
 ```
 
+No environment variables, no database, no accounts — documents live in the
+browser's own storage. `pnpm test` type-checks and runs the geometry,
+selection and clipboard suites; `pnpm lint` and `pnpm build` are the other two
+worth running before you push.
+
 ## How it's put together
 
 Documents are a flat map of nodes on an infinite plane — no nesting, no flow
@@ -110,3 +119,14 @@ lib/files.ts             the local file drawer — autosave, recents, prefs
 
 Next.js, React, TypeScript, Tailwind, shadcn/ui for the tool's own chrome,
 rough.js for the sketch rendering, Phosphor for icons.
+
+## Contributing
+
+Pull requests are welcome — [CONTRIBUTING.md](CONTRIBUTING.md) covers the
+setup, what tends to get merged, and how to add a component, which is the
+easiest place to start. If you're about to spend real time on something, open
+an issue first.
+
+## License
+
+[MIT](LICENSE) © Pablo Stanley

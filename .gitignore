@@ -40,6 +40,11 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
+# claude code — scratch worktrees and per-machine settings, but not a shared
+# .claude/settings.json if one is ever checked in
+.claude/worktrees/
+.claude/settings.local.json
+
 # squig
 .vercel
 *.squig.json
