@@ -11,7 +11,7 @@
 // ---------------------------------------------------------------------------
 
 import type { SquigNode } from "./types"
-import { DEFAULT_FONT, DEFAULT_THEME, THEMES, type FontMode, type ThemeName } from "./theme"
+import { DEFAULT_FONT, DEFAULT_PAPER, DEFAULT_THEME, THEMES, type FontMode, type PaperShade, type ThemeName } from "./theme"
 
 export interface FileMeta {
   id: string
@@ -31,6 +31,10 @@ export interface StoredDoc {
 export interface Prefs {
   theme: ThemeName
   font: FontMode
+  /** how bright the sheet is */
+  paper: PaperShade
+  /** the canvas dot grid is drawn */
+  grid: boolean
   contextRow: boolean
   activeId: string | null
 }
@@ -135,7 +139,13 @@ function knownTheme(t: unknown): ThemeName {
 }
 
 function knownFont(f: unknown): FontMode {
-  return f === "hand" || f === "clean" ? f : DEFAULT_FONT
+  // "clean" was the old name for the one non-hand face, back when there was one
+  if (f === "clean") return "sans"
+  return f === "hand" || f === "sans" || f === "serif" ? f : DEFAULT_FONT
+}
+
+function knownPaper(s: unknown): PaperShade {
+  return s === "white" || s === "subtle" || s === "shaded" ? s : DEFAULT_PAPER
 }
 
 export function loadPrefs(): Prefs {
@@ -143,6 +153,9 @@ export function loadPrefs(): Prefs {
   return {
     theme: knownTheme(p.theme),
     font: knownFont(p.font),
+    paper: knownPaper(p.paper),
+    // the grid is on unless someone turned it off
+    grid: p.grid !== false,
     contextRow: p.contextRow === true,
     activeId: typeof p.activeId === "string" ? p.activeId : null,
   }
@@ -175,6 +188,8 @@ export function migrateLegacyDoc(newId: () => string): { doc: StoredDoc; prefs: 
   const prefs: Prefs = {
     theme: knownTheme(old.theme),
     font: knownFont(old.font),
+    paper: DEFAULT_PAPER,
+    grid: true,
     contextRow: old.contextRow === true,
     activeId: doc.id,
   }

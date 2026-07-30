@@ -29,15 +29,19 @@ import { Switch } from "@/components/ui/switch"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import {
+  ArrowsOutIcon,
   FlipHorizontalIcon,
   FlipVerticalIcon,
   LinkBreakIcon,
+  SelectionAllIcon,
   TextBIcon,
   TextItalicIcon,
   TextUnderlineIcon,
   TrashIcon,
 } from "@phosphor-icons/react"
 import { kbd } from "@/lib/shortcuts"
+import { InkPicker } from "./ink-picker"
+import { bgOf, paletteOf, PAPER_SHADES, type FontMode, type PaperShade } from "@/lib/theme"
 
 // ---------------------------------------------------------------------------
 // Option sets. Declared out here so they aren't rebuilt on every keystroke.
@@ -65,6 +69,43 @@ const FILL_OPTIONS: readonly SegmentOption<FillTone>[] = [
   { value: "strong", label: "Strong shade", content: <ToneChip fill="var(--sq-shade-strong)" /> },
 ]
 
+/**
+ * A sheet sample — the literal colour that shade puts behind the drawing,
+ * filling its whole segment. Three near-whites can only be told apart at size,
+ * so the swatch is the segment rather than a chip beside a word.
+ */
+function PaperSample({ fill }: { fill: string }) {
+  return (
+    <span
+      // a neutral hairline, not the ink's faint: an inked outline would read as
+      // a drawn box rather than as a sheet of paper
+      className="block h-[18px] w-full rounded-chrome-xs border border-border"
+      style={{ background: fill }}
+    />
+  )
+}
+
+/**
+ * The face the canvas letters in, shown rather than named: each segment sets
+ * "Aa" in the face it selects. "Sans serif" is a word you have to translate;
+ * two letters in the actual font you don't.
+ */
+const FONT_OPTIONS: readonly SegmentOption<FontMode>[] = [
+  { value: "hand", label: "Hand-drawn", content: <FontSample family="var(--font-sketch)" /> },
+  { value: "sans", label: "Sans serif", content: <FontSample family="var(--font-sans)" /> },
+  { value: "serif", label: "Serif", content: <FontSample family="var(--font-serif)" /> },
+]
+
+/** "Aa" set in one face — a little large for the row, because two letters at
+    11px don't carry enough of a face to tell it from its neighbour. */
+function FontSample({ family }: { family: string }) {
+  return (
+    <span className="text-[13px] leading-none" style={{ fontFamily: family }}>
+      Aa
+    </span>
+  )
+}
+
 /** A pen-weight chip — the actual relative widths, not three identical bars. */
 function PenChip({ height }: { height: number }) {
   return <span className="block w-4 rounded-full bg-current" style={{ height }} />
@@ -89,49 +130,104 @@ const TEXT_STYLES = [
 export function Inspector() {
   const nodes = useSquig((s) => s.nodes)
   const selection = useSquig((s) => s.selection)
+  const total = useSquig((s) => s.order.length)
 
   const selected = selection.map((id) => nodes[id]).filter(Boolean) as SquigNode[]
+  const empty = selected.length === 0
 
-  const heading =
-    selected.length === 0
-      ? "nothing selected"
-      : selected.length > 1
-        ? `${selected.length} selected`
-        : selected[0].type === "component"
-          ? (getDef((selected[0] as ComponentNode).kind)?.name ?? (selected[0] as ComponentNode).kind)
-          : selected[0].type
+  // Nothing selected is not an absence — it's the page. So the panel keeps its
+  // job and changes its subject rather than going blank.
+  const heading = empty
+    ? "Page"
+    : selected.length > 1
+      ? `${selected.length} selected`
+      : selected[0].type === "component"
+        ? (getDef((selected[0] as ComponentNode).kind)?.name ?? (selected[0] as ComponentNode).kind)
+        : selected[0].type
+
+  const subtitle = empty
+    ? total === 0
+      ? "empty canvas"
+      : `${total} ${total === 1 ? "layer" : "layers"}`
+    : selected.length > 1
+      ? selectionSummary(selected)
+      : undefined
 
   return (
     <Panel className="absolute top-4 right-4 z-30 max-h-[calc(100vh-2rem)] w-[272px]">
-      <PanelHeader title={heading} subtitle={selected.length > 1 ? selectionSummary(selected) : undefined} />
+      <PanelHeader title={heading} subtitle={subtitle} />
 
       <ScrollArea className="min-h-0">
         {/* remounting on a selection change drops any half-typed draft, which
             is what you want — the field now describes different objects */}
         <div key={selection.join(",")} className="flex flex-col">
-          {selected.length ? <SelectionEditor selected={selected} /> : <EmptyState />}
+          {empty ? <PageSettings /> : <SelectionEditor selected={selected} />}
         </div>
       </ScrollArea>
 
-      {selected.length > 0 && <Footer selected={selected} />}
+      {empty ? <PageFooter /> : <Footer selected={selected} />}
     </Panel>
   )
 }
 
 // ---------------------------------------------------------------------------
 
-function EmptyState() {
+/**
+ * With nothing selected the panel edits the page instead of apologising for
+ * being empty. Everything here is document-wide — the sheet, the ink, the
+ * lettering — which is exactly the set of knobs you reach for between drawings
+ * rather than during one.
+ */
+function PageSettings() {
+  const paper = useSquig((s) => s.paper)
+  const grid = useSquig((s) => s.grid)
+  const font = useSquig((s) => s.font)
+  const theme = useSquig((s) => s.theme)
   const contextRow = useSquig((s) => s.contextRow)
   const st = useSquig.getState
 
+  const palette = paletteOf(theme)
+
+  /** Built per palette, not once at module load — the samples preview this
+      theme's actual sheet, which is the whole point of showing them. */
+  const paperOptions: SegmentOption<PaperShade>[] = PAPER_SHADES.map(({ value, label }) => ({
+    value,
+    label: `${label} paper`,
+    content: <PaperSample fill={bgOf(palette, value)} />,
+  }))
+
   return (
     <>
-      <div className="border-b border-border/60 p-gutter">
-        <PanelNote>
-          drop a component, scribble a shape, make a mess. it&apos;s a wireframe, not the Sistine Chapel.
-        </PanelNote>
-      </div>
-      <PanelSection id="settings" title="Settings">
+      <PanelSection id="page-paper" title="Paper">
+        <Row label="Shade">
+          <Segmented
+            ariaLabel="Paper shade"
+            options={paperOptions}
+            shared={{ mixed: false, value: paper }}
+            onChange={(s) => st().setPaper(s)}
+          />
+        </Row>
+        <Row spread label="Dot grid">
+          <Switch checked={grid} aria-label="Dot grid" onCheckedChange={(on) => st().setGrid(on)} className="scale-90" />
+        </Row>
+      </PanelSection>
+
+      <PanelSection id="page-ink" title="Ink">
+        <Row label="Palette">
+          <InkPicker />
+        </Row>
+        <Row label="Font">
+          <Segmented
+            ariaLabel="Font"
+            options={FONT_OPTIONS}
+            shared={{ mixed: false, value: font }}
+            onChange={(f) => st().setFont(f)}
+          />
+        </Row>
+        <PanelNote>ink and paper travel with every drawing you open</PanelNote>
+      </PanelSection>
+
+      <PanelSection id="page-view" title="View">
         <Row spread label="Context menu">
           <Switch
             checked={contextRow}
@@ -143,6 +239,35 @@ function EmptyState() {
         <PanelNote>quick controls float above the selection</PanelNote>
       </PanelSection>
     </>
+  )
+}
+
+/** Footer for the page panel — whole-canvas moves, not selection ones. */
+function PageFooter() {
+  const count = useSquig((s) => s.order.length)
+  const st = useSquig.getState
+
+  return (
+    <PanelFooter>
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={count === 0}
+        className="h-ctl flex-1 rounded-chrome-sm text-label"
+        onClick={() => st().zoomToFit()}
+      >
+        <ArrowsOutIcon className="size-3" /> Fit
+      </Button>
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={count === 0}
+        className="h-ctl flex-1 rounded-chrome-sm text-label"
+        onClick={() => st().selectAll()}
+      >
+        <SelectionAllIcon className="size-3" /> Select all
+      </Button>
+    </PanelFooter>
   )
 }
 

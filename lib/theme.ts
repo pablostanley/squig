@@ -116,26 +116,88 @@ export type ThemeName = keyof typeof THEMES
 export const THEME_NAMES = Object.keys(THEMES) as ThemeName[]
 export const DEFAULT_THEME: ThemeName = "internet-blue"
 
-/** Hand-lettered vs. clean — the "is this decided yet" dial. */
-export type FontMode = "hand" | "clean"
+/**
+ * The face the canvas letters in — the "is this decided yet" dial.
+ *
+ * Hand says nothing is settled. Sans and serif are the two ways a wireframe
+ * starts admitting it might ship, and picking between them is a real question
+ * early on, which is why it's a choice of three rather than a switch.
+ */
+export type FontMode = "hand" | "sans" | "serif"
 export const DEFAULT_FONT: FontMode = "hand"
+
+/** What each mode puts in --sq-font. */
+export const FONT_FAMILY: Record<FontMode, string> = {
+  hand: "var(--font-sketch)",
+  sans: "var(--font-sans)",
+  serif: "var(--font-serif)",
+}
+
+// ---------------------------------------------------------------------------
+// Paper.
+//
+// Each palette ships one sheet colour — the warm off-white it was drawn
+// against. This is the dial off it: bleach it to pure white for a screenshot,
+// leave it as authored, or take it a step down toward the grid so a
+// mostly-white wireframe has something to sit on.
+//
+// It moves --sq-bg only. --sq-paper, the opaque fill a card uses to occlude
+// what's behind it, stays the palette's white: darkening the sheet is exactly
+// how you make those cards lift off it.
+// ---------------------------------------------------------------------------
+
+export type PaperShade = "white" | "subtle" | "shaded"
+export const DEFAULT_PAPER: PaperShade = "subtle"
+
+export const PAPER_SHADES: readonly { value: PaperShade; label: string }[] = [
+  { value: "white", label: "White" },
+  { value: "subtle", label: "Subtle" },
+  { value: "shaded", label: "Shaded" },
+]
+
+/** Linear blend of two hex colours — `t` of `b` into `a`. */
+function mix(a: string, b: string, t: number): string {
+  const hex = (s: string) => {
+    const v = s.replace("#", "")
+    const n = v.length === 3 ? v.split("").map((c) => c + c).join("") : v
+    return [parseInt(n.slice(0, 2), 16), parseInt(n.slice(2, 4), 16), parseInt(n.slice(4, 6), 16)]
+  }
+  const [r1, g1, b1] = hex(a)
+  const [r2, g2, b2] = hex(b)
+  const c = (x: number, y: number) => Math.round(x + (y - x) * t)
+  return `#${[c(r1, r2), c(g1, g2), c(b1, b2)].map((n) => n.toString(16).padStart(2, "0")).join("")}`
+}
+
+/** The sheet colour: what sits behind the whole drawing. */
+export function bgOf(p: Palette, shade: PaperShade): string {
+  if (shade === "white") return "#FFFFFF"
+  // far enough toward the grid colour to read as a choice — at half that, the
+  // three shades look like the same white three times
+  if (shade === "shaded") return mix(p.bg, p.grid, 0.7)
+  return p.bg
+}
+
+/** The dot grid, kept readable against whatever the sheet just became. */
+export function gridOf(p: Palette, shade: PaperShade): string {
+  return shade === "shaded" ? mix(p.grid, p.ink, 0.15) : p.grid
+}
 
 export function paletteOf(name: string): Palette {
   return THEMES[name as ThemeName] ?? THEMES[DEFAULT_THEME]
 }
 
-export function applyTheme(name: string, font: FontMode) {
+export function applyTheme(name: string, font: FontMode, paper: PaperShade = DEFAULT_PAPER) {
   if (typeof document === "undefined") return
   const p = paletteOf(name)
   const root = document.documentElement
-  root.style.setProperty("--sq-bg", p.bg)
+  root.style.setProperty("--sq-bg", bgOf(p, paper))
   root.style.setProperty("--sq-paper", p.paper)
   root.style.setProperty("--sq-ink", p.ink)
   root.style.setProperty("--sq-muted", p.muted)
   root.style.setProperty("--sq-faint", p.faint)
   root.style.setProperty("--sq-shade", p.shade)
   root.style.setProperty("--sq-shade-strong", p.shadeStrong)
-  root.style.setProperty("--sq-grid", p.grid)
+  root.style.setProperty("--sq-grid", gridOf(p, paper))
   root.style.setProperty("--sq-select", p.select)
-  root.style.setProperty("--sq-font", font === "clean" ? "var(--font-sans)" : "var(--font-sketch)")
+  root.style.setProperty("--sq-font", FONT_FAMILY[font] ?? FONT_FAMILY.hand)
 }

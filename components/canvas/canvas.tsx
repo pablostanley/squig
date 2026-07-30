@@ -183,6 +183,7 @@ export function Canvas() {
   const selection = useSquig((s) => s.selection)
   const viewport = useSquig((s) => s.viewport)
   const tool = useSquig((s) => s.tool)
+  const grid = useSquig((s) => s.grid)
 
   const placing = useSquig((s) => s.placing)
   const placingDrag = useSquig((s) => s.placingDrag)
@@ -1392,7 +1393,7 @@ export function Canvas() {
       style={{
         cursor: cursorStyle,
         backgroundColor: "var(--sq-bg)",
-        backgroundImage: "radial-gradient(circle, var(--sq-grid) 1px, transparent 1px)",
+        backgroundImage: grid ? "radial-gradient(circle, var(--sq-grid) 1px, transparent 1px)" : "none",
         backgroundSize: `${24 * v.zoom}px ${24 * v.zoom}px`,
         backgroundPosition: `${v.x}px ${v.y}px`,
       }}

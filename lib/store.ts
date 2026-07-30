@@ -6,7 +6,15 @@ import type { ComponentNode, SquigNode, TextNode, Tool, Viewport, ShapeKind } fr
 import { normalizeFill, screenToWorld, unionBox } from "./types"
 import { getDef } from "./library/registry"
 import { breakApart } from "./library/break-apart"
-import { applyTheme, DEFAULT_FONT, DEFAULT_THEME, type FontMode, type ThemeName } from "./theme"
+import {
+  applyTheme,
+  DEFAULT_FONT,
+  DEFAULT_PAPER,
+  DEFAULT_THEME,
+  type FontMode,
+  type PaperShade,
+  type ThemeName,
+} from "./theme"
 import {
   INDEX_KEY,
   deleteFile as dropFile,
@@ -67,6 +75,10 @@ interface SquigState {
   contextRow: boolean
   theme: ThemeName
   font: FontMode
+  /** how bright the sheet behind the drawing is */
+  paper: PaperShade
+  /** the canvas dot grid is drawn */
+  grid: boolean
   hydrated: boolean
   commandOpen: boolean
   contextMenu: ContextMenuState | null
@@ -96,6 +108,8 @@ interface SquigState {
   setContextRow: (on: boolean) => void
   setTheme: (t: ThemeName) => void
   setFont: (f: FontMode) => void
+  setPaper: (s: PaperShade) => void
+  setGrid: (on: boolean) => void
   setViewport: (v: Viewport) => void
   setSelection: (ids: string[]) => void
   setCommandOpen: (open: boolean) => void
@@ -310,7 +324,14 @@ function flushSave(get: () => SquigState, force = false) {
     saveTimer = null
   }
   const s = get()
-  savePrefs({ theme: s.theme, font: s.font, contextRow: s.contextRow, activeId: s.docId })
+  savePrefs({
+    theme: s.theme,
+    font: s.font,
+    paper: s.paper,
+    grid: s.grid,
+    contextRow: s.contextRow,
+    activeId: s.docId,
+  })
   if (!dirty && !force) return
   const known = s.files.some((f) => f.id === s.docId)
   if (!s.order.length && !known && !force) return
@@ -365,6 +386,8 @@ export const useSquig = create<SquigState>((set, get) => ({
   contextRow: false,
   theme: DEFAULT_THEME,
   font: DEFAULT_FONT,
+  paper: DEFAULT_PAPER,
+  grid: true,
   hydrated: false,
   commandOpen: false,
   contextMenu: null,
@@ -393,12 +416,21 @@ export const useSquig = create<SquigState>((set, get) => ({
   },
   setTheme: (t) => {
     set({ theme: t })
-    applyTheme(t, get().font)
+    applyTheme(t, get().font, get().paper)
     scheduleSave(get)
   },
   setFont: (f) => {
     set({ font: f })
-    applyTheme(get().theme, f)
+    applyTheme(get().theme, f, get().paper)
+    scheduleSave(get)
+  },
+  setPaper: (s) => {
+    set({ paper: s })
+    applyTheme(get().theme, get().font, s)
+    scheduleSave(get)
+  },
+  setGrid: (on) => {
+    set({ grid: on })
     scheduleSave(get)
   },
   setViewport: (v) => set({ viewport: v }),
@@ -628,9 +660,11 @@ export const useSquig = create<SquigState>((set, get) => ({
       contextRow: prefs.contextRow,
       theme: prefs.theme,
       font: prefs.font,
+      paper: prefs.paper,
+      grid: prefs.grid,
       hydrated: true,
     })
-    applyTheme(prefs.theme, prefs.font)
+    applyTheme(prefs.theme, prefs.font, prefs.paper)
     // what we just read is, by definition, what the drawer already holds
     dirty = false
     watchWindow(get)

@@ -3,43 +3,30 @@
 // ---------------------------------------------------------------------------
 // Top-left corner — the wordmark doubles as the file menu, the file name is
 // inline-editable. No toolbar chrome beyond that, on purpose.
+//
+// It is a *file* menu: documents, saving, editing, the view. How the drawing
+// looks — ink, paper, lettering, the grid — lives in the Page panel, which is
+// what the inspector shows whenever nothing is selected. Two doors onto the
+// same setting is how a menu turns into a junk drawer, so appearance has one.
 // ---------------------------------------------------------------------------
 
 import { useRef } from "react"
 import { useSquig } from "@/lib/store"
 import { exportDoc, importDoc } from "@/lib/file-io"
-import { CaretDownIcon, CheckIcon } from "@phosphor-icons/react"
+import { CaretDownIcon } from "@phosphor-icons/react"
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuShortcut,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Panel } from "@/components/ui/panel"
-import { THEMES, THEME_NAMES, type ThemeName } from "@/lib/theme"
 import { kbd } from "@/lib/shortcuts"
 import { RecentFiles } from "@/components/chrome/recent-files"
 
-/** Two-tone chip showing a palette's paper and ink. */
-function Swatch({ name }: { name: ThemeName }) {
-  const p = THEMES[name]
-  return (
-    <span
-      className="inline-block size-3.5 shrink-0 rounded-full border"
-      style={{ background: `linear-gradient(135deg, ${p.paper} 50%, ${p.ink} 50%)`, borderColor: p.ink }}
-    />
-  )
-}
-
 export function TopCorner() {
-  const contextRow = useSquig((s) => s.contextRow)
-  const theme = useSquig((s) => s.theme)
-  const font = useSquig((s) => s.font)
   const st = useSquig.getState
   // Rename hands focus to the floating name field, so the menu must not yank
   // focus back to its trigger on the way out.
@@ -112,31 +99,8 @@ export function TopCorner() {
             <DropdownMenuShortcut>⇧⌘Z</DropdownMenuShortcut>
           </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuSub>
-            <DropdownMenuSubTrigger>
-              <span className="flex items-center gap-2">
-                <Swatch name={theme} />
-                Ink
-              </span>
-            </DropdownMenuSubTrigger>
-            <DropdownMenuSubContent className="w-48">
-              {THEME_NAMES.map((name) => (
-                <DropdownMenuItem key={name} onClick={() => st().setTheme(name)}>
-                  <span className="flex items-center gap-2">
-                    <Swatch name={name} />
-                    {THEMES[name].label}
-                  </span>
-                  {theme === name && <CheckIcon className="ml-auto size-3.5 text-muted-foreground" weight="bold" />}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuSubContent>
-          </DropdownMenuSub>
-          <DropdownMenuItem onClick={() => st().setFont(font === "hand" ? "clean" : "hand")}>
-            {font === "hand" ? "Use clean lettering" : "Use hand lettering"}
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => st().setContextRow(!contextRow)}>
-            {contextRow ? "Hide context menu" : "Show context menu"}
-          </DropdownMenuItem>
+          {/* ink, paper, lettering and the grid used to sit here; they live in
+              the Page panel now — deselect and the inspector is holding them */}
           <DropdownMenuItem onClick={() => st().setViewport({ x: 0, y: 0, zoom: 1 })}>
             Reset zoom
             <DropdownMenuShortcut>{kbd("mod+0")}</DropdownMenuShortcut>
