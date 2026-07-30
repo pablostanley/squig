@@ -12,6 +12,7 @@ import { CommandPalette } from "@/components/chrome/command-palette"
 import { CanvasContextMenu } from "@/components/chrome/context-menu"
 import { ShortcutsSheet } from "@/components/chrome/shortcuts-sheet"
 import { LinkEditor } from "@/components/chrome/link-editor"
+import { Notice } from "@/components/chrome/notice"
 import { kbd } from "@/lib/shortcuts"
 
 export default function Home() {
@@ -53,6 +54,8 @@ export default function Home() {
           {kbd("mod+\\")}
         </p>
       )}
+      {/* the flash outlives ⌘\ — a copy still has to say it happened */}
+      <Notice />
       <LinkEditor />
       <CanvasContextMenu />
       <CommandPalette />

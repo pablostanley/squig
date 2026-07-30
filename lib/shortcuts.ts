@@ -92,6 +92,7 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
       { keys: ["mod+shift+z"], label: "Redo" },
       { keys: ["mod+d", "alt+drag"], label: "Duplicate" },
       { keys: ["mod+c"], label: "Copy" },
+      { keys: ["mod+shift+c"], label: "Copy as PNG" },
       { keys: ["mod+x"], label: "Cut" },
       { keys: ["mod+v"], label: "Paste at cursor" },
       { keys: ["mod+shift+v"], label: "Paste in place" },

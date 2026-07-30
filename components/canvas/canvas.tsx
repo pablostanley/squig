@@ -30,6 +30,7 @@ import { unionBounds, type Bounds } from "@/lib/selection"
 import { NodeSketch, SketchPrims } from "./sketch"
 import { getDef, renderComponent } from "@/lib/library/registry"
 import { exportDoc } from "@/lib/file-io"
+import { copyAsPngWithNotice } from "@/lib/export-image"
 import { ContextRow } from "./context-row"
 import { TextEditOverlay } from "./text-edit-overlay"
 
@@ -1174,7 +1175,9 @@ export function Canvas() {
             return
           case "KeyC":
             e.preventDefault()
-            s.copySelected()
+            // ⌘⇧C is the picture, ⌘C is the objects
+            if (e.shiftKey) copyAsPngWithNotice()
+            else s.copySelected()
             return
           case "KeyX":
             e.preventDefault()

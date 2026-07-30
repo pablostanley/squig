@@ -219,7 +219,7 @@ export function primsToPaths(
  * the spot they were drawn instead of throwing them off the far side of the
  * node.
  */
-function mirrorGlyphs(t: Extract<Prim, { t: "text" }>): string | undefined {
+export function mirrorGlyphs(t: Extract<Prim, { t: "text" }>): string | undefined {
   if (!t.mirrorX && !t.mirrorY) return undefined
   const [sx, sy] = [t.mirrorX ? -1 : 1, t.mirrorY ? -1 : 1]
   return `translate(${t.x * (1 - sx)} ${t.y * (1 - sy)}) scale(${sx} ${sy})`

@@ -98,6 +98,9 @@ interface SquigState {
   linkOpen: boolean
   /** private clipboard — ⌘C/⌘X/⌘V never touch the system one */
   clipboard: SquigNode[]
+  /** a one-line flash in the corner; the id makes a repeat of the same words
+   *  count as a new message */
+  notice: { id: number; text: string } | null
 
   past: DocSnapshot[]
   future: DocSnapshot[]
@@ -123,6 +126,7 @@ interface SquigState {
   setUiHidden: (on: boolean) => void
   setShortcutsOpen: (on: boolean) => void
   setLinkOpen: (on: boolean) => void
+  setNotice: (text: string | null) => void
 
   /** snapshot current doc onto the undo stack (call once at gesture start) */
   checkpoint: () => void
@@ -406,6 +410,7 @@ export const useSquig = create<SquigState>((set, get) => ({
   shortcutsOpen: false,
   linkOpen: false,
   clipboard: [],
+  notice: null,
   past: [],
   future: [],
 
@@ -464,6 +469,7 @@ export const useSquig = create<SquigState>((set, get) => ({
   setUiHidden: (on) => set({ uiHidden: on }),
   setShortcutsOpen: (on) => set({ shortcutsOpen: on, commandOpen: false, contextMenu: null }),
   setLinkOpen: (on) => set({ linkOpen: on, contextMenu: null }),
+  setNotice: (text) => set((s) => ({ notice: text === null ? null : { id: (s.notice?.id ?? 0) + 1, text } })),
 
   checkpoint: () => {
     set((s) => {
