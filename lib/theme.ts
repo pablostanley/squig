@@ -186,9 +186,36 @@ export function paletteOf(name: string): Palette {
   return THEMES[name as ThemeName] ?? THEMES[DEFAULT_THEME]
 }
 
-export function applyTheme(name: string, font: FontMode, paper: PaperShade = DEFAULT_PAPER) {
+// ---------------------------------------------------------------------------
+// The look.
+//
+// Ink, paper, font and grid belong to the drawing, not to the app: a red
+// marker-on-white flow chart and a graphite-on-shaded interface study are two
+// documents you keep side by side, and opening one shouldn't repaint the other.
+// So a look is saved inside the document, and the last one you set is only the
+// default a NEW document starts from.
+// ---------------------------------------------------------------------------
+
+export interface Look {
+  theme: ThemeName
+  paper: PaperShade
+  font: FontMode
+  /** the canvas dot grid is drawn */
+  grid: boolean
+}
+
+export const DEFAULT_LOOK: Look = {
+  theme: DEFAULT_THEME,
+  paper: DEFAULT_PAPER,
+  font: DEFAULT_FONT,
+  grid: true,
+}
+
+/** Write a look onto the document element. `grid` is drawn by the canvas, not
+    by a custom property, so it is the one part this doesn't touch. */
+export function applyLook({ theme, font, paper }: Look) {
   if (typeof document === "undefined") return
-  const p = paletteOf(name)
+  const p = paletteOf(theme)
   const root = document.documentElement
   root.style.setProperty("--sq-bg", bgOf(p, paper))
   root.style.setProperty("--sq-paper", p.paper)

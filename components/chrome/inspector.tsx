@@ -174,9 +174,9 @@ export function Inspector() {
 
 /**
  * With nothing selected the panel edits the page instead of apologising for
- * being empty. Everything here is document-wide — the sheet, the ink, the
- * lettering — which is exactly the set of knobs you reach for between drawings
- * rather than during one.
+ * being empty. Paper and Ink belong to the document and are saved inside it —
+ * two drawings can hold two different looks. View is the one app-level section,
+ * which is why it sits apart at the bottom.
  */
 function PageSettings() {
   const paper = useSquig((s) => s.paper)
@@ -224,7 +224,7 @@ function PageSettings() {
             onChange={(f) => st().setFont(f)}
           />
         </Row>
-        <PanelNote>ink and paper travel with every drawing you open</PanelNote>
+        <PanelNote>saved with this drawing — a new file starts from whatever you set last</PanelNote>
       </PanelSection>
 
       <PanelSection id="page-view" title="View">

@@ -11,7 +11,7 @@
 // ---------------------------------------------------------------------------
 
 import type { SquigNode } from "./types"
-import { DEFAULT_FONT, DEFAULT_PAPER, DEFAULT_THEME, THEMES, type FontMode, type PaperShade, type ThemeName } from "./theme"
+import { DEFAULT_FONT, DEFAULT_LOOK, DEFAULT_PAPER, DEFAULT_THEME, THEMES, type FontMode, type Look, type PaperShade, type ThemeName } from "./theme"
 
 export interface FileMeta {
   id: string
@@ -25,16 +25,14 @@ export interface StoredDoc {
   nodes: Record<string, SquigNode>
   order: string[]
   updatedAt: number
+  /** how this drawing looks — absent on documents saved before looks existed */
+  look?: Look
 }
 
 /** Everything that belongs to the app rather than to any one document. */
 export interface Prefs {
-  theme: ThemeName
-  font: FontMode
-  /** how bright the sheet is */
-  paper: PaperShade
-  /** the canvas dot grid is drawn */
-  grid: boolean
+  /** the last look you set — what a new document starts from, nothing more */
+  look: Look
   contextRow: boolean
   activeId: string | null
 }
@@ -96,7 +94,14 @@ function writeIndex(list: FileMeta[]) {
 export function readFile(id: string): StoredDoc | null {
   const doc = readJSON(fileKey(id)) as StoredDoc | null
   if (!doc || typeof doc !== "object" || !doc.nodes || !Array.isArray(doc.order)) return null
-  return { ...doc, id, name: typeof doc.name === "string" ? doc.name : "untitled scribbles" }
+  return {
+    ...doc,
+    id,
+    name: typeof doc.name === "string" ? doc.name : "untitled scribbles",
+    // a document written before looks existed has none; the caller keeps the
+    // look already on screen rather than snapping the canvas to a default
+    look: doc.look ? knownLook(doc.look, DEFAULT_LOOK) : undefined,
+  }
 }
 
 /**
@@ -148,14 +153,27 @@ function knownPaper(s: unknown): PaperShade {
   return s === "white" || s === "subtle" || s === "shaded" ? s : DEFAULT_PAPER
 }
 
-export function loadPrefs(): Prefs {
-  const p = (readJSON(PREFS_KEY) ?? {}) as Partial<Prefs>
+/**
+ * A look from storage, with every field vouched for. A field that is missing or
+ * no longer valid — a palette we retired, a font mode we renamed — comes from
+ * `fallback` rather than taking the canvas down with it.
+ */
+export function knownLook(v: unknown, fallback: Look): Look {
+  const l = (v ?? {}) as Partial<Look>
   return {
-    theme: knownTheme(p.theme),
-    font: knownFont(p.font),
-    paper: knownPaper(p.paper),
+    theme: l.theme === undefined ? fallback.theme : knownTheme(l.theme),
+    paper: l.paper === undefined ? fallback.paper : knownPaper(l.paper),
+    font: l.font === undefined ? fallback.font : knownFont(l.font),
     // the grid is on unless someone turned it off
-    grid: p.grid !== false,
+    grid: typeof l.grid === "boolean" ? l.grid : fallback.grid,
+  }
+}
+
+export function loadPrefs(): Prefs {
+  const p = (readJSON(PREFS_KEY) ?? {}) as Partial<Prefs> & Partial<Look>
+  return {
+    // prefs used to keep the look's fields flat, so read them either way
+    look: knownLook(p.look ?? p, DEFAULT_LOOK),
     contextRow: p.contextRow === true,
     activeId: typeof p.activeId === "string" ? p.activeId : null,
   }
@@ -177,19 +195,20 @@ export function migrateLegacyDoc(newId: () => string): { doc: StoredDoc; prefs: 
     drop(LEGACY_KEY)
     return null
   }
+  // the legacy doc's theme and font were app settings; they become this
+  // document's look, since it is the only document there was
+  const look = knownLook({ theme: old.theme, font: old.font }, DEFAULT_LOOK)
   const doc: StoredDoc = {
     id: newId(),
     name: old.fileName || "untitled scribbles",
     nodes: old.nodes,
     order: old.order,
     updatedAt: Date.now(),
+    look,
   }
   saveFile(doc)
   const prefs: Prefs = {
-    theme: knownTheme(old.theme),
-    font: knownFont(old.font),
-    paper: DEFAULT_PAPER,
-    grid: true,
+    look,
     contextRow: old.contextRow === true,
     activeId: doc.id,
   }
