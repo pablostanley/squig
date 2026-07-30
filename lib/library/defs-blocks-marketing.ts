@@ -359,8 +359,8 @@ export const ctaBlockDef: ComponentDef = {
   size: { w: 760, h: 210 },
   defaults: {
     variant: "centered",
-    headline: "Ready to make a mess?",
-    subline: "Ten seconds to your first ugly rectangle.",
+    headline: "Got an idea?",
+    subline: "Ten seconds from blank canvas to first draft.",
     buttons: 2,
   },
   controls: [
@@ -373,8 +373,8 @@ export const ctaBlockDef: ComponentDef = {
     const prims: Prim[] = []
     const variant = str(p, "variant", "centered")
     const nBtn = int(p, "buttons", 2, 1, 2)
-    const heading = str(p, "headline", "Ready to make a mess?")
-    const subline = str(p, "subline", "Ten seconds to your first ugly rectangle.")
+    const heading = str(p, "headline", "Got an idea?")
+    const subline = str(p, "subline", "Ten seconds from blank canvas to first draft.")
     const l1 = "Start free"
     const l2 = "Talk to a human"
     const boxed = variant === "boxed"

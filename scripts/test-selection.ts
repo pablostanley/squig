@@ -47,7 +47,7 @@ const rect = (id: string, x = 0, y = 0, w = 10, h = 10): SquigNode => ({
   y,
   w,
   h,
-  fill: false,
+  fill: "none",
   seed: 1,
 })
 
