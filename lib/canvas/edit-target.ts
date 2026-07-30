@@ -43,6 +43,9 @@ export interface EditTarget {
 /** Unlikely to be anyone's label, short enough to survive truncation. */
 const MARKER = "⁣zqx"
 
+/** An index no run has — "the editor is standing in for nothing drawn". */
+const NO_RUN = -1
+
 function textPrims(prims: Prim[]): TextPrim[] {
   return prims.filter((p): p is TextPrim => p.t === "text")
 }
@@ -123,20 +126,22 @@ export function editTarget(node: SquigNode): EditTarget | null {
 
   // Nothing found means the def draws this prop some way we can't see — an
   // empty label with no placeholder, most likely. Edit at the middle of the
-  // node, which is where a label would land once there was one.
+  // node, on the centre line a label would sit on once there was one. The
+  // size and the nudge below the middle are what a button label uses.
   if (!found) {
+    const fontSize = 15
     return {
       value,
       x: node.w / 2,
-      baseline: node.h / 2 + 15 * 0.35,
-      fontSize: 15,
+      baseline: node.h / 2 + fontSize * 0.35,
+      fontSize,
       align: "center",
       bold: false,
       italic: false,
       underline: false,
       color: INK.ink,
       multiline: false,
-      hidden: -1,
+      hidden: NO_RUN,
       propKey: key,
     }
   }
