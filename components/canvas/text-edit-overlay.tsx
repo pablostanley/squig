@@ -9,8 +9,8 @@
 // panel, no field: a caret in the drawing, and the words you're changing.
 //
 // A double-click opens this, and so does Return on a selected layer.
-// Enter (or ⌘Enter on a multi-line text node) and clicking away both commit.
-// Escape cancels, which is what Escape means everywhere else in squig.
+// Enter (or ⌘Enter on a multi-line text node), Escape and clicking away all
+// commit — leaving the editor never throws typed words away.
 // ---------------------------------------------------------------------------
 
 import { useEffect, useMemo, useRef, useState } from "react"
@@ -62,13 +62,6 @@ export function TextEditOverlay({ node, target }: { node: SquigNode; target: Edi
         props: { ...(node as ComponentNode).props, [target.propKey]: value },
       } as Partial<SquigNode>)
     }
-    s.setEditing(null)
-  }
-
-  /** Escape throws the draft away. A brand-new empty node goes with it. */
-  const cancel = () => {
-    const s = st()
-    if (isText && !(node as TextNode).text.trim()) s.removeNodes([node.id])
     s.setEditing(null)
   }
 
@@ -158,8 +151,10 @@ export function TextEditOverlay({ node, target }: { node: SquigNode; target: Edi
       onKeyDown={(e) => {
         e.stopPropagation()
         if (e.key === "Escape") {
+          // stop editing, keep the words — Escape here means "I'm done",
+          // not "undo what I typed"
           e.preventDefault()
-          cancel()
+          commit()
           return
         }
         if (e.key === "Enter" && (e.metaKey || !target.multiline)) {
