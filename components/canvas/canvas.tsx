@@ -886,12 +886,14 @@ export function Canvas() {
       // secondary buttons and stray extra touches never start a gesture
       if (e.button > 1 || !e.isPrimary) return
       const s = st()
+      // a press on the editor's textarea belongs to the caret — grabbing
+      // focus here would blur the editor mid-click and end the edit
+      if (s.editingId && (e.target as HTMLElement).closest?.("textarea")) return
       containerRef.current?.focus({ preventScroll: true })
 
       if (s.editingId) {
         // let the click both dismiss the editor and land where it was aimed,
         // instead of costing two clicks
-        if ((e.target as HTMLElement).closest?.("textarea")) return
         s.setEditing(null)
       }
 

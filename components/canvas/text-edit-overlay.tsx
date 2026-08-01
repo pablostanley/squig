@@ -162,6 +162,12 @@ export function TextEditOverlay({ node, target }: { node: SquigNode; target: Edi
           requestAnimationFrame(() => taRef.current?.focus())
           return
         }
+        // the WINDOW losing focus — ⌘-tab, Spotlight, a notification, a
+        // screenshot — is not the user leaving the edit. The element keeps
+        // its in-document focus through those, so when they come back the
+        // caret is still blinking where they left it. Only a real in-page
+        // focus move commits.
+        if (document.activeElement === taRef.current || !document.hasFocus()) return
         commit()
       }}
       onKeyDown={(e) => {
