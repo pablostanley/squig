@@ -216,6 +216,58 @@ export function hitsRect(n: SquigNode, r: Bounds, zoom: number): boolean {
 
 // ---------------------------------------------------------------------------
 
+/**
+ * Is the point inside a hollow node's see-through middle?
+ *
+ * The middle stays transparent to `hitsPoint` so that presses inside a big
+ * empty box can still become a marquee — but a *click* that lands there and
+ * never turns into a drag was almost certainly aimed at the shape. This is
+ * the test for that second reading: consulted only after `hitsPoint` has
+ * missed everything, so borders and filled shapes have already had their say.
+ *
+ * Arrows don't take part. A diagonal arrow's box is mostly empty air over
+ * whatever it happens to cross, and treating all of it as a target would make
+ * connectors swallow clicks meant for the space between things.
+ */
+export function hitsInterior(n: SquigNode, x: number, y: number): boolean {
+  const hollowShape = n.type === "shape" && normalizeFill(n.fill) === "none"
+  if (!hollowShape && n.type !== "draw") return false
+  if (!inBox(x, y, boxOf(n), 0)) return false
+  if (n.type === "shape" && n.shape === "ellipse") {
+    // inside the oval means inside the disc — the corners of its box stay
+    // empty, same as they do for the hard test
+    const rx = n.w / 2
+    const ry = n.h / 2
+    if (rx <= 0 || ry <= 0) return false
+    const nx = (x - (n.x + rx)) / rx
+    const ny = (y - (n.y + ry)) / ry
+    return Math.hypot(nx, ny) <= 1
+  }
+  // rects and doodles answer by their whole box
+  return true
+}
+
+/**
+ * Topmost hollow node whose interior holds the point, or null.
+ *
+ * The click-only fallback behind `pickAt`: call it when the hard pick came up
+ * empty and the press turned out to be a click rather than a drag. Because it
+ * only runs after a full miss, anything filled has already won, and walking
+ * front-to-back settles overlapping hollow shapes by z-order.
+ */
+export function pickSoftAt(
+  nodes: Record<string, SquigNode>,
+  order: readonly string[],
+  x: number,
+  y: number
+): string | null {
+  for (let i = order.length - 1; i >= 0; i--) {
+    const n = nodes[order[i]]
+    if (n && hitsInterior(n, x, y)) return order[i]
+  }
+  return null
+}
+
 /** Topmost node under a world point, or null. Walks front-to-back. */
 export function pickAt(
   nodes: Record<string, SquigNode>,

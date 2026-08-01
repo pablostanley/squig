@@ -8,7 +8,7 @@
 // ---------------------------------------------------------------------------
 
 import { resizeBounds, scaleNodes, MIN_SIZE, type Handle } from "../lib/canvas/transform.ts"
-import { hitsPoint, hitsRect, pickAt, pickInRect, pickTolerance } from "../lib/canvas/hit-test.ts"
+import { hitsInterior, hitsPoint, hitsRect, pickAt, pickInRect, pickSoftAt, pickTolerance } from "../lib/canvas/hit-test.ts"
 import { repeatStep } from "../lib/canvas/duplicate.ts"
 import type { SquigNode } from "../lib/types.ts"
 
@@ -289,6 +289,53 @@ const apply = (ns: SquigNode[], patches: Record<string, Partial<SquigNode>>): Sq
   check("a near-horizontal arrow is grabbable a few px off its line", hitsPoint(flat, 150, 4, 1))
   check("but not from far away", !hitsPoint(flat, 150, 40, 1))
   check("tolerance for lines ignores their thickness", pickTolerance(1, flat) === pickTolerance(1))
+}
+
+// -- soft picking: what a mere click in a hollow middle means ----------------
+
+{
+  const hollow = rect("hollow", 0, 0, 400, 300)
+  const solid = rect("solid", 0, 0, 400, 300, true)
+
+  check("a hollow rect's middle is a soft target", hitsInterior(hollow, 200, 150))
+  check("but nothing outside its box is", !hitsInterior(hollow, 500, 150))
+  check("a filled rect is never a soft target — the hard pick already owns it", !hitsInterior(solid, 200, 150))
+
+  const ring = ellipse("ring", 0, 0, 200, 200)
+  check("a hollow ellipse's disc is a soft target", hitsInterior(ring, 100, 100))
+  check("the empty corner of its box is not", !hitsInterior(ring, 8, 8))
+
+  const doodle: SquigNode = {
+    id: "doodle", type: "draw", x: 0, y: 0, w: 100, h: 100,
+    points: [[0, 100], [50, 0], [100, 100]], seed: 1,
+  }
+  check("a doodle's box is a soft target", hitsInterior(doodle, 50, 90))
+  check("an arrow's box never is", !hitsInterior(arrow("a", 0, 0, 200, 200), 190, 10))
+}
+
+{
+  // two hollow rects sharing a middle: the one on top takes the click
+  const nodes: Record<string, SquigNode> = {
+    below: rect("below", 0, 0, 300, 300),
+    above: rect("above", 50, 50, 300, 300),
+  }
+  const order = ["below", "above"]
+  check("overlapping soft picks resolve to the topmost node", pickSoftAt(nodes, order, 150, 150) === "above")
+  check("outside the top one falls through to the one below", pickSoftAt(nodes, order, 20, 20) === "below")
+  check("empty space soft-picks nothing", pickSoftAt(nodes, order, 500, 500) === null)
+}
+
+{
+  // a border always beats a hollow middle, even a middle stacked above it:
+  // the hard pick answers first and the soft pick is never consulted
+  const nodes: Record<string, SquigNode> = {
+    small: rect("small", 0, 0, 100, 100),
+    big: rect("big", -50, -50, 200, 200),
+  }
+  // big sits on top of small in z, and its hollow middle covers all of small
+  const order = ["small", "big"]
+  check("a border below beats a hollow middle above", pickAt(nodes, order, 0, 50, 1) === "small")
+  check("where no ink answers, the topmost middle takes it", pickSoftAt(nodes, order, 50, 50) === "big")
 }
 
 // -- the step ⌘D repeats ----------------------------------------------------

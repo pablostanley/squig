@@ -23,7 +23,7 @@ import { screenToWorld } from "@/lib/types"
 import { computeSnap, computeResizeSnap, makeSnapRect, type GuideLine, type SnapRect } from "@/lib/canvas/snap-engine"
 import { useSpacebarPan } from "@/lib/canvas/use-spacebar-pan"
 import { HANDLES, HANDLE_CURSORS, handleOffset, resizeBounds, scaleNodes, type Handle } from "@/lib/canvas/transform"
-import { pickAt, pickInRect } from "@/lib/canvas/hit-test"
+import { pickAt, pickInRect, pickSoftAt } from "@/lib/canvas/hit-test"
 import { canvasOwnsKeyboard } from "@/lib/canvas/keyboard-owner"
 import { useClipboard } from "@/lib/canvas/use-clipboard"
 import { editTarget, hasEditableText } from "@/lib/canvas/edit-target"
@@ -107,6 +107,11 @@ type Gesture =
       pointerId: number
       exceeded: boolean
       base: string[]
+      /** the hollow shape whose middle the press landed in, if any. A press
+       *  there reads two ways — a click means "select this shape", a drag
+       *  means "marquee, it just happened to start inside" — so the candidate
+       *  rides along and the release picks the reading. */
+      softHitId: string | null
     }
   | { kind: "draw"; points: [number, number][]; sx: number; sy: number; pointerId: number; exceeded: boolean }
   | {
@@ -176,7 +181,9 @@ export function Canvas() {
   const [guides, setGuides] = useState<GuideLine[]>([])
   const [cursor, setCursor] = useState<[number, number] | null>(null)
   const [livePoints, setLivePoints] = useState<[number, number][] | null>(null)
-  const [hoverId, setHoverId] = useState<string | null>(null)
+  /** soft: the pointer is over a hollow shape's middle — a click would select
+   *  it but a drag would marquee, so the outline shows without a move cursor */
+  const [hover, setHover] = useState<{ id: string; soft: boolean } | null>(null)
   const [altHeld, setAltHeld] = useState(false)
   const [gestureKind, setGestureKind] = useState<Gesture["kind"] | null>(null)
 
@@ -205,7 +212,12 @@ export function Canvas() {
     (e: { clientX: number; clientY: number }): string | null => {
       const s = st()
       const [wx, wy] = toWorld(e)
-      return pickAt(s.nodes, s.order, wx, wy, s.viewport.zoom)
+      // ink and fills first; failing that, the hollow shape the point is
+      // inside of — double-click, right-click and hover all read a point the
+      // way a completed click does
+      return (
+        pickAt(s.nodes, s.order, wx, wy, s.viewport.zoom) ?? pickSoftAt(s.nodes, s.order, wx, wy)
+      )
     },
     [st, toWorld]
   )
@@ -299,6 +311,10 @@ export function Canvas() {
       }
 
       if (g.kind === "marquee") {
+        // while a hollow-shape candidate is in play the press hasn't chosen a
+        // meaning yet, so the selection holds still: a click will take the
+        // shape on release, and a real drag lands in the branch below
+        if (!g.exceeded && g.softHitId) return
         const box: Bounds = {
           x: Math.min(g.wx, wx),
           y: Math.min(g.wy, wy),
@@ -673,6 +689,25 @@ export function Canvas() {
       s.setSelection(g.collapseTo)
     }
 
+    // the press sat inside a hollow shape and never became a drag: it was a
+    // click on that shape all along, with the same grammar a hard click gets —
+    // groups expand, ⌘ digs into them, Shift/⌘ add or toggle off
+    if (g.kind === "marquee" && !g.exceeded && g.softHitId && s.nodes[g.softHitId]) {
+      const mods = modsRef.current
+      const deep = mods.toggle && !!s.nodes[g.softHitId]?.groupIds?.length
+      const hitSet = deep ? [g.softHitId] : s.expandSelection([g.softHitId])
+      if (!deep && (mods.shift || mods.toggle)) {
+        const sel = s.selection
+        s.setSelection(
+          hitSet.every((id) => sel.includes(id))
+            ? sel.filter((i) => !hitSet.includes(i))
+            : [...new Set([...sel, ...hitSet])]
+        )
+      } else {
+        s.setSelection(hitSet)
+      }
+    }
+
     // an ⌥-drag copy hands ⌘D the distance it travelled, so the next one
     // lands the same way again. cloneIds and sourceIds share an index.
     if (g.kind === "move" && g.cloneIds) {
@@ -932,8 +967,11 @@ export function Canvas() {
         return
       }
 
-      // empty canvas — marquee, with the current selection as its base
-      beginGesture({ kind: "marquee", ...common, wx, wy, base: s.selection }, e)
+      // no ink under the press — marquee, with the current selection as its
+      // base. If the press sits inside a hollow shape, that shape rides along
+      // as the thing a mere click would mean.
+      const softHitId = pickSoftAt(s.nodes, s.order, wx, wy)
+      beginGesture({ kind: "marquee", ...common, wx, wy, base: s.selection, softHitId }, e)
     },
     [st, tool, isSpacebarHeld, toWorld, beginGesture, dropComponent]
   )
@@ -983,7 +1021,7 @@ export function Canvas() {
       // the ghost is driven at the window level instead — see below
       if (s.placing) return
       if (gestureRef.current || s.tool !== "select" || isSpacebarHeld || s.editingId) {
-        if (hoverId) setHoverId(null)
+        if (hover) setHover(null)
         return
       }
       if (hoverRafRef.current !== null) return
@@ -992,13 +1030,17 @@ export function Canvas() {
         hoverRafRef.current = null
         // the same predicate the click uses — an affordance drawn from
         // different geometry than the hit test is just a lie
-        setHoverId(pick({ clientX, clientY }))
+        const cur = st()
+        const [wx, wy] = toWorld({ clientX, clientY })
+        const hard = pickAt(cur.nodes, cur.order, wx, wy, cur.viewport.zoom)
+        const id = hard ?? pickSoftAt(cur.nodes, cur.order, wx, wy)
+        setHover(id ? { id, soft: !hard } : null)
       })
     },
-    [st, toWorld, hoverId, isSpacebarHeld, pick]
+    [st, toWorld, hover, isSpacebarHeld]
   )
 
-  const onPointerLeave = useCallback(() => setHoverId(null), [])
+  const onPointerLeave = useCallback(() => setHover(null), [])
 
   /**
    * The placement ghost tracks the pointer on `window`, not on the canvas, so a
@@ -1366,15 +1408,17 @@ export function Canvas() {
     [selection, nodes]
   )
   const placingDef = placing ? getDef(placing) : null
-  const hoverNode = hoverId && !selection.includes(hoverId) ? nodes[hoverId] : null
+  const hoverNode = hover && !selection.includes(hover.id) ? nodes[hover.id] : null
 
+  // a soft hover keeps the default cursor: a click there selects, but a drag
+  // marquees, and a move cursor would promise a drag this press won't do
   const cursorStyle = isSpacebarHeld && !gestureKind
     ? "grab"
     : placing || tool === "shape" || tool === "arrow" || tool === "draw" || tool === "text"
       ? "crosshair"
       : gestureKind === "move"
         ? (altHeld ? "copy" : "move")
-        : hoverId && tool === "select"
+        : hover && !hover.soft && tool === "select"
           ? (altHeld ? "copy" : "move")
           : "default"
 
