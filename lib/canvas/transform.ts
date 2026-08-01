@@ -8,6 +8,8 @@
 
 import type { SquigNode } from "../types"
 import type { Bounds } from "../selection"
+import { textBlockHeight } from "../sketch/text-layout"
+import { wrapText } from "./text-metrics"
 
 export const HANDLES = ["nw", "n", "ne", "e", "se", "s", "sw", "w"] as const
 export type Handle = (typeof HANDLES)[number]
@@ -165,7 +167,14 @@ export function scaleNodes(
       // the renderer lays every baseline out in multiples of the type size, so
       // the type has to follow the vertical scale or the box and the words
       // come apart — see lib/sketch/text-layout
-      patch.fontSize = Math.max(4, n.fontSize * sy)
+      const fontSize = Math.max(4, n.fontSize * sy)
+      patch.fontSize = fontSize
+      // a fixed-width layer scaled off-ratio re-breaks its lines, so the box
+      // height has to come from the new wrap, not from the old height scaled
+      if (n.fixedW && Math.abs(sx - sy) > EPS) {
+        const lines = wrapText(n.text, n.w * sx, { size: fontSize, bold: n.bold, italic: n.italic })
+        patch.h = textBlockHeight(lines.length, fontSize)
+      }
     }
 
     patches[n.id] = patch as Partial<SquigNode>

@@ -82,9 +82,10 @@ export interface DrawNode extends BaseNode, Outlined {
 }
 
 /**
- * Squig text doesn't wrap — a line ends where you pressed Return — so there is
- * no justify to be had. The three that remain are real: they decide which edge
- * of the box the run is pinned to, which is what holds still while you type.
+ * No justify — a napkin has no reason to stretch its lines. The three that
+ * remain are real: on an auto-sized layer they decide which edge of the box
+ * the run is pinned to (what holds still while you type), and on a fixed-width
+ * layer they lay the wrapped lines out inside it.
  */
 export type TextAlign = "left" | "center" | "right"
 
@@ -92,6 +93,14 @@ export interface TextNode extends BaseNode {
   type: "text"
   text: string
   fontSize: number
+  /**
+   * A text layer starts life auto-sized: the box hugs the words, a line ends
+   * where you pressed Return. Dragging a side handle sets this — from then on
+   * `w` is the measure the words wrap to and `h` follows the wrapped line
+   * count. Corner handles scale the type either way. Double-clicking a side
+   * handle clears it. Absent on every document written before this existed.
+   */
+  fixedW?: boolean
   /** left when absent — most text is */
   align?: TextAlign
   bold?: boolean

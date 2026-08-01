@@ -39,9 +39,10 @@ export const TEXT_STYLES = [
 ] as const
 
 /**
- * Three, not four: squig text doesn't wrap, so there is no justify to be had —
- * a line ends where you pressed Return. What these do decide is which edge the
- * run is pinned to, which is the edge that holds still while you type.
+ * Three, not four: a napkin has no reason to justify its lines. What these do
+ * decide is which edge the run is pinned to — the edge that holds still while
+ * you type on an auto-sized layer, and how the wrapped lines sit inside a
+ * fixed-width one.
  */
 const ALIGNMENTS: { value: TextAlign; label: string; icon: PhosphorIcon }[] = [
   { value: "left", label: "Align left", icon: TextAlignLeftIcon },

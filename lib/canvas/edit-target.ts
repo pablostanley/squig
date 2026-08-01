@@ -11,6 +11,7 @@
 // ---------------------------------------------------------------------------
 
 import { INK, type Prim } from "@/lib/sketch/kit"
+import { wrapText } from "@/lib/canvas/text-metrics"
 import { nodePrims } from "@/lib/sketch/node-prims"
 import { textAnchorX, textBaseline } from "@/lib/sketch/text-layout"
 import { getDef } from "@/lib/library/registry"
@@ -102,7 +103,9 @@ function locateLabel(node: ComponentNode, key: string): { prim: TextPrim; index:
  * baseline and the lines read in typing order.
  */
 function textNodeTarget(node: TextNode): EditTarget {
-  const lines = node.text.split("\n")
+  const lines = node.fixedW
+    ? wrapText(node.text, node.w, { size: node.fontSize, bold: node.bold, italic: node.italic })
+    : node.text.split("\n")
   const align: TextAlign = node.align ?? "left"
   const flipped: TextAlign = node.flipX ? (align === "left" ? "right" : align === "right" ? "left" : "center") : align
 

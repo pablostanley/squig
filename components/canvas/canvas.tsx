@@ -18,8 +18,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import { useSquig } from "@/lib/store"
-import type { SquigNode } from "@/lib/types"
+import type { SquigNode, TextNode } from "@/lib/types"
 import { screenToWorld } from "@/lib/types"
+import { autoSizeTextBox, setTextWidth } from "@/lib/canvas/text-reflow"
 import { computeSnap, computeResizeSnap, makeSnapRect, type GuideLine, type SnapRect } from "@/lib/canvas/snap-engine"
 import { useSpacebarPan } from "@/lib/canvas/use-spacebar-pan"
 import { HANDLES, HANDLE_CURSORS, handleOffset, resizeBounds, scaleNodes, type Handle } from "@/lib/canvas/transform"
@@ -149,6 +150,16 @@ export function Canvas() {
   })
   const modsRef = useRef<Mods>(NO_MODS)
   const lastPointRef = useRef<{ clientX: number; clientY: number } | null>(null)
+  /**
+   * Double-press bookkeeping for the side handles. A DOM dblclick can't carry
+   * this: the first press starts (and empties out) a resize gesture, which
+   * remounts every handle, so the browser sees two different targets and
+   * delivers the dblclick to the canvas underneath — which would edit the
+   * layer, or worse, plant a new one. So the second press is caught in
+   * startResize, before it becomes a gesture at all.
+   */
+  const lastHandlePress = useRef<{ handle: Handle; t: number } | null>(null)
+  const swallowDblClickUntil = useRef(0)
   const autoPanRef = useRef<number | null>(null)
   const autoPanTickRef = useRef<() => void>(() => {})
   const hoverRafRef = useRef<number | null>(null)
@@ -421,10 +432,17 @@ export function Canvas() {
         const dx = wx - g.wx
         const dy = wy - g.wy
 
-        const raw = resizeBounds(g.origBounds, g.handle, dx, dy, { aspect: mods.shift, fromCenter: mods.alt })
+        // one text layer alone resizes like a text layer, not like a box: the
+        // side handles set the measure the words wrap to, and the corners
+        // scale the type — always in proportion, because a corner-stretched
+        // glyph isn't a thing a pen does
+        const soloText = g.origNodes.length === 1 && g.origNodes[0].type === "text" ? (g.origNodes[0] as TextNode) : null
+        const lockAspect = mods.shift || (!!soloText && g.handle.length === 2)
+
+        const raw = resizeBounds(g.origBounds, g.handle, dx, dy, { aspect: lockAspect, fromCenter: mods.alt })
         let next = raw
 
-        if (!mods.toggle && !mods.shift) {
+        if (!mods.toggle && !lockAspect) {
           // measure the snap on the unsnapped box, then fold the correction
           // back through the same resize so the result stays self-consistent
           const rectS = makeSnapRect("__bbox__", raw.x * v.zoom + v.x, raw.y * v.zoom + v.y, raw.w * v.zoom, raw.h * v.zoom)
@@ -437,6 +455,21 @@ export function Canvas() {
         } else {
           // snapping an edge would break the ratio, so aspect lock wins
           setGuides([])
+        }
+
+        if (soloText && (g.handle === "e" || g.handle === "w")) {
+          // wrap-width drag. The clamp can refuse the last few pixels of a
+          // squeeze, so the box is re-anchored on whichever edge the gesture
+          // holds still — otherwise the far edge walks as the clamp bites.
+          const patch = setTextWidth(soloText, next.w)
+          const w = patch.w as number
+          const x = mods.alt
+            ? next.x + next.w / 2 - w / 2
+            : g.handle === "w"
+              ? next.x + next.w - w
+              : next.x
+          s.updateNodes({ [soloText.id]: { ...patch, x } as Partial<SquigNode> })
+          return
         }
 
         s.updateNodes(scaleNodes(g.origNodes, g.origBounds, next))
@@ -667,6 +700,10 @@ export function Canvas() {
       s.setTool("select")
     }
 
+    // a press that actually dragged is a resize, not the first half of a
+    // double-click — don't let the next press on that handle read as one
+    if (g.kind === "resize" && g.exceeded) lastHandlePress.current = null
+
     // a click with no drag inside a bigger selection narrows to what was
     // clicked — already resolved to a group or a single piece at press time
     if (g.kind === "move" && !g.exceeded && g.collapseTo) {
@@ -787,6 +824,15 @@ export function Canvas() {
     [onPointerMove, finishGesture, cancelGesture, updateGesture]
   )
 
+  /** Double-clicking a side handle un-fixes the width — the box hugs again. */
+  const resetTextWidth = useCallback(() => {
+    const s = st()
+    const n = s.selection.length === 1 ? s.nodes[s.selection[0]] : null
+    if (!n || n.type !== "text" || !n.fixedW) return
+    s.checkpoint()
+    s.updateNode(n.id, autoSizeTextBox(n) as Partial<SquigNode>)
+  }, [st])
+
   const startResize = useCallback(
     (handle: Handle, e: React.PointerEvent) => {
       e.stopPropagation()
@@ -795,6 +841,23 @@ export function Canvas() {
       const sel = s.selection.map((id) => s.nodes[id]).filter(Boolean) as SquigNode[]
       const b = unionBounds(sel)
       if (!b) return
+
+      // double-clicking a side handle of a fixed-width text layer un-fixes it
+      const prev = lastHandlePress.current
+      lastHandlePress.current = { handle, t: e.timeStamp }
+      if (
+        prev &&
+        prev.handle === handle &&
+        e.timeStamp - prev.t < 400 &&
+        (handle === "e" || handle === "w") &&
+        sel.length === 1 &&
+        sel[0].type === "text" &&
+        sel[0].fixedW
+      ) {
+        swallowDblClickUntil.current = e.timeStamp + 600
+        resetTextWidth()
+        return
+      }
       modsRef.current = readMods(e)
       const [wx, wy] = toWorld(e)
       beginGesture(
@@ -815,7 +878,7 @@ export function Canvas() {
         e
       )
     },
-    [st, beginGesture, toWorld]
+    [st, beginGesture, toWorld, resetTextWidth]
   )
 
   const onPointerDown = useCallback(
@@ -940,9 +1003,34 @@ export function Canvas() {
 
   const onDoubleClick = useCallback(
     (e: React.MouseEvent) => {
+      // the tail of a handle double-press — see startResize
+      if (e.timeStamp < swallowDblClickUntil.current) {
+        swallowDblClickUntil.current = 0
+        return
+      }
       const s = st()
       const hitId = pick(e)
-      if (!hitId) return
+      if (!hitId) {
+        // double-clicking bare canvas starts typing there, the way tldraw
+        // does — a dismissed empty draft deletes itself, so a stray
+        // double-click costs nothing
+        if (s.tool !== "select" || s.placing) return
+        const [wx, wy] = toWorld(e)
+        const fontSize = 18
+        const h = textBlockHeight(1, fontSize)
+        const id = s.addNode({
+          type: "text",
+          text: "",
+          fontSize,
+          x: wx,
+          // the click lands in the middle of the line it just started
+          y: wy - h / 2,
+          w: 120,
+          h,
+        } as Omit<SquigNode, "id" | "seed">)
+        s.setEditing(id)
+        return
+      }
       const n = s.nodes[hitId]
       if (!n) return
       // first double-click steps into a group; the next one edits what's inside
@@ -954,7 +1042,7 @@ export function Canvas() {
       if (s.selection.length !== 1 || s.selection[0] !== hitId) s.setSelection([hitId])
       if (hasEditableText(n)) s.setEditing(hitId)
     },
-    [st, pick]
+    [st, pick, toWorld]
   )
 
   const onContextMenu = useCallback(
@@ -1567,13 +1655,21 @@ function SelectionOverlay({
   // while a marquee is sweeping, the hit set is the message — a union box and
   // handles around a set that changes every frame is just flicker
   const marqueeing = gestureKind === "marquee"
-  const showHandles = !gestureKind && w > 12 && h > 12
+  // handles stay up through a resize: they track the box the way tldraw's do,
+  // and unmounting them between the two presses of a double-click would hand
+  // the second press to the canvas underneath
+  const showHandles = (!gestureKind || gestureKind === "resize") && w > 12 && h > 12
   const showWide = w >= HANDLE_ROOM
   const showTall = h >= HANDLE_ROOM
 
+  // a lone text layer has no top or bottom to drag: its height is derived from
+  // the wrapped lines, so the handles that would set it are corners (scale the
+  // type) and sides (set the measure) — same six tldraw offers
+  const soloText = selectedNodes.length === 1 && selectedNodes[0].type === "text"
+
   const visible = (hd: Handle) => {
-    if (hd === "n" || hd === "s") return showWide
-    if (hd === "e" || hd === "w") return showTall
+    if (hd === "n" || hd === "s") return !soloText && showWide
+    if (hd === "e" || hd === "w") return soloText || showTall
     return true
   }
 
@@ -1607,9 +1703,15 @@ function SelectionOverlay({
             // a tight box, and a mis-grab costs more on a corner than a side.
             // Ordering does it — a z-index here would also lift the handles
             // over the panels that come after the canvas.
+            //
+            // A lone text layer is the one exception, reversed: its box is a
+            // line of type, short enough that the corner pads swallow the
+            // middle of either edge — exactly where you aim to set the wrap
+            // width. There the sides sit on top, and the corners keep the
+            // outward slop past the box that only they cover.
             HANDLES.filter(visible)
               .slice()
-              .sort((a, b) => a.length - b.length)
+              .sort((a, b) => (soloText ? b.length - a.length : a.length - b.length))
               .map((hd) => {
                 const box = handleHitBox(hd, w, h, padX, padY)
                 return (

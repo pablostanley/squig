@@ -18,12 +18,19 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { useSquig } from "@/lib/store"
 import type { ComponentNode, SquigNode, TextNode } from "@/lib/types"
 import type { EditTarget } from "@/lib/canvas/edit-target"
-import { fontMetrics, measureLinesWidth } from "@/lib/canvas/text-metrics"
+import { fontMetrics, measureLinesWidth, wrapText } from "@/lib/canvas/text-metrics"
 import { fitTextBox } from "@/lib/canvas/text-reflow"
 import { TEXT_LINE_HEIGHT, anchorFactor } from "@/lib/sketch/text-layout"
 
-/** Room for a caret at either end of the run, in screen px. */
-const CARET_PAD = 2
+/**
+ * How far past the words the editor still answers to the pointer, in screen
+ * px. Padding rather than margin, so a click landing there goes to the
+ * textarea — which puts the caret at the nearest spot in the text instead of
+ * committing and dropping you out of the edit. Clicking just past the end of
+ * a line to type from there is the single most common caret gesture, and it
+ * has to keep you in.
+ */
+const CARET_PAD = 8
 
 export function TextEditOverlay({ node, target }: { node: SquigNode; target: EditTarget }) {
   const v = useSquig((s) => s.viewport)
@@ -110,35 +117,44 @@ export function TextEditOverlay({ node, target }: { node: SquigNode; target: Edi
    * is slack for ascenders, descenders and a caret at either end; the top-left
    * walks back by exactly that much, so none of it shifts anything.
    */
+  // a fixed-width text layer edits inside its own box: the textarea holds the
+  // box's width so the browser wraps the draft at the same measure the
+  // renderer will, and only the height follows the typing
+  const fixed = isText && !!(node as TextNode).fixedW
+
   const box = useMemo(() => {
     const size = target.fontSize * v.zoom
     const style = { size, bold: target.bold, italic: target.italic }
-    const lines = value.split("\n")
     const lineHeight = size * TEXT_LINE_HEIGHT
     const { ascent, descent } = fontMetrics(style)
 
     // an empty run still needs somewhere to show its placeholder
-    const run = measureLinesWidth(value ? lines : [placeholder], style)
+    const lineCount = fixed
+      ? wrapText(value, node.w * v.zoom, style).length
+      : value.split("\n").length
+    const run = fixed
+      ? node.w * v.zoom
+      : measureLinesWidth(value ? value.split("\n") : [placeholder], style)
     const padY = size * 0.35
     const anchorX = (node.x + target.x) * v.zoom + v.x
     const baselineY = (node.y + target.baseline) * v.zoom + v.y
 
     return {
-      left: anchorX - CARET_PAD - anchorFactor(target.align) * run,
+      left: fixed ? node.x * v.zoom + v.x - CARET_PAD : anchorX - CARET_PAD - anchorFactor(target.align) * run,
       top: baselineY - ((lineHeight - (ascent + descent)) / 2 + ascent) - padY,
       width: run + CARET_PAD * 2,
-      height: lines.length * lineHeight + padY * 2,
+      height: lineCount * lineHeight + padY * 2,
       padding: `${padY}px ${CARET_PAD}px`,
       fontSize: size,
       lineHeight: `${lineHeight}px`,
     }
-  }, [node.x, node.y, target, value, v, placeholder])
+  }, [node.x, node.y, node.w, target, value, v, placeholder, fixed])
 
   return (
     <textarea
       ref={taRef}
       value={value}
-      wrap="off"
+      wrap={fixed ? "soft" : "off"}
       spellCheck={false}
       onChange={(e) => setValue(target.multiline ? e.target.value : e.target.value.replace(/\n/g, ""))}
       onBlur={() => {
@@ -177,7 +193,10 @@ export function TextEditOverlay({ node, target }: { node: SquigNode; target: Edi
         fontStyle: target.italic ? "italic" : undefined,
         textDecoration: target.underline ? "underline" : undefined,
         textAlign: target.align,
-        whiteSpace: "pre",
+        whiteSpace: fixed ? "pre-wrap" : "pre",
+        // long words break where the canvas breaks them — mid-word, only when
+        // the word alone is wider than the box; see wrapText
+        overflowWrap: fixed ? "break-word" : undefined,
         color: target.color,
         caretColor: "var(--sq-ink)",
         // the one tell that this run is live: a wash the width of the words,

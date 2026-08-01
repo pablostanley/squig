@@ -20,7 +20,7 @@ import { normalizeFill } from "@/lib/types"
 import { getDef } from "@/lib/library/registry"
 import { selectionSummary, shared, sharedControls, sharedNumber, unionBounds } from "@/lib/selection"
 import { scaleNodes, MIN_SIZE } from "@/lib/canvas/transform"
-import { fitTextBox } from "@/lib/canvas/text-reflow"
+import { fitTextBox, setTextWidth } from "@/lib/canvas/text-reflow"
 import { VariantControl } from "./variant-controls"
 import { MixedNumberField, MixedSwitch, MixedTextField } from "./mixed-fields"
 import { AlignRow } from "./align-row"
@@ -535,6 +535,10 @@ function isOutlined(n: SquigNode): boolean {
  * subtly different ones.
  */
 function resizeTo(n: SquigNode, w: number, h: number): Partial<SquigNode> {
+  // typing a width into a text layer sets the measure its words wrap to — the
+  // same thing dragging a side handle does — rather than stretching the box
+  // around the type
+  if (n.type === "text" && w !== n.w) return setTextWidth(n, w) as Partial<SquigNode>
   const from = unionBounds([n])!
   return scaleNodes([n], from, { x: n.x, y: n.y, w, h })[n.id]
 }

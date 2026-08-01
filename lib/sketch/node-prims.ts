@@ -8,6 +8,7 @@
 
 import { HAND, mirrorPrims, type Prim, type PrimOpts } from "./kit"
 import { textAnchorX, textBaseline } from "./text-layout"
+import { wrapText } from "@/lib/canvas/text-metrics"
 import { normalizeFill, type FillTone, type Outlined, type SquigNode, type StrokeWeight } from "@/lib/types"
 import { renderComponent } from "@/lib/library/registry"
 
@@ -93,7 +94,12 @@ export function basePrims(node: SquigNode): Prim[] {
     }
     case "text": {
       const anchor = textAnchorX(node.align, node.w)
-      return node.text.split("\n").map((lineText, i): Prim => ({
+      // an auto-sized layer's lines are its hard returns; a fixed-width layer
+      // re-breaks them to the measure the side handles set
+      const lines = node.fixedW
+        ? wrapText(node.text, node.w, { size: node.fontSize, bold: node.bold, italic: node.italic })
+        : node.text.split("\n")
+      return lines.map((lineText, i): Prim => ({
         t: "text",
         x: anchor,
         y: textBaseline(i, node.fontSize),

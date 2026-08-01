@@ -8,7 +8,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "tsc --noEmit -p scripts/tsconfig.json && node --experimental-strip-types --import ./scripts/register-loader.mjs scripts/test-geometry.ts && node --experimental-strip-types --import ./scripts/register-loader.mjs scripts/test-selection.ts && node --experimental-strip-types --import ./scripts/register-loader.mjs scripts/test-clipboard.ts"
+    "test": "tsc --noEmit -p scripts/tsconfig.json && node --experimental-strip-types --import ./scripts/register-loader.mjs scripts/test-geometry.ts && node --experimental-strip-types --import ./scripts/register-loader.mjs scripts/test-selection.ts && node --experimental-strip-types --import ./scripts/register-loader.mjs scripts/test-clipboard.ts && node --experimental-strip-types --import ./scripts/register-loader.mjs scripts/test-text.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",
