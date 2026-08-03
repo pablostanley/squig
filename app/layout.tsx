@@ -2,6 +2,10 @@ import type { Metadata } from "next";
 import { Geist, Patrick_Hand, Source_Serif_4 } from "next/font/google";
 import "./globals.css";
 
+const title = "squig — wireframes that know they're wireframes";
+const description =
+  "An infinite canvas of real UI components that all render like you sketched them on a napkin. Argue about structure, not corner radius.";
+
 const geistSans = Geist({
   variable: "--font-sans",
   subsets: ["latin"],
@@ -21,9 +25,42 @@ const sourceSerif = Source_Serif_4({
 });
 
 export const metadata: Metadata = {
-  title: "squig — wireframes that know they're wireframes",
-  description:
-    "An infinite canvas of real UI components that all render like you sketched them on a napkin. Argue about structure, not corner radius.",
+  metadataBase: new URL("https://squig.sh"),
+  applicationName: "squig",
+  title,
+  description,
+  alternates: {
+    canonical: "/",
+  },
+  openGraph: {
+    type: "website",
+    locale: "en_US",
+    url: "/",
+    siteName: "squig",
+    title,
+    description,
+    images: [
+      {
+        url: "/opengraph-image",
+        width: 1200,
+        height: 630,
+        alt: "A blue doodle of a bear sketching a wireframe",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title,
+    description,
+    images: [
+      {
+        url: "/twitter-image",
+        width: 1200,
+        height: 630,
+        alt: "A blue doodle of a bear sketching a wireframe",
+      },
+    ],
+  },
 };
 
 export default function RootLayout({
