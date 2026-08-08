@@ -1,0 +1,4 @@
+name = "squig"
+description = "Wireframes that know they're wireframes — an infinite sketch canvas of real UI components."
+source_code_url = "https://github.com/pablostanley/squig"
+icon = "icon.png"
