@@ -107,6 +107,9 @@ export function breakApart(node: ComponentNode): SquigNode[] {
           y: node.y + p.y - p.size,
           w, h: textBlockHeight(1, p.size),
           text: p.text, fontSize: p.size, align: p.align,
+          // a label authored in a quieter ink keeps it — the component's tonal
+          // hierarchy is most of what it was saying, same as its fills
+          ink: p.color === "muted" || p.color === "faint" ? p.color : undefined,
           bold: p.bold, italic: p.italic, underline: p.underline,
           seed: seed(),
         })

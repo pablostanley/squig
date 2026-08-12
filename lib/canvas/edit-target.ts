@@ -15,6 +15,7 @@ import { wrapText } from "@/lib/canvas/text-metrics"
 import { nodePrims } from "@/lib/sketch/node-prims"
 import { textAnchorX, textBaseline } from "@/lib/sketch/text-layout"
 import { getDef } from "@/lib/library/registry"
+import { normalizeInk } from "@/lib/types"
 import type { ComponentNode, SquigNode, TextAlign, TextNode } from "@/lib/types"
 
 type TextPrim = Extract<Prim, { t: "text" }>
@@ -123,7 +124,7 @@ function textNodeTarget(node: TextNode): EditTarget {
     bold: !!node.bold,
     italic: !!node.italic,
     underline: !!node.underline || !!node.link,
-    color: INK.ink,
+    color: INK[normalizeInk(node.ink)],
     multiline: true,
     hidden: "all",
   }

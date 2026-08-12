@@ -9,7 +9,7 @@
 import { HAND, mirrorPrims, type Prim, type PrimOpts } from "./kit"
 import { textAnchorX, textBaseline } from "./text-layout"
 import { wrapText } from "@/lib/canvas/text-metrics"
-import { normalizeFill, type FillTone, type Outlined, type SquigNode, type StrokeWeight } from "@/lib/types"
+import { normalizeFill, normalizeInk, type FillTone, type Outlined, type SquigNode, type StrokeWeight } from "@/lib/types"
 import { renderComponent } from "@/lib/library/registry"
 
 /**
@@ -44,6 +44,9 @@ function outline(node: Outlined, baseWidth: number, o?: PrimOpts): PrimOpts {
   return {
     ...o,
     strokeWidth: baseWidth * PEN_SCALE[node.stroke ?? "regular"],
+    // pressure and tone are two different knobs: how hard the pen presses, and
+    // which of the three inks it was dipped in
+    tone: normalizeInk(node.ink),
     dashed: node.dashed,
   }
 }
@@ -106,6 +109,7 @@ export function basePrims(node: SquigNode): Prim[] {
         text: lineText,
         size: node.fontSize,
         align: node.align,
+        color: normalizeInk(node.ink),
         bold: node.bold,
         italic: node.italic,
         // a link is a link because it's underlined — no blue in a wireframe

@@ -19,6 +19,19 @@ export type ShapeKind = "rect" | "ellipse"
 export type FillTone = "none" | "paper" | "light" | "strong"
 
 /**
+ * Which step of the ink ladder a node prints in. One ink, three strengths:
+ * full ink, the muted secondary, and the faint hairline tone — the same three
+ * the theme already mixes for component labels. Absent means full ink, which
+ * is what every document written before this existed meant.
+ */
+export type InkTone = "ink" | "muted" | "faint"
+
+/** Documents come from disk and localStorage — read anything, keep the ladder. */
+export function normalizeInk(v: unknown): InkTone {
+  return v === "muted" || v === "faint" ? v : "ink"
+}
+
+/**
  * Pen pressure for a drawn line. One pen, pressed harder or softer — squig has
  * no second stroke colour, so weight is the whole outline vocabulary.
  */
@@ -27,6 +40,8 @@ export type StrokeWeight = "light" | "regular" | "heavy"
 /** Outline settings shared by every hand-drawn node. */
 export interface Outlined {
   stroke?: StrokeWeight
+  /** the tone the line prints in — full ink when absent */
+  ink?: InkTone
   dashed?: boolean
 }
 
@@ -103,6 +118,8 @@ export interface TextNode extends BaseNode {
   fixedW?: boolean
   /** left when absent — most text is */
   align?: TextAlign
+  /** the tone the words print in — full ink when absent */
+  ink?: InkTone
   bold?: boolean
   italic?: boolean
   underline?: boolean

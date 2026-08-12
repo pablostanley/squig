@@ -48,9 +48,17 @@ export interface PrimOpts {
    * Pen pressure, not colour — every line in a squig prints in the one ink.
    * "ink" is a full stroke, "muted" an ordinary one, "faint" a hairline.
    * If something needs to recede further than a hairline, give it a shaded
-   * fill; don't reach for a paler line, because there isn't one.
+   * fill; don't reach for a paler line. (A canvas node the *user* pales is
+   * different — that's `tone`.)
    */
   stroke?: InkColor
+  /**
+   * The ink the mark actually prints in — the user-facing three-step ladder.
+   * Library defs never set this (their `stroke` picks pressure, and every
+   * authored line prints in the one ink); it exists for canvas nodes whose
+   * outline the user has deliberately turned down to muted or faint.
+   */
+  tone?: InkColor
   strokeWidth?: number
   /**
    * "shade" is the tinted fill — a flat step off the paper, never a pattern.

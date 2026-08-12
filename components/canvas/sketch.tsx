@@ -59,7 +59,9 @@ function fillPaint(o: PrimOpts): string {
  * border above it, it is the same pen pressed lighter. So `stroke` no longer
  * picks a colour; it picks how hard the pen presses, and the tone names it
  * inherited now read as weights. Anything that needs to recede further than
- * a hairline should be carrying a shaded fill instead of a paler line.
+ * a hairline should be carrying a shaded fill instead of a paler line. The one
+ * exception is the user's own hand: a canvas node can ask for a paler tone
+ * through `PrimOpts.tone`, which the library never sets.
  */
 const PEN: Record<InkColor, number> = {
   ink: 1,
@@ -75,7 +77,7 @@ function primOptions(p: Prim, seed: number): Options {
     seed,
     roughness: o?.roughness ?? HAND.roughness,
     bowing: HAND.bowing,
-    stroke: INK.ink,
+    stroke: INK[o?.tone ?? "ink"],
     // an explicit strokeWidth is already a considered weight — leave it alone
     strokeWidth: o?.strokeWidth ?? (HAND.strokeWidth * PEN[o?.stroke ?? "ink"]),
     fill: undefined,
@@ -309,8 +311,14 @@ export const NodeSketch = memo(function NodeSketch({
 }) {
   const shapeKey = useMemo(() => {
     const flip = `${node.flipX ? 1 : 0}${node.flipY ? 1 : 0}`
-    // outline settings change the generated geometry, so they belong in the key
-    const pen = "stroke" in node ? `${node.stroke ?? ""}:${node.dashed ? 1 : 0}` : ""
+    // outline settings change the marks — the geometry, or the ink they print
+    // in — so they belong in the key. Guarded by type, not by key presence: a
+    // fresh shape has none of these keys yet, and the first patch only adds
+    // the one it sets, so an `in` check would miss the change entirely.
+    const pen =
+      node.type === "shape" || node.type === "draw" || node.type === "arrow"
+        ? `${node.stroke ?? ""}:${node.dashed ? 1 : 0}:${node.ink ?? ""}`
+        : ""
     switch (node.type) {
       case "component":
         return `c:${node.kind}:${node.w}:${node.h}:${flip}:${JSON.stringify(node.props)}`
@@ -323,7 +331,7 @@ export const NodeSketch = memo(function NodeSketch({
       case "text":
         // w and align place the anchor, so a resize or a realignment is a
         // different set of marks even when the words haven't changed
-        return `t:${node.text}:${node.fontSize}:${node.w}:${node.fixedW ? 1 : 0}:${node.align ?? ""}:${flip}:${node.bold ? 1 : 0}${node.italic ? 1 : 0}${node.underline || node.link ? 1 : 0}`
+        return `t:${node.text}:${node.fontSize}:${node.w}:${node.fixedW ? 1 : 0}:${node.align ?? ""}:${flip}:${node.bold ? 1 : 0}${node.italic ? 1 : 0}${node.underline || node.link ? 1 : 0}:${node.ink ?? ""}`
       case "image":
         // the src doesn't shape a single mark — only the frame's box does
         return `i:${node.w}:${node.h}:${flip}`

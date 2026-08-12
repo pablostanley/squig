@@ -15,8 +15,8 @@
 // ---------------------------------------------------------------------------
 
 import { useSquig } from "@/lib/store"
-import type { ArrowNode, ComponentNode, FillTone, ShapeNode, SquigNode, StrokeWeight, TextNode } from "@/lib/types"
-import { normalizeFill } from "@/lib/types"
+import type { ArrowNode, ComponentNode, FillTone, InkTone, ShapeNode, SquigNode, StrokeWeight, TextNode } from "@/lib/types"
+import { normalizeFill, normalizeInk } from "@/lib/types"
 import { getDef } from "@/lib/library/registry"
 import { selectionSummary, shared, sharedControls, sharedNumber, unionBounds } from "@/lib/selection"
 import { scaleNodes, MIN_SIZE } from "@/lib/canvas/transform"
@@ -114,6 +114,34 @@ const STROKE_OPTIONS: readonly SegmentOption<StrokeWeight>[] = [
   { value: "light", label: "Light pen", content: <PenChip height={1} /> },
   { value: "regular", label: "Regular pen", content: <PenChip height={1.75} /> },
   { value: "heavy", label: "Heavy pen", content: <PenChip height={3} /> },
+]
+
+/** "A" set in one tone — the ink previewed on the thing it will colour. */
+function InkLetter({ color }: { color: string }) {
+  return (
+    <span className="text-[13px] leading-none font-semibold" style={{ color }}>
+      A
+    </span>
+  )
+}
+
+/** A drop of one tone — the outline inks are dots, the fills stay square chips. */
+function InkDot({ color }: { color: string }) {
+  return <span className="block size-3 rounded-full" style={{ background: color }} />
+}
+
+/** The ink ladder as letters — for text, the tone is shown on an actual glyph. */
+const TEXT_INK_OPTIONS: readonly SegmentOption<InkTone>[] = [
+  { value: "ink", label: "Ink", content: <InkLetter color="var(--sq-ink)" /> },
+  { value: "muted", label: "Muted", content: <InkLetter color="var(--sq-muted)" /> },
+  { value: "faint", label: "Faint", content: <InkLetter color="var(--sq-faint)" /> },
+]
+
+/** The same ladder as pen dots — what an outline dipped in each tone prints like. */
+const LINE_INK_OPTIONS: readonly SegmentOption<InkTone>[] = [
+  { value: "ink", label: "Ink", content: <InkDot color="var(--sq-ink)" /> },
+  { value: "muted", label: "Muted", content: <InkDot color="var(--sq-muted)" /> },
+  { value: "faint", label: "Faint", content: <InkDot color="var(--sq-faint)" /> },
 ]
 
 // ---------------------------------------------------------------------------
@@ -384,6 +412,17 @@ function SelectionEditor({ selected }: { selected: SquigNode[] }) {
             <TextStyleToggles texts={texts} />
           </Row>
 
+          <Row label="Ink">
+            <Segmented
+              ariaLabel="Text ink"
+              options={TEXT_INK_OPTIONS}
+              shared={shared(texts.map((n) => normalizeInk(n.ink)))}
+              onChange={(tone) =>
+                patch((n) => (n.type === "text" ? ({ ink: tone === "ink" ? undefined : tone } as Partial<SquigNode>) : null))
+              }
+            />
+          </Row>
+
           {/* A link is a value, not a mode — so it gets a field showing where
               the text actually points. Empty means it points nowhere, and
               clearing the field is how you unlink. ⌘K still opens the floating
@@ -440,6 +479,14 @@ function SelectionEditor({ selected }: { selected: SquigNode[] }) {
               options={STROKE_OPTIONS}
               shared={shared(outlined.map((n) => ("stroke" in n ? (n.stroke ?? "regular") : "regular")))}
               onChange={(weight) => patch((n) => (isOutlined(n) ? ({ stroke: weight } as Partial<SquigNode>) : null))}
+            />
+          </Row>
+          <Row label="Ink">
+            <Segmented
+              ariaLabel="Outline ink"
+              options={LINE_INK_OPTIONS}
+              shared={shared(outlined.map((n) => normalizeInk("ink" in n ? n.ink : undefined)))}
+              onChange={(tone) => patch((n) => (isOutlined(n) ? ({ ink: tone === "ink" ? undefined : tone } as Partial<SquigNode>) : null))}
             />
           </Row>
           <Row spread label="Dashed">
