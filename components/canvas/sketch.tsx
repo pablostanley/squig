@@ -14,6 +14,7 @@ import rough from "roughjs"
 import type { Options } from "roughjs/bin/core"
 import type { RoughGenerator } from "roughjs/bin/generator"
 import { HAND, INK, SHADE, type InkColor, type Prim, type PrimOpts } from "@/lib/sketch/kit"
+import { useIconCatalogVersion } from "@/lib/sketch/use-icon-catalog"
 import { nodePrims } from "@/lib/sketch/node-prims"
 import type { SquigNode } from "@/lib/types"
 
@@ -307,13 +308,17 @@ export const NodeSketch = memo(function NodeSketch({
   /** see SketchPrims — the run the inline editor has taken over */
   hiddenText?: "all" | number
 }) {
+  // components can draw icons whose paths stream in from the lazy catalog —
+  // the version bump is what redraws them once the real weight lands
+  const catalogVersion = useIconCatalogVersion()
+
   const shapeKey = useMemo(() => {
     const flip = `${node.flipX ? 1 : 0}${node.flipY ? 1 : 0}`
     // outline settings change the generated geometry, so they belong in the key
     const pen = "stroke" in node ? `${node.stroke ?? ""}:${node.dashed ? 1 : 0}` : ""
     switch (node.type) {
       case "component":
-        return `c:${node.kind}:${node.w}:${node.h}:${flip}:${JSON.stringify(node.props)}`
+        return `c:${node.kind}:${node.w}:${node.h}:${flip}:${catalogVersion}:${JSON.stringify(node.props)}`
       case "shape":
         return `s:${node.shape}:${node.w}:${node.h}:${flip}:${node.fill}:${pen}`
       case "draw":
@@ -328,7 +333,7 @@ export const NodeSketch = memo(function NodeSketch({
         // the src doesn't shape a single mark — only the frame's box does
         return `i:${node.w}:${node.h}:${flip}`
     }
-  }, [node])
+  }, [node, catalogVersion])
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const prims = useMemo<Prim[]>(() => nodePrims(node), [shapeKey, node.type])

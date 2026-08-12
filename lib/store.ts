@@ -189,8 +189,9 @@ interface SquigState {
   zoomToFit: () => void
   zoomToSelection: () => void
 
-  /** drop a library item at the middle of what the user is looking at */
-  insertComponent: (kind: string) => void
+  /** drop a library item at the middle of what the user is looking at,
+      optionally overriding some of its default props (⌘K inserting an icon) */
+  insertComponent: (kind: string, props?: Record<string, unknown>) => void
   alignSelected: (edge: "left" | "hcenter" | "right" | "top" | "vcenter" | "bottom") => void
   newFile: () => void
   /** swap the canvas to another file in the drawer, saving this one first */
@@ -917,7 +918,7 @@ export const useSquig = create<SquigState>((set, get) => ({
     fitBox(set, sel)
   },
 
-  insertComponent: (kind) => {
+  insertComponent: (kind, props) => {
     const def = getDef(kind)
     if (!def) return
     const v = get().viewport
@@ -925,7 +926,7 @@ export const useSquig = create<SquigState>((set, get) => ({
     get().addNode({
       type: "component",
       kind: def.kind,
-      props: { ...def.defaults },
+      props: { ...def.defaults, ...props },
       x: Math.round(cx - def.size.w / 2),
       y: Math.round(cy - def.size.h / 2),
       w: def.size.w,

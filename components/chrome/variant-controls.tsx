@@ -10,8 +10,9 @@
 
 import { useSquig } from "@/lib/store"
 import type { ComponentNode, SquigNode } from "@/lib/types"
-import type { ControlDef } from "@/lib/library/registry"
-import { MIXED_LABEL, sharedProp, type Shared } from "@/lib/selection"
+import { getDef, type ControlDef } from "@/lib/library/registry"
+import { MIXED_LABEL, shared, type Shared } from "@/lib/selection"
+import { IconControl } from "./icon-picker"
 import { MixedNumberField, MixedSwitch, MixedTextField } from "./mixed-fields"
 import { Row, StackRow } from "@/components/ui/panel"
 import { Segmented } from "@/components/ui/segmented"
@@ -42,7 +43,9 @@ export function VariantControl({
   compact?: boolean
 }) {
   const st = useSquig.getState
-  const current = sharedProp(nodes, control.key)
+  // a prop absent from an older document means its def default, not "unset" —
+  // without the fallback a control added after a node was drawn shows a dash
+  const current = shared(nodes.map((n) => n.props[control.key] ?? getDef(n.kind)?.defaults[control.key]))
 
   /** one checkpoint, one patch, one undo step — however many nodes there are */
   const setValue = (next: unknown, opts?: { checkpoint?: boolean }) => {
@@ -140,6 +143,9 @@ export function VariantControl({
     }
     return <Row label={control.label}>{field}</Row>
   }
+
+  // icon — a name out of 1,500 is picked, not typed; it brings its own row
+  if (control.type === "icon") return <IconControl nodes={nodes} control={control} compact={compact} />
 
   // text — a label can be long, so it gets the full width under its name
   return (

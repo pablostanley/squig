@@ -143,8 +143,13 @@ into a page.
 
 ## Icons
 
-`icon(name, cx, cy, size, opts?)` — Phosphor-backed. Available names are in
-`lib/sketch/icons.ts` (`ICON_NAMES`). Common ones:
+`icon(name, cx, cy, size, opts?, weight?)` — Phosphor-backed. Defs should stick
+to the curated inline set (`ICON_NAMES` in `lib/sketch/icons.ts`), which is
+bundled and renders synchronously; every other Phosphor name exists too but
+rides a lazy chunk, so a def using one may render blank on first paint. The
+`weight` param ("thin" | "light" | "regular" | "bold" | "fill") also pulls a
+lazy chunk — defs should leave it at the default regular; it exists for the
+user-facing Icon component. Curated names:
 
 `user users user-circle image images magnifying-glass caret-down caret-right
 caret-left caret-up check x plus minus list star heart arrow-right arrow-left

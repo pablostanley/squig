@@ -14,7 +14,7 @@ import { EXTRA_DEFS } from "./defs-extra"
 import { MARKETING_DEFS } from "./defs-blocks-marketing"
 import { APP_DEFS } from "./defs-blocks-app"
 
-export type ControlType = "select" | "toggle" | "text" | "number"
+export type ControlType = "select" | "toggle" | "text" | "number" | "icon"
 
 export interface ControlDef {
   key: string

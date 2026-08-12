@@ -4,7 +4,7 @@
 // ---------------------------------------------------------------------------
 
 import type { Prim } from "@/lib/sketch/kit"
-import { rect, ellipse, line, text, poly, icon, truncate, textWidth, loremLines } from "@/lib/sketch/kit"
+import { rect, ellipse, line, text, poly, icon, truncate, textWidth, loremLines, normalizeIconWeight } from "@/lib/sketch/kit"
 import { resolveIconName } from "@/lib/sketch/icons"
 import type { ComponentDef, Props } from "./registry"
 
@@ -21,9 +21,16 @@ export const iconDef: ComponentDef = {
   group: "Media",
   keywords: ["glyph", "symbol", "phosphor", "pictogram"],
   size: { w: 40, h: 40 },
-  defaults: { name: "star", shape: "none" },
+  defaults: { name: "star", weight: "regular", shape: "none" },
   controls: [
-    { key: "name", label: "Icon name", type: "text" },
+    { key: "name", label: "Icon", type: "icon" },
+    {
+      key: "weight",
+      label: "Weight",
+      type: "select",
+      options: ["thin", "light", "regular", "bold", "fill"],
+      quick: true,
+    },
     { key: "shape", label: "Container", type: "select", options: ["none", "circle", "square"], quick: true },
   ],
   render(p, w, h) {
@@ -35,7 +42,7 @@ export const iconDef: ComponentDef = {
     const name = str(p, "name", "star")
     const inner = shape === "none" ? d : d * 0.55
     if (resolveIconName(name) || name === "logo") {
-      prims.push(...icon(name, w / 2, h / 2, inner))
+      prims.push(...icon(name, w / 2, h / 2, inner, undefined, normalizeIconWeight(p.weight)))
     } else {
       // unknown name — say so rather than rendering an invisible component
       prims.push(rect(0, 0, w, h, { stroke: "faint", dashed: true }))

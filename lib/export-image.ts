@@ -19,7 +19,8 @@
 // ---------------------------------------------------------------------------
 
 import { mirrorBox, mirrorGlyphs, primsToPaths } from "@/components/canvas/sketch"
-import { INK } from "./sketch/kit"
+import { iconPathsReady, loadIconWeight, normalizeIconWeight } from "./sketch/icon-catalog"
+import { INK, resolveIconName } from "./sketch/kit"
 import { nodePrims } from "./sketch/node-prims"
 import { unionBounds } from "./selection"
 import { useSquig } from "./store"
@@ -266,6 +267,19 @@ export async function renderPng(list: SquigNode[]): Promise<Blob> {
   const resolve = makeResolver(palette)
   const font = canvasFontStack()
   const css = await fontFaceCss(font)
+
+  // icon paths stream in from lazy chunks; the on-screen canvas can redraw
+  // when they land, but this render is one-shot — so wait for every weight the
+  // picture needs before printing it. Only icon nodes can name arbitrary
+  // glyphs; every other def draws from the curated inline set.
+  const weights = new Set<ReturnType<typeof normalizeIconWeight>>()
+  for (const n of list) {
+    if (n.type !== "component" || n.kind !== "icon") continue
+    const w = normalizeIconWeight(n.props.weight)
+    const resolved = resolveIconName(String(n.props.name ?? ""))
+    if (resolved && !iconPathsReady(resolved, w)) weights.add(w)
+  }
+  await Promise.all([...weights].map((w) => loadIconWeight(w)))
 
   const x = b.x - PAD
   const y = b.y - PAD

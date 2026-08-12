@@ -107,6 +107,8 @@ export type Prim =
       mode: "fill" | "stroke"
       /** icon name, so break-apart can rebuild this as a real Icon component */
       name?: string
+      /** icon weight when not "regular" — break-apart carries it back too */
+      weight?: import("./icon-catalog").IconWeight
     } & { o?: PrimOpts })
 
 // -- constructors -----------------------------------------------------------
@@ -228,6 +230,8 @@ export function loremLines(x: number, y: number, w: number, count: number, gap =
 }
 
 // -- icons ------------------------------------------------------------------
-// Phosphor-backed; see ./icons for the name list and aliases.
+// Phosphor-backed; see ./icons for the name list and aliases, and
+// ./icon-catalog for the lazy full catalog and weights.
 
 export { icon, ICON_NAMES, resolveIconName, type IconName } from "./icons"
+export { ICON_WEIGHTS, normalizeIconWeight, type IconWeight } from "./icon-catalog"

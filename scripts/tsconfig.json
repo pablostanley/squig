@@ -1,9 +1,10 @@
 {
   "extends": "../tsconfig.json",
   "compilerOptions": {
+    // the register-loader resolves "@/" and extensionless imports the way a
+    // bundler does, so typechecking against bundler resolution matches what
+    // actually runs — nodenext would demand extensions the app never writes
     "allowImportingTsExtensions": true,
-    "module": "nodenext",
-    "moduleResolution": "nodenext",
     "noEmit": true,
     "types": ["node"]
   },

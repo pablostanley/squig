@@ -91,7 +91,7 @@ export function breakApart(node: ComponentNode): SquigNode[] {
         if (!p.name) break
         out.push({
           id: nanoid(8), type: "component", kind: "icon",
-          props: { name: p.name, shape: "none" },
+          props: { name: p.name, shape: "none", ...(p.weight ? { weight: p.weight } : {}) },
           x: node.x + p.x, y: node.y + p.y, w: p.size, h: p.size,
           seed: seed(),
         })

@@ -1,14 +1,18 @@
 "use client"
 
 // ---------------------------------------------------------------------------
-// ⌘K — a sheet that rises from the bottom. Searches tools, actions, and every
-// component and block, and inserts on Enter. One box for the whole app.
+// ⌘K — a sheet that rises from the bottom. Searches tools, actions, every
+// component and block, and every icon, and inserts on Enter. One box for the
+// whole app.
 // ---------------------------------------------------------------------------
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useSquig } from "@/lib/store"
 import { ALL_DEFS, matches, type ComponentDef } from "@/lib/library/registry"
 import { SketchPrims } from "@/components/canvas/sketch"
+import { getIconPaths, loadIconWeight } from "@/lib/sketch/icon-catalog"
+import { loadIconIndex, searchIcons } from "@/lib/sketch/icon-search"
+import { useIconCatalogVersion } from "@/lib/sketch/use-icon-catalog"
 import { copySelection, cutSelection, pasteFromSystem } from "@/lib/clipboard"
 import { exportDoc, importDoc } from "@/lib/file-io"
 import { copyAsPngWithNotice } from "@/lib/export-image"
@@ -64,12 +68,18 @@ interface Action {
   disabled?: boolean
 }
 
-type Row = { kind: "action"; action: Action } | { kind: "def"; def: ComponentDef }
+type Row =
+  | { kind: "action"; action: Action }
+  | { kind: "def"; def: ComponentDef }
+  | { kind: "icon"; name: string }
 
-const SECTION_ORDER = ["Tools", "Edit", "Arrange", "Text", "View", "File", "Recent", "Components", "Blocks"]
+const SECTION_ORDER = ["Tools", "Edit", "Arrange", "Text", "View", "File", "Recent", "Components", "Blocks", "Icons"]
 
 /** the palette lists a handful of files; the file menu holds the rest */
 const RECENT_IN_PALETTE = 6
+
+/** icons are a long tail; a few good hits beat a wall of glyphs */
+const ICONS_IN_PALETTE = 8
 
 /** Mount only while open, so every ⌘K starts from a blank box with no reset dance. */
 export function CommandPalette() {
@@ -87,13 +97,23 @@ function Palette() {
 
   const [query, setQuery] = useState("")
   const [active, setActive] = useState(0)
+  const [indexReady, setIndexReady] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
+  // re-render when a weight chunk arrives, so the glyph previews fill in
+  useIconCatalogVersion()
 
   const close = useCallback(() => st().setCommandOpen(false), [st])
 
   useEffect(() => {
     inputRef.current?.focus()
+  }, [])
+
+  // the icon chunks ride along with the sheet, not the app; searches run
+  // name-only until the index lands, then re-run with tags
+  useEffect(() => {
+    void loadIconIndex().then(() => setIndexReady(true))
+    void loadIconWeight("regular")
   }, [])
 
   const hasSel = selection.length > 0
@@ -188,11 +208,16 @@ function Palette() {
     const defs = ALL_DEFS.filter((d) => matches(d, q))
     // with no query, keep the sheet skimmable rather than dumping 100 items
     const limited = q ? defs : defs.slice(0, 24)
+    // icons only answer a search — there are thousands of them. searchIcons
+    // reads a module-level index; indexReady is what re-runs it once tags land
+    void indexReady
+    const icons = q ? searchIcons(q, ICONS_IN_PALETTE) : []
     return [
       ...acts.map((action): Row => ({ kind: "action", action })),
       ...limited.map((def): Row => ({ kind: "def", def })),
+      ...icons.map((name): Row => ({ kind: "icon", name })),
     ]
-  }, [query, actions])
+  }, [query, actions, indexReady])
 
   useEffect(() => {
     listRef.current?.querySelector<HTMLElement>('[data-active="true"]')?.scrollIntoView({ block: "nearest" })
@@ -201,6 +226,7 @@ function Palette() {
   const runRow = useCallback(
     (row: Row) => {
       if (row.kind === "action") row.action.run()
+      else if (row.kind === "icon") st().insertComponent("icon", { name: row.name })
       else st().insertComponent(row.def.kind)
       close()
     },
@@ -211,7 +237,13 @@ function Palette() {
   const sections: { title: string; rows: { row: Row; index: number }[] }[] = []
   rows.forEach((row, index) => {
     const title =
-      row.kind === "action" ? row.action.section : row.def.category === "components" ? "Components" : "Blocks"
+      row.kind === "action"
+        ? row.action.section
+        : row.kind === "icon"
+          ? "Icons"
+          : row.def.category === "components"
+            ? "Components"
+            : "Blocks"
     const last = sections[sections.length - 1]
     if (last?.title === title) last.rows.push({ row, index })
     else sections.push({ title, rows: [{ row, index }] })
@@ -273,7 +305,13 @@ function Palette() {
                 </div>
                 {section.rows.map(({ row, index }) => (
                   <PaletteRow
-                    key={row.kind === "action" ? row.action.id : row.def.kind}
+                    key={
+                      row.kind === "action"
+                        ? row.action.id
+                        : row.kind === "icon"
+                          ? `icon:${row.name}`
+                          : row.def.kind
+                    }
                     row={row}
                     active={index === active}
                     onHover={() => setActive(index)}
@@ -331,6 +369,12 @@ function PaletteRow({
           <span className="flex-1 truncate">{row.action.label}</span>
           {row.action.hint && <span className="pl-6 font-mono text-label text-muted-foreground">{row.action.hint}</span>}
         </>
+      ) : row.kind === "icon" ? (
+        <>
+          <IconGlyph name={row.name} />
+          <span className="flex-1 truncate">{row.name}</span>
+          <span className="pl-6 text-label text-muted-foreground">Icon</span>
+        </>
       ) : (
         <>
           <DefThumb def={row.def} />
@@ -339,6 +383,17 @@ function PaletteRow({
         </>
       )}
     </button>
+  )
+}
+
+/** Empty until the weight chunk lands — the version bump paints it in. */
+function IconGlyph({ name }: { name: string }) {
+  return (
+    <svg viewBox="0 0 256 256" className="size-4 shrink-0 text-muted-foreground">
+      {(getIconPaths(name, "regular") ?? []).map((d, i) => (
+        <path key={i} d={d} fill="currentColor" />
+      ))}
+    </svg>
   )
 }
 
