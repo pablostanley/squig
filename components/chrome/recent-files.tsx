@@ -25,6 +25,7 @@ const ARM_MS = 3000
 export function RecentFiles() {
   const files = useSquig((s) => s.files)
   const docId = useSquig((s) => s.docId)
+  const full = useSquig((s) => s.drawerFull)
 
   return (
     <DropdownMenuSub>
@@ -34,6 +35,15 @@ export function RecentFiles() {
           <p className="px-2.5 py-1.5 text-row text-muted-foreground">nothing saved yet</p>
         ) : (
           files.slice(0, SHOWN).map((f) => <FileRow key={f.id} file={f} current={f.id === docId} />)
+        )}
+        {/* The whole explanation lands here rather than under the file name,
+            because this is the list you're looking at when you go to make
+            room — and the trash to do it with is on the row above. */}
+        {full && (
+          <p className="mt-1 border-t px-2.5 pt-2 pb-1 text-label leading-relaxed text-muted-foreground">
+            this browser is out of room, so nothing new is being saved. pictures fill it fastest, and a cropped one
+            still carries the parts it hides. export what you want to keep, then let a drawing go here.
+          </p>
         )}
       </DropdownMenuSubContent>
     </DropdownMenuSub>

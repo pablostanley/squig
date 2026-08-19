@@ -4,7 +4,7 @@ import { create } from "zustand"
 import { nanoid } from "nanoid"
 import type { ComponentNode, ImageNode, SquigNode, TextAlign, TextNode, Tool, Viewport, ShapeKind } from "./types"
 import { normalizeCrop, normalizeFill, screenToWorld, unionBox } from "./types"
-import { isCropped, uncropPatch } from "./canvas/crop"
+import { isCropped, trueShapePatch, uncropPatch } from "./canvas/crop"
 import { lockedIds, selectable } from "./selection"
 import { repeatStep, type DupTrail } from "./canvas/duplicate"
 import { getDef } from "./library/registry"
@@ -110,6 +110,10 @@ interface SquigState {
   /** a one-line flash in the corner; the id makes a repeat of the same words
    *  count as a new message */
   notice: { id: number; text: string } | null
+  /** the browser has no room left: this drawing is on screen and nowhere else.
+   *  It stays true until a save gets through, because the trouble does too — a
+   *  flash that fades is the wrong shape for "your work isn't being kept". */
+  drawerFull: boolean
 
   past: DocSnapshot[]
   future: DocSnapshot[]
@@ -124,6 +128,8 @@ interface SquigState {
   setCropping: (id: string | null) => void
   /** give a picture back every pixel it's hiding */
   resetCrop: (ids?: string[]) => void
+  /** put a squashed picture back on the ratio its pixels actually have */
+  restoreAspect: (ids?: string[]) => void
   setContextRow: (on: boolean) => void
   setTheme: (t: ThemeName) => void
   setFont: (f: FontMode) => void
@@ -390,7 +396,7 @@ function flushSave(get: () => SquigState, force = false) {
   if (!dirty && !force) return
   const known = s.files.some((f) => f.id === s.docId)
   if (!s.order.length && !known && !force) return
-  const files = saveFile({
+  const { index, full } = saveFile({
     id: s.docId,
     name: s.fileName,
     nodes: s.nodes,
@@ -398,8 +404,15 @@ function flushSave(get: () => SquigState, force = false) {
     updatedAt: Date.now(),
     look: lookOf(s),
   })
-  useSquig.setState({ files })
-  dirty = false
+  // Say it once, on the way into trouble — every autosave after this one would
+  // be saying the same thing about the same drawing. The line under the file
+  // name carries it from there, for as long as it lasts.
+  if (full && !s.drawerFull) s.setNotice("no room left in this browser — export this one to keep it")
+  useSquig.setState({ files: index, drawerFull: full })
+  // a refused write leaves the drawing unsaved, so it stays owed: the next
+  // edit, or the tab closing, tries again — which is how squig comes back on
+  // its own once the user has made room
+  dirty = full
 }
 
 let watching = false
@@ -454,6 +467,7 @@ export const useSquig = create<SquigState>((set, get) => ({
   clipboard: [],
   dupTrail: null,
   notice: null,
+  drawerFull: false,
   past: [],
   future: [],
 
@@ -495,6 +509,22 @@ export const useSquig = create<SquigState>((set, get) => ({
       Object.fromEntries(targets.map((n) => [n.id, uncropPatch(n) as Partial<SquigNode>])),
       { checkpoint: true }
     )
+  },
+
+  restoreAspect: (ids) => {
+    const s = get()
+    const patches: Record<string, Partial<SquigNode>> = {}
+    for (const id of ids ?? s.selection) {
+      const n = s.nodes[id]
+      if (n?.type !== "image") continue
+      // a picture already on its ratio hands back null, and so drops out of
+      // the batch — a selection of twelve where one is squashed moves that one
+      const p = trueShapePatch(n)
+      if (p) patches[id] = p as Partial<SquigNode>
+    }
+    // nothing was out of shape: no checkpoint, no undo step that undoes nothing
+    if (!Object.keys(patches).length) return
+    s.updateNodes(patches, { checkpoint: true })
   },
 
   setContextRow: (on) => {

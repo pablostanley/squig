@@ -9,6 +9,11 @@
 // Only hands-on-the-geometry counts. Panning, marquee-selecting and plain
 // mousing around leave every layer where it is, and a label that flickered at
 // each of those would be its own kind of noise.
+//
+// The small line under the name is where saving speaks: a receipt after ⌘S,
+// and — when the browser has no room left — a standing note that this drawing
+// isn't being kept. It sits here rather than in the corner flash because the
+// name is what the eye goes to when it wonders where the drawing lives.
 // ---------------------------------------------------------------------------
 
 import { useEffect, useRef, useState } from "react"
@@ -23,6 +28,7 @@ const SAVED_MS = 1800
 export function FileName() {
   const fileName = useSquig((s) => s.fileName)
   const renaming = useSquig((s) => s.renamingFile)
+  const full = useSquig((s) => s.drawerFull)
   const st = useSquig.getState
   const [ducked, setDucked] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -66,9 +72,17 @@ export function FileName() {
     }
   }, [])
 
-  // renaming and the save note both outrank the duck: neither should vanish
-  // because the other hand started a drag
-  const shown = !ducked || renaming || saved
+  // One line under the name, two jobs. "saved" is a receipt and fades; the
+  // out-of-room note is a condition and stays until a write gets through, so
+  // it takes the line whenever both would speak. It's the only red squig
+  // leaves standing — muted would read as one more status and get skimmed
+  // past, and what it's reporting is that the drawing on screen is the only
+  // copy of itself there is.
+  const note = full ? "not saved — export to keep this one" : saved ? "saved to this browser" : ""
+
+  // renaming and the note both outrank the duck: neither should vanish because
+  // the other hand started a drag
+  const shown = !ducked || renaming || !!note
 
   return (
     <div
@@ -93,10 +107,12 @@ export function FileName() {
       )}
       <span
         aria-live="polite"
-        className="absolute top-full left-1/2 mt-1 -translate-x-1/2 text-[11px] whitespace-nowrap text-muted-foreground transition-opacity duration-200"
-        style={{ opacity: saved ? 1 : 0 }}
+        className={`absolute top-full left-1/2 mt-1 -translate-x-1/2 text-[11px] whitespace-nowrap transition-opacity duration-200 ${
+          full ? "text-destructive" : "text-muted-foreground"
+        }`}
+        style={{ opacity: note ? 1 : 0 }}
       >
-        {saved ? "saved to this browser" : ""}
+        {note}
       </span>
     </div>
   )

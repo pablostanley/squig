@@ -24,6 +24,7 @@ import { clampWindow, cropAnchor, cropPatch, imageSheet, panSheet } from "@/lib/
 import { autoSizeTextBox, setTextWidth } from "@/lib/canvas/text-reflow"
 import { computeSnap, computeResizeSnap, makeSnapRect, type GuideLine, type SnapRect } from "@/lib/canvas/snap-engine"
 import { useSpacebarPan } from "@/lib/canvas/use-spacebar-pan"
+import { useFileDrop } from "@/lib/canvas/use-file-drop"
 import { HANDLES, HANDLE_CURSORS, handleOffset, resizeBounds, scaleNodes, type Handle } from "@/lib/canvas/transform"
 import { pickAt, pickInRect, pickSoftAt, type PickOpts } from "@/lib/canvas/hit-test"
 import { canvasOwnsKeyboard } from "@/lib/canvas/keyboard-owner"
@@ -242,6 +243,9 @@ export function Canvas() {
   const { isSpacebarHeld } = useSpacebarPan()
   // ⌘C/⌘X/⌘V live on the browser's clipboard events, not in onKey below
   useClipboard(pointerWorld)
+  // a picture dragged in off the desktop — HTML5 drag and drop, which shares
+  // nothing with the pointer gestures above, including the library's drag-out
+  const dropping = useFileDrop(containerRef)
 
   const st = useSquig.getState
 
@@ -947,20 +951,29 @@ export function Canvas() {
       const b = unionBounds(sel)
       if (!b) return
 
-      // double-clicking a side handle of a fixed-width text layer un-fixes it
+      // the second press on the same handle, soon enough after the first
       const prev = lastHandlePress.current
       lastHandlePress.current = { handle, t: e.timeStamp }
-      if (
-        prev &&
-        prev.handle === handle &&
-        e.timeStamp - prev.t < 400 &&
-        (handle === "e" || handle === "w") &&
-        sel.length === 1 &&
-        sel[0].type === "text" &&
-        sel[0].fixedW
-      ) {
+      const doubled = !!prev && prev.handle === handle && e.timeStamp - prev.t < 400
+      const lone = sel.length === 1 ? sel[0] : null
+
+      // double-clicking a side handle of a fixed-width text layer un-fixes it
+      if (doubled && (handle === "e" || handle === "w") && lone?.type === "text" && lone.fixedW) {
         swallowDblClickUntil.current = e.timeStamp + 600
         resetTextWidth()
+        return
+      }
+
+      // and double-clicking a corner handle of a picture puts it back on the
+      // ratio its own pixels have. Corners rather than sides because a corner
+      // is already the handle you reach for when you want the shape kept, so
+      // it's the one to ask for the shape back — and the sides are spoken for
+      // above. The swallow happens even when the maths turns out to be a
+      // no-op: the press was a handle double-press either way, and letting it
+      // through would step into the crop window instead.
+      if (doubled && handle.length === 2 && lone?.type === "image") {
+        swallowDblClickUntil.current = e.timeStamp + 600
+        s.restoreAspect([lone.id])
         return
       }
       modsRef.current = readMods(e)
@@ -1779,7 +1792,7 @@ export function Canvas() {
           selectedNodes={selectedNodes}
           viewport={v}
           onStartResize={startResize}
-          editing={!!editingId}
+          editing={!!editingId && selection.includes(editingId)}
           gestureKind={gestureKind}
         />
       )}
@@ -1808,6 +1821,19 @@ export function Canvas() {
             height: marquee.h * v.zoom,
             borderColor: "var(--sq-select)",
             backgroundColor: "color-mix(in srgb, var(--sq-select) 8%, transparent)",
+          }}
+        />
+      )}
+
+      {/* a file is hovering over the window: the same dashed line the marquee
+          draws, run round the edge of the paper. Enough to say "let go and it
+          lands here", and nothing moves to say it */}
+      {dropping && (
+        <div
+          className="pointer-events-none absolute inset-3 rounded-lg border border-dashed"
+          style={{
+            borderColor: "color-mix(in srgb, var(--sq-select) 45%, transparent)",
+            backgroundColor: "color-mix(in srgb, var(--sq-select) 5%, transparent)",
           }}
         />
       )}
@@ -2010,7 +2036,10 @@ function SelectionOverlay({
   gestureKind: Gesture["kind"] | null
 }) {
   const b = unionBounds(selectedNodes)
-  // the text editor draws its own dashed box; two boxes on one node is noise
+  // the text editor draws its own dashed box; two boxes on one node is noise.
+  // Only when it's the *selected* node being edited, mind: a picture dropped in
+  // while the caret is still blinking somewhere else is selected and has every
+  // right to say so
   if (!b || editing) return null
 
   const v = viewport
