@@ -2,13 +2,15 @@
 
 // ---------------------------------------------------------------------------
 // ⌘K — a sheet that rises from the bottom. Searches tools, actions, every
-// component and block, and every icon, and inserts on Enter. One box for the
-// whole app.
+// component and block, every icon, and — once a drawing has enough words to be
+// worth searching — the canvas itself. Inserts, runs or jumps on Enter. One
+// box for the whole app.
 // ---------------------------------------------------------------------------
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useSquig } from "@/lib/store"
 import { ALL_DEFS, matches, type ComponentDef } from "@/lib/library/registry"
+import { searchNodes, type NodeHit } from "@/lib/canvas/find"
 import { SketchPrims } from "@/components/canvas/sketch"
 import { getIconPaths, loadIconWeight } from "@/lib/sketch/icon-catalog"
 import { loadIconIndex, searchIcons } from "@/lib/sketch/icon-search"
@@ -81,8 +83,16 @@ type Row =
   | { kind: "action"; action: Action }
   | { kind: "def"; def: ComponentDef }
   | { kind: "icon"; name: string }
+  | { kind: "node"; hit: NodeHit }
 
-const SECTION_ORDER = ["Tools", "Edit", "Arrange", "Text", "View", "File", "Recent", "Components", "Blocks", "Icons"]
+// Jump to leads, because it's the only section whose answers are about *this*
+// drawing — if the words you typed are already on the canvas, that is almost
+// certainly what you meant. It is also the section that is usually empty: a
+// board of six rectangles has no words, so the header never appears.
+const SECTION_ORDER = ["Jump to", "Tools", "Edit", "Arrange", "Text", "View", "File", "Recent", "Components", "Blocks", "Icons"]
+
+/** a handful of places to go — past that you should be looking, not reading */
+const JUMPS_IN_PALETTE = 6
 
 /** the palette lists a handful of files; the file menu holds the rest */
 const RECENT_IN_PALETTE = 6
@@ -240,12 +250,16 @@ function Palette() {
     // reads a module-level index; indexReady is what re-runs it once tags land
     void indexReady
     const icons = q ? searchIcons(q, ICONS_IN_PALETTE) : []
+    // reads `text` and the string props straight off each node — no rendering,
+    // no walking prims; lib/canvas/find says what it deliberately skips
+    const jumps = q ? searchNodes(nodes, order, q, JUMPS_IN_PALETTE) : []
     return [
+      ...jumps.map((hit): Row => ({ kind: "node", hit })),
       ...acts.map((action): Row => ({ kind: "action", action })),
       ...limited.map((def): Row => ({ kind: "def", def })),
       ...icons.map((name): Row => ({ kind: "icon", name })),
     ]
-  }, [query, actions, indexReady])
+  }, [query, actions, indexReady, nodes, order])
 
   useEffect(() => {
     listRef.current?.querySelector<HTMLElement>('[data-active="true"]')?.scrollIntoView({ block: "nearest" })
@@ -255,7 +269,12 @@ function Palette() {
     (row: Row) => {
       if (row.kind === "action") row.action.run()
       else if (row.kind === "icon") st().insertComponent("icon", { name: row.name })
-      else st().insertComponent(row.def.kind)
+      else if (row.kind === "node") {
+        // selecting it is only half the job — the other half is being able to
+        // see what you selected, which is what revealSelection is for
+        st().setSelection([row.hit.id])
+        st().revealSelection()
+      } else st().insertComponent(row.def.kind)
       close()
     },
     [st, close]
@@ -269,9 +288,11 @@ function Palette() {
         ? row.action.section
         : row.kind === "icon"
           ? "Icons"
-          : row.def.category === "components"
-            ? "Components"
-            : "Blocks"
+          : row.kind === "node"
+            ? "Jump to"
+            : row.def.category === "components"
+              ? "Components"
+              : "Blocks"
     const last = sections[sections.length - 1]
     if (last?.title === title) last.rows.push({ row, index })
     else sections.push({ title, rows: [{ row, index }] })
@@ -296,7 +317,7 @@ function Palette() {
                 setQuery(e.target.value)
                 setActive(0)
               }}
-              placeholder="search anything — buttons, blocks, tools, undo…"
+              placeholder="search anything — your screens, buttons, blocks, tools…"
               className="w-full bg-transparent py-4 pr-4 pl-11 text-title outline-none placeholder:text-muted-foreground"
               onKeyDown={(e) => {
                 e.stopPropagation()
@@ -338,7 +359,9 @@ function Palette() {
                         ? row.action.id
                         : row.kind === "icon"
                           ? `icon:${row.name}`
-                          : row.def.kind
+                          : row.kind === "node"
+                            ? `node:${row.hit.id}`
+                            : row.def.kind
                     }
                     row={row}
                     active={index === active}
@@ -396,6 +419,16 @@ function PaletteRow({
           <row.action.icon className="size-4 shrink-0 text-muted-foreground" weight="regular" />
           <span className="flex-1 truncate">{row.action.label}</span>
           {row.action.hint && <span className="pl-6 font-mono text-label text-muted-foreground">{row.action.hint}</span>}
+        </>
+      ) : row.kind === "node" ? (
+        <>
+          {row.hit.type === "text" ? (
+            <TextTIcon className="size-4 shrink-0 text-muted-foreground" weight="regular" />
+          ) : (
+            <SquaresFourIcon className="size-4 shrink-0 text-muted-foreground" weight="regular" />
+          )}
+          <span className="flex-1 truncate">{row.hit.label}</span>
+          <span className="pl-6 text-label text-muted-foreground">{row.hit.detail}</span>
         </>
       ) : row.kind === "icon" ? (
         <>

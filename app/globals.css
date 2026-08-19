@@ -194,3 +194,16 @@
     @apply font-sans;
   }
 }
+
+/*
+ * Zoomed out past where a gesture may go — a ⇧1 on a board too big for the
+ * ordinary floor. Node outlines are drawn in world units inside a scaled <g>,
+ * so at 7% a 1.4-unit pen prints a tenth of a pixel and fifteen screens fade
+ * to a grey smudge. Down here the drawing is a map, and a map needs lines you
+ * can see: the stroke stops scaling with the paper and stays a real pixel
+ * wide. The rule lives in CSS because vector-effect doesn't inherit, so the
+ * one flag on the group has to reach the paths through a selector.
+ */
+[data-squig-far] * {
+  vector-effect: non-scaling-stroke;
+}

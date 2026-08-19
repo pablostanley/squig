@@ -7,6 +7,13 @@ import { normalizeFill, screenToWorld, unionBox } from "./types"
 import { validNode } from "./clipboard-payload"
 import { remapBinds, settleBinds } from "./canvas/arrow-binding"
 import { isCropped, trueShapePatch, uncropPatch } from "./canvas/crop"
+import {
+  clampGestureZoom,
+  fitViewport,
+  revealViewport,
+  FIT_MIN_ZOOM,
+  MAX_ZOOM,
+} from "./canvas/navigate"
 import { lockedIds, selectable } from "./selection"
 import { repeatStep, type DupTrail } from "./canvas/duplicate"
 import { getDef } from "./library/registry"
@@ -218,6 +225,8 @@ interface SquigState {
   zoomTo100: () => void
   zoomToFit: () => void
   zoomToSelection: () => void
+  /** bring the selection into view, moving the viewport only if it has to */
+  revealSelection: () => void
 
   /** drop a library item at the middle of what the user is looking at,
       optionally overriding some of its default props (⌘K inserting an icon) */
@@ -235,10 +244,8 @@ interface SquigState {
 
 const MAX_HISTORY = 100
 const SAVE_DEBOUNCE_MS = 400
-const MIN_ZOOM = 0.1
-const MAX_ZOOM = 4
-/** breathing room around a zoom-to-fit, in screen px */
-const FIT_PADDING = 96
+// the zoom floors, the fit padding and the arithmetic they feed live in
+// lib/canvas/navigate, where they can be tested without a window
 
 function snapshot(s: Pick<SquigState, "nodes" | "order" | "selection">): DocSnapshot {
   return structuredClone({ nodes: s.nodes, order: s.order, selection: s.selection })
@@ -421,22 +428,20 @@ function cloneNodes(list: SquigNode[], dx: number, dy: number): SquigNode[] {
   return clones
 }
 
-/** Frame a set of nodes in the window, with a margin so nothing kisses an edge. */
-function fitBox(set: (partial: { viewport: Viewport }) => void, list: SquigNode[], cap = MAX_ZOOM) {
+/**
+ * Frame a set of nodes in the window, with a margin so nothing kisses an edge.
+ *
+ * Returns whether the board was too big to show whole even at the fit floor —
+ * only zoomToFit says anything about that, because only zoomToFit was asked
+ * the question. Opening a file frames it too, and a "doesn't fit" flash on
+ * arrival would be a greeting rather than an answer.
+ */
+function fitBox(set: (partial: { viewport: Viewport }) => void, list: SquigNode[], cap = MAX_ZOOM): boolean {
   const box = unionBox(list)
-  if (!box) return
-  const vw = window.innerWidth
-  const vh = window.innerHeight
-  const bw = Math.max(box.maxX - box.minX, 1)
-  const bh = Math.max(box.maxY - box.minY, 1)
-  const zoom = Math.min(cap, Math.max(MIN_ZOOM, Math.min((vw - FIT_PADDING * 2) / bw, (vh - FIT_PADDING * 2) / bh)))
-  set({
-    viewport: {
-      zoom,
-      x: vw / 2 - (box.minX + bw / 2) * zoom,
-      y: vh / 2 - (box.minY + bh / 2) * zoom,
-    },
-  })
+  if (!box) return false
+  const { viewport, clamped } = fitViewport(box, window.innerWidth, window.innerHeight, cap)
+  set({ viewport })
+  return clamped
 }
 
 /** Move ids one slot along `order`, without jumping over each other. */
@@ -1249,7 +1254,7 @@ export const useSquig = create<SquigState>((set, get) => ({
   zoomBy: (factor, center) => {
     const v = get().viewport
     const [cx, cy] = center ?? [window.innerWidth / 2, window.innerHeight / 2]
-    const zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, v.zoom * factor))
+    const zoom = clampGestureZoom(v.zoom, v.zoom * factor)
     const k = zoom / v.zoom
     set({ viewport: { zoom, x: cx - (cx - v.x) * k, y: cy - (cy - v.y) * k } })
   },
@@ -1263,7 +1268,12 @@ export const useSquig = create<SquigState>((set, get) => ({
 
   zoomToFit: () => {
     const { nodes, order } = get()
-    fitBox(set, order.map((id) => nodes[id]).filter(Boolean))
+    // a board past the fit floor is one you can't be shown whole. Saying so is
+    // the whole point: the old behaviour stopped at 10%, showed two-thirds of
+    // the drawing and left you to work out that the rest was still out there
+    if (fitBox(set, order.map((id) => nodes[id]).filter(Boolean))) {
+      get().setNotice(`this board is bigger than a fit can go — showing it at ${Math.round(FIT_MIN_ZOOM * 100)}%`)
+    }
   },
 
   zoomToSelection: () => {
@@ -1271,6 +1281,25 @@ export const useSquig = create<SquigState>((set, get) => ({
     const sel = selection.map((id) => nodes[id]).filter(Boolean)
     if (!sel.length) return get().zoomToFit()
     fitBox(set, sel)
+  },
+
+  /**
+   * Bring the selection into view. Selecting something you can't see is how
+   * Tab used to work: the inspector said "Login screen" and the canvas didn't
+   * move an inch. A viewport move is not a document edit, so — like every
+   * zoom action above it — this writes `viewport` straight and stays out of
+   * the undo stack.
+   */
+  revealSelection: () => {
+    const { nodes, selection, viewport } = get()
+    const box = unionBox(selection.map((id) => nodes[id]).filter(Boolean))
+    if (!box) return
+    const move = revealViewport(viewport, box, window.innerWidth, window.innerHeight)
+    if (move.kind === "hold") return
+    // too big to show by panning — that's zoomToSelection's job, and the one
+    // case where getting there is allowed to change the zoom you chose
+    if (move.kind === "fit") return get().zoomToSelection()
+    set({ viewport: move.viewport })
   },
 
   insertComponent: (kind, props) => {
@@ -1389,6 +1418,7 @@ export const useSquig = create<SquigState>((set, get) => ({
     if (!ring.length) return
     if (!selection.length) {
       set({ selection: [dir === 1 ? ring[0] : ring[ring.length - 1]] })
+      get().revealSelection()
       return
     }
     // step from the frontmost member so repeated Tabs march in one direction
@@ -1396,6 +1426,10 @@ export const useSquig = create<SquigState>((set, get) => ({
     const i = ring.indexOf(anchor)
     const next = ring[(((i === -1 ? 0 : i) + dir) % ring.length + ring.length) % ring.length]
     set({ selection: [next] })
+    // stepping onto something you can't see is the same as not stepping at
+    // all. revealSelection holds still when the layer was already on screen,
+    // so a walk through a screenful of nodes doesn't lurch on every press
+    get().revealSelection()
   },
 
   alignSelected: (edge) => {
