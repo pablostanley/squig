@@ -25,7 +25,7 @@ import { autoSizeTextBox, setTextWidth } from "@/lib/canvas/text-reflow"
 import { computeSnap, computeResizeSnap, makeSnapRect, type GuideLine, type SnapRect } from "@/lib/canvas/snap-engine"
 import { useSpacebarPan } from "@/lib/canvas/use-spacebar-pan"
 import { HANDLES, HANDLE_CURSORS, handleOffset, resizeBounds, scaleNodes, type Handle } from "@/lib/canvas/transform"
-import { pickAt, pickInRect, pickSoftAt } from "@/lib/canvas/hit-test"
+import { pickAt, pickInRect, pickSoftAt, type PickOpts } from "@/lib/canvas/hit-test"
 import { canvasOwnsKeyboard } from "@/lib/canvas/keyboard-owner"
 import { useClipboard } from "@/lib/canvas/use-clipboard"
 import { editTarget, hasEditableText } from "@/lib/canvas/edit-target"
@@ -235,7 +235,7 @@ export function Canvas() {
   const [livePoints, setLivePoints] = useState<[number, number][] | null>(null)
   /** soft: the pointer is over a hollow shape's middle — a click would select
    *  it but a drag would marquee, so the outline shows without a move cursor */
-  const [hover, setHover] = useState<{ id: string; soft: boolean } | null>(null)
+  const [hover, setHover] = useState<{ id: string; soft: boolean; locked: boolean } | null>(null)
   const [altHeld, setAltHeld] = useState(false)
   const [gestureKind, setGestureKind] = useState<Gesture["kind"] | null>(null)
 
@@ -261,14 +261,14 @@ export function Canvas() {
   )
 
   const pick = useCallback(
-    (e: { clientX: number; clientY: number }): string | null => {
+    (e: { clientX: number; clientY: number }, opts?: PickOpts): string | null => {
       const s = st()
       const [wx, wy] = toWorld(e)
       // ink and fills first; failing that, the hollow shape the point is
       // inside of — double-click, right-click and hover all read a point the
       // way a completed click does
       return (
-        pickAt(s.nodes, s.order, wx, wy, s.viewport.zoom) ?? pickSoftAt(s.nodes, s.order, wx, wy)
+        pickAt(s.nodes, s.order, wx, wy, s.viewport.zoom, opts) ?? pickSoftAt(s.nodes, s.order, wx, wy, opts)
       )
     },
     [st, toWorld]
@@ -1226,9 +1226,16 @@ export function Canvas() {
       if (e.ctrlKey && tool === "select" && !s.placing) return
       // whatever drag the right button interrupted is abandoned, not committed
       if (gestureRef.current) cancelGesture()
-      const hitId = pick(e)
-      // right-clicking outside the current selection re-targets it
-      if (hitId && !s.selection.includes(hitId)) s.setSelection(s.expandSelection([hitId]))
+      // The right button is the one press a locked layer still answers, and
+      // the reason it has to: with no click-select there would otherwise be no
+      // way to point at one and ask for it back. Aiming at something and
+      // asking for a menu is deliberate in a way a stray drag never is.
+      const hitId = pick(e, { locked: true })
+      const locked = !!(hitId && s.nodes[hitId]?.locked)
+      // right-clicking outside the current selection re-targets it — but a
+      // locked layer is never selected, so the menu targets it directly and
+      // whatever was selected before is left alone
+      if (hitId && !locked && !s.selection.includes(hitId)) s.setSelection(s.expandSelection([hitId]))
       if (!hitId) s.setSelection([])
       s.setContextMenu({ x: e.clientX, y: e.clientY, nodeId: hitId })
     },
@@ -1254,9 +1261,13 @@ export function Canvas() {
         // different geometry than the hit test is just a lie
         const cur = st()
         const [wx, wy] = toWorld({ clientX, clientY })
-        const hard = pickAt(cur.nodes, cur.order, wx, wy, cur.viewport.zoom)
-        const id = hard ?? pickSoftAt(cur.nodes, cur.order, wx, wy)
-        setHover(id ? { id, soft: !hard } : null)
+        // locked layers are in this pick and in no other: a click won't take
+        // one, but the hover has to say so, or a held-down rectangle is
+        // indistinguishable from a wedged app. What it draws is different too
+        // — see the hint below
+        const hard = pickAt(cur.nodes, cur.order, wx, wy, cur.viewport.zoom, { locked: true })
+        const id = hard ?? pickSoftAt(cur.nodes, cur.order, wx, wy, { locked: true })
+        setHover(id ? { id, soft: !hard, locked: !!cur.nodes[id]?.locked } : null)
       })
     },
     [st, toWorld, hover, isSpacebarHeld]
@@ -1417,6 +1428,15 @@ export function Canvas() {
           case "KeyU":
             e.preventDefault()
             s.toggleTextStyle("underline")
+            return
+          // ⇧⌘L is Figma's lock, and nothing here wanted it: plain L is the
+          // line tool and ⇧L the arrow, both without a modifier. It only
+          // locks — unlocking is the right button's job, because by then
+          // there is nothing selected to unlock.
+          case "KeyL":
+            if (!e.shiftKey) return
+            e.preventDefault()
+            s.lockSelected()
             return
           // ⌘⇧C is the picture, and that one is ours to intercept. Plain ⌘C
           // is the objects, and so are ⌘X and ⌘V: they ride the browser's own
@@ -1665,7 +1685,9 @@ export function Canvas() {
           ? "move"
           : cropNode
             ? "default"
-            : hover && !hover.soft && tool === "select"
+            // a locked layer keeps the default arrow for the same reason a soft
+            // hover does: a move cursor over something that won't move is a lie
+            : hover && !hover.soft && !hover.locked && tool === "select"
               ? (altHeld ? "copy" : "move")
               : "default"
 
@@ -1723,7 +1745,12 @@ export function Canvas() {
         </g>
       </svg>
 
-      {/* hover hint — shows what a click would grab */}
+      {/* Hover hint — shows what a click would grab.
+
+          A locked layer gets the same outline drawn dashed, which is the whole
+          of its feedback: enough to tell "held down" from "broken",
+          gone the moment the pointer moves off, and never a badge that would
+          print itself into a screenshot. */}
       {hoverNode && !editingId && !gestureKind && (
         <div
           className="pointer-events-none absolute rounded-sm"
@@ -1732,7 +1759,12 @@ export function Canvas() {
             top: hoverNode.y * v.zoom + v.y,
             width: hoverNode.w * v.zoom,
             height: hoverNode.h * v.zoom,
-            border: "1px solid color-mix(in srgb, var(--sq-select) 45%, transparent)",
+            // dashes lay down less ink than a solid rule, so the locked one is
+            // mixed stronger to land at the same weight on the page — the dash
+            // is meant to be the difference, not the dimness
+            border: hover?.locked
+              ? "1px dashed color-mix(in srgb, var(--sq-select) 60%, transparent)"
+              : "1px solid color-mix(in srgb, var(--sq-select) 45%, transparent)",
           }}
         />
       )}

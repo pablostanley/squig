@@ -19,7 +19,7 @@ import type { ArrowNode, ComponentNode, FillTone, ImageNode, InkTone, ShapeNode,
 import { normalizeFill, normalizeInk } from "@/lib/types"
 import { isCropped } from "@/lib/canvas/crop"
 import { getDef } from "@/lib/library/registry"
-import { selectionSummary, shared, sharedControls, sharedNumber, unionBounds } from "@/lib/selection"
+import { lockedIds, selectionSummary, shared, sharedControls, sharedNumber, unionBounds } from "@/lib/selection"
 import { scaleNodes, MIN_SIZE } from "@/lib/canvas/transform"
 import { fitTextBox, setTextWidth } from "@/lib/canvas/text-reflow"
 import { VariantControl } from "./variant-controls"
@@ -38,6 +38,8 @@ import {
   FlipHorizontalIcon,
   FlipVerticalIcon,
   LinkBreakIcon,
+  LockSimpleIcon,
+  LockSimpleOpenIcon,
   SelectionAllIcon,
   TrashIcon,
 } from "@phosphor-icons/react"
@@ -199,9 +201,12 @@ function PageSettings() {
   const font = useSquig((s) => s.font)
   const theme = useSquig((s) => s.theme)
   const contextRow = useSquig((s) => s.contextRow)
+  const nodes = useSquig((s) => s.nodes)
+  const order = useSquig((s) => s.order)
   const st = useSquig.getState
 
   const palette = paletteOf(theme)
+  const locked = lockedIds(nodes, order)
 
   /** Built per palette, not once at module load — the samples preview this
       theme's actual sheet, which is the whole point of showing them. */
@@ -213,6 +218,28 @@ function PageSettings() {
 
   return (
     <>
+      {/* Only here when there's something to say, and first when there is: a
+          locked layer answers no click, so this is where you come looking when
+          you can't work out why a rectangle won't budge. Deselecting is one
+          Escape away, which makes this panel the one place always in reach. */}
+      {locked.length > 0 && (
+        <PanelSection id="page-locked" title="Locked">
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-ctl w-full rounded-chrome-sm text-label"
+            onClick={() => st().unlockAll()}
+          >
+            <LockSimpleOpenIcon className="size-3" /> Unlock {locked.length === 1 ? "it" : `all ${locked.length}`}
+          </Button>
+          <PanelNote>
+            {locked.length === 1
+              ? "one layer is held down and won't be selected. right-click it to let it go."
+              : `${locked.length} layers are held down and won't be selected. right-click one to let just that one go.`}
+          </PanelNote>
+        </PanelSection>
+      )}
+
       <PanelSection id="page-paper" title="Paper">
         <Row label="Shade">
           <Segmented
@@ -593,6 +620,17 @@ function Footer({ selected }: { selected: SquigNode[] }) {
           {components.length > 1 && <span className="tabular-nums">({components.length})</span>}
         </Button>
       )}
+      {/* Lock sits beside Delete because they're the two footer moves that end
+          the selection — one throws the layer away, the other lets go of it. */}
+      <Button
+        variant="outline"
+        size="sm"
+        className="h-ctl flex-1 rounded-chrome-sm text-label"
+        title={`Lock · ${kbd("mod+shift+l")}`}
+        onClick={() => st().lockSelected()}
+      >
+        <LockSimpleIcon className="size-3" /> Lock
+      </Button>
       <Button
         variant="outline"
         size="sm"
