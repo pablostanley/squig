@@ -183,6 +183,13 @@ type Gesture =
       origWin: Bounds
       /** where the whole picture lay at gesture start — see lib/canvas/crop */
       origSheet: Bounds
+      /**
+       * which way round the picture prints. Every rectangle above is world
+       * space and needs no help from these; the crop the gesture writes is in
+       * the file's own pixels, and those run backwards on a flipped axis.
+       */
+      flipX: boolean
+      flipY: boolean
       dirty: boolean
     }
 
@@ -609,7 +616,9 @@ export function Canvas() {
         // Sliding the picture: the window is pinned and the sheet moves under
         // it, stopping when the picture's own edge would come inside the box.
         if (g.handle === "pan") {
-          s.updateNodes({ [g.id]: cropPatch(g.origWin, panSheet(g.origSheet, g.origWin, dx, dy)) as Partial<SquigNode> })
+          s.updateNodes({
+            [g.id]: cropPatch(g.origWin, panSheet(g.origSheet, g.origWin, dx, dy), g.flipX, g.flipY) as Partial<SquigNode>,
+          })
           return
         }
 
@@ -621,7 +630,7 @@ export function Canvas() {
         const aspect = mods.shift
         const raw = resizeBounds(g.origWin, g.handle, dx, dy, { aspect, fromCenter: mods.alt })
         const win = clampWindow(raw, g.origSheet, aspect ? cropAnchor(g.handle, g.origWin, mods.alt) : undefined)
-        s.updateNodes({ [g.id]: cropPatch(win, g.origSheet) as Partial<SquigNode> })
+        s.updateNodes({ [g.id]: cropPatch(win, g.origSheet, g.flipX, g.flipY) as Partial<SquigNode> })
         return
       }
 
@@ -1138,6 +1147,8 @@ export function Canvas() {
           id: n.id,
           origWin: { x: n.x, y: n.y, w: n.w, h: n.h },
           origSheet: imageSheet(n),
+          flipX: !!n.flipX,
+          flipY: !!n.flipY,
           dirty: false,
         },
         e
@@ -1192,6 +1203,8 @@ export function Canvas() {
               handle: "pan",
               origWin: { x: n.x, y: n.y, w: n.w, h: n.h },
               origSheet: imageSheet(n),
+              flipX: !!n.flipX,
+              flipY: !!n.flipY,
               dirty: false,
             },
             e

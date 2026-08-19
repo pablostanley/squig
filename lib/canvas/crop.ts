@@ -16,11 +16,22 @@
 // Either way the answer is the same arithmetic at the end: where the window
 // now sits on the sheet, written down as a 0..1 crop. The node's `crop` is
 // never accumulated from deltas, so a drag out and back is lossless.
+//
+// Both rectangles are world space — where the picture can actually be pointed
+// at, mirrored side included. A flip only has to be spelled out at the very
+// last step, in windowToCrop, where world distances turn into the 0..1 crop
+// the node stores: that number runs with the pixels, and on a flipped picture
+// the pixels run the other way. Keeping the mirror there and nowhere else is
+// what leaves everything above it — resize, clamp, pan, anchor — plain
+// rectangle arithmetic with no way of being flip-blind. It was flip-blind at
+// first, and every gesture proved it separately: handles trimmed the edge
+// opposite the one under the cursor, and a drag inside sent the picture the
+// wrong way down the canvas.
 // ---------------------------------------------------------------------------
 
 import type { Bounds } from "../selection"
 import { cropOf, normalizeCrop, type ImageCrop, type ImageNode } from "../types"
-import { MIN_SIZE, type Handle } from "./transform"
+import { MIN_SIZE, mirrorBounds, type Handle } from "./transform"
 
 const EPS = 1e-6
 
@@ -31,21 +42,35 @@ const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), h
  *
  * An uncropped picture returns its own box, so every caller below works the
  * same on a picture that has never been cropped as on one that has.
+ *
+ * The hidden part hangs off the box up and to the left of the crop, and then
+ * the renderer mirrors the lot about the box — so on a flipped picture it
+ * hangs off the other side, and the mirror belongs here. This rectangle is
+ * used as the dashed "rest of the picture" outline and as the surface a press
+ * slides, both of which have to land on the pixels the eye can see.
  */
 export function imageSheet(n: ImageNode): Bounds {
   const c = cropOf(n)
   const w = n.w / c.w
   const h = n.h / c.h
-  return { x: n.x - c.x * w, y: n.y - c.y * h, w, h }
+  return mirrorBounds(n, { x: n.x - c.x * w, y: n.y - c.y * h, w, h })
 }
 
-/** Where a window sits on a sheet, as the 0..1 crop the node stores. */
-export function windowToCrop(win: Bounds, sheet: Bounds): ImageCrop {
+/**
+ * Where a window sits on a sheet, as the 0..1 crop the node stores.
+ *
+ * The crop counts from the first pixel of the file, and a flipped picture is
+ * drawn with its first pixel at the far end of the sheet — so on a flipped
+ * axis the offset is measured back from that end instead. Nothing else about
+ * the maths turns over: a width is a width whichever way round it's printed,
+ * and the two sizes below are untouched.
+ */
+export function windowToCrop(win: Bounds, sheet: Bounds, flipX: boolean, flipY: boolean): ImageCrop {
   const sw = sheet.w > EPS ? sheet.w : 1
   const sh = sheet.h > EPS ? sheet.h : 1
   return {
-    x: (win.x - sheet.x) / sw,
-    y: (win.y - sheet.y) / sh,
+    x: (flipX ? sheet.x + sheet.w - (win.x + win.w) : win.x - sheet.x) / sw,
+    y: (flipY ? sheet.y + sheet.h - (win.y + win.h) : win.y - sheet.y) / sh,
     w: win.w / sw,
     h: win.h / sh,
   }
@@ -55,9 +80,13 @@ export function windowToCrop(win: Bounds, sheet: Bounds): ImageCrop {
  * The patch a gesture writes: the box it landed on, and the crop that box
  * means. `crop` is undefined when the window has been opened back out to the
  * whole sheet — see normalizeCrop on why that isn't {0,0,1,1}.
+ *
+ * The flips are taken one at a time rather than as the node, because the box
+ * this window came from is mid-drag and half of it is already stale; the only
+ * thing the crop needs from the node is which way round it prints.
  */
-export function cropPatch(win: Bounds, sheet: Bounds): Partial<ImageNode> {
-  return { x: win.x, y: win.y, w: win.w, h: win.h, crop: normalizeCrop(windowToCrop(win, sheet)) }
+export function cropPatch(win: Bounds, sheet: Bounds, flipX: boolean, flipY: boolean): Partial<ImageNode> {
+  return { x: win.x, y: win.y, w: win.w, h: win.h, crop: normalizeCrop(windowToCrop(win, sheet, flipX, flipY)) }
 }
 
 /**
@@ -161,6 +190,10 @@ export function isCropped(n: ImageNode): boolean {
  * Give the hidden pixels back, growing the box to the sheet the crop was cut
  * from — the picture stays exactly the size it looks, and the parts that were
  * outside the window reappear around it.
+ *
+ * A flipped picture gets the same deal, because the sheet is world space: the
+ * new box lands over the pixels that were already showing, and an uncropped
+ * picture mirrored about that box is the picture exactly where it was.
  */
 export function uncropPatch(n: ImageNode): Partial<ImageNode> {
   const sheet = imageSheet(n)
@@ -207,6 +240,11 @@ const HAIR = 0.5
  * would read as having fled the pointer. Pinning the centre halves that on
  * both axes, is the same answer whichever of the four corners was clicked, and
  * leaves a row of pictures sitting roughly where the eye left them.
+ *
+ * A flip is the one thing on the node this can afford to ignore. A ratio has
+ * no handedness, and the box is resized about its own centre — which the
+ * mirror holds still — so the picture comes back unbent and the same way round
+ * whether or not it's turned over.
  *
  * Null means there is nothing to do: the box is already true, or the numbers
  * won't say what true is. Callers skip the checkpoint on null, so this can't

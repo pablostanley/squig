@@ -19,8 +19,8 @@ import {
   visibleAspect,
   windowToCrop,
 } from "../lib/canvas/crop.ts"
-import { resizeBounds, MIN_SIZE } from "../lib/canvas/transform.ts"
-import { normalizeCrop, type ImageCrop, type ImageNode } from "../lib/types.ts"
+import { resizeBounds, MIN_SIZE, type Handle } from "../lib/canvas/transform.ts"
+import { cropOf, normalizeCrop, type ImageCrop, type ImageNode } from "../lib/types.ts"
 import type { Bounds } from "../lib/selection.ts"
 
 let passed = 0
@@ -87,7 +87,7 @@ function pic(over: Partial<ImageNode> = {}): ImageNode {
 
   // and the round trip is lossless — this is the invariant every gesture rests
   // on, because none of them accumulate deltas
-  const back = windowToCrop({ x: half.x, y: half.y, w: half.w, h: half.h }, imageSheet(half))
+  const back = windowToCrop({ x: half.x, y: half.y, w: half.w, h: half.h }, imageSheet(half), false, false)
   check(
     "window → crop → sheet round-trips",
     close(back.x, 0.25) && close(back.y, 0.25) && close(back.w, 0.5) && close(back.h, 0.5),
@@ -126,7 +126,7 @@ function pic(over: Partial<ImageNode> = {}): ImageNode {
   // point of pinning the sheet.
   const east = clampWindow(resizeBounds(win, "e", -50, 0), sheet)
   boxIs("east handle narrows the window", east, { x: 100, y: 100, w: 150, h: 100 })
-  const patch = cropPatch(east, sheet)
+  const patch = cropPatch(east, sheet, false, false)
   check(
     "…and the crop drops the right quarter",
     close(patch.crop!.x, 0) && close(patch.crop!.w, 0.75) && close(patch.crop!.h, 1),
@@ -136,13 +136,13 @@ function pic(over: Partial<ImageNode> = {}): ImageNode {
   // the west edge moves the box's origin as well as its size
   const west = clampWindow(resizeBounds(win, "w", 40, 0), sheet)
   boxIs("west handle moves the origin too", west, { x: 140, y: 100, w: 160, h: 100 })
-  check("…and the crop starts further into the picture", close(cropPatch(west, sheet).crop!.x, 0.2))
+  check("…and the crop starts further into the picture", close(cropPatch(west, sheet, false, false).crop!.x, 0.2))
 
   // dragging outward on an uncropped picture has nowhere to go: the sheet is
   // the box, so the window can't grow past it
   const past = clampWindow(resizeBounds(win, "e", 500, 0), sheet)
   boxIs("an uncropped window can't be opened out any further", past, win)
-  check("…and that's still 'no crop'", cropPatch(past, sheet).crop === undefined)
+  check("…and that's still 'no crop'", cropPatch(past, sheet, false, false).crop === undefined)
 }
 
 // -- opening a crop back out ------------------------------------------------
@@ -217,7 +217,7 @@ function pic(over: Partial<ImageNode> = {}): ImageNode {
     w: sheet.w,
     h: sheet.h,
   })
-  const p = cropPatch(win, moved)
+  const p = cropPatch(win, moved, false, false)
   check("the box holds still", p.x === win.x && p.y === win.y && p.w === win.w && p.h === win.h)
   check("…and the crop follows the picture the other way", p.crop!.x < 0.25 && p.crop!.y > 0.25)
 
@@ -230,7 +230,7 @@ function pic(over: Partial<ImageNode> = {}): ImageNode {
     "…and at the other edge too",
     close(back.x + back.w, win.x + win.w) && close(back.y + back.h, win.y + win.h)
   )
-  const crop = cropPatch(win, shoved).crop!
+  const crop = cropPatch(win, shoved, false, false).crop!
   check("a slide to the corner reads as a corner crop", close(crop.x, 0) && close(crop.y, 0))
 
   // an uncropped picture has no slack at all, so a slide is a no-op rather
@@ -251,7 +251,7 @@ function pic(over: Partial<ImageNode> = {}): ImageNode {
   check("a window can't be squeezed below the handle floor", tiny.w >= MIN_SIZE && tiny.h >= MIN_SIZE)
   check("…and stays on the picture", tiny.x >= sheet.x - 1e-9 && tiny.y >= sheet.y - 1e-9)
 
-  const crop = cropPatch(tiny, sheet).crop!
+  const crop = cropPatch(tiny, sheet, false, false).crop!
   check("…and its crop is still a real rectangle", crop.w > 0 && crop.h > 0 && crop.x + crop.w <= 1 + 1e-9)
 }
 
@@ -324,6 +324,181 @@ function pic(over: Partial<ImageNode> = {}): ImageNode {
   const wisp = trueShapePatch(pic({ naturalW: 4000, naturalH: 4, w: 20, h: 20 }))!
   check("a wisp of a picture still clears the handle floor", wisp.h! >= MIN_SIZE - 1e-9, `${wisp.w} × ${wisp.h}`)
   check("…and keeps its ratio anyway", close(wisp.w! / wisp.h!, 1000, 1e-6))
+}
+
+// -- flipped pictures -------------------------------------------------------
+
+/**
+ * Where the renderer lands a pixel of the file, in world space.
+ *
+ * imagePlacement followed by mirrorBox from components/canvas/sketch, written
+ * out as one line per axis. The checks below ask it about identifiable pixels
+ * instead of reading box numbers, because "the pixels you keep don't move" is
+ * the promise this module makes, and a crop and a box can both be wrong in
+ * ways that still add up to a plausible-looking rectangle — which is exactly
+ * how crop mode shipped blind to flips.
+ */
+function pixelAt(n: ImageNode, sx: number, sy: number): [number, number] {
+  const c = cropOf(n)
+  const u = (sx - c.x) * (n.w / c.w)
+  const v = (sy - c.y) * (n.h / c.h)
+  return [n.x + (n.flipX ? n.w - u : u), n.y + (n.flipY ? n.h - v : v)]
+}
+
+/** A patch put back on its node, so the checks can ask where the pixels went. */
+const applied = (n: ImageNode, patch: Partial<ImageNode>) => ({ ...n, ...patch }) as ImageNode
+
+/** Corners, edges and middle of the file — enough to catch a mirror or a slide. */
+const SAMPLES: [number, number][] = [
+  [0, 0],
+  [0.25, 0.5],
+  [0.5, 0.5],
+  [0.75, 0.25],
+  [1, 1],
+]
+
+/** Every sampled pixel of the file has to have gone exactly (dx, dy). */
+function pixelsMoved(name: string, before: ImageNode, after: ImageNode, dx: number, dy: number) {
+  const off = SAMPLES.filter(([sx, sy]) => {
+    const [x0, y0] = pixelAt(before, sx, sy)
+    const [x1, y1] = pixelAt(after, sx, sy)
+    return !close(x1 - x0, dx, 1e-6) || !close(y1 - y0, dy, 1e-6)
+  })
+  const [sx, sy] = off[0] ?? [0, 0]
+  check(
+    name,
+    off.length === 0,
+    off.length
+      ? `source (${sx}, ${sy}) went ${JSON.stringify(pixelAt(before, sx, sy))} -> ${JSON.stringify(pixelAt(after, sx, sy))}, wanted +(${dx}, ${dy})`
+      : ""
+  )
+}
+
+/** The four ways round a picture can be, run through every gesture below. */
+const WAYS: [string, boolean, boolean][] = [
+  ["unflipped", false, false],
+  ["flipX", true, false],
+  ["flipY", false, true],
+  ["flipped both ways", true, true],
+]
+
+/** Off-centre on both axes, so a mirror can't hide in a symmetry. */
+const OFFSET = { x: 0.1, y: 0.15, w: 0.5, h: 0.6 }
+
+const inSheet = (b: Bounds, x: number, y: number) => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h
+
+{
+  // The sheet is a hit region and a dashed outline as well as a number, so it
+  // has to sit exactly where the faint whole-picture ghost is drawn.
+  for (const [what, flipX, flipY] of WAYS) {
+    const n = pic({ crop: OFFSET, flipX, flipY })
+    const [x0, y0] = pixelAt(n, 0, 0)
+    const [x1, y1] = pixelAt(n, 1, 1)
+    boxIs(`${what}: the sheet is where the ghost is drawn`, imageSheet(n), {
+      x: Math.min(x0, x1),
+      y: Math.min(y0, y1),
+      w: Math.abs(x1 - x0),
+      h: Math.abs(y1 - y0),
+    })
+  }
+
+  // cropped from the right and then flipped: the hidden half shows as ghost on
+  // the left, and pressing it must slide the picture rather than leave the mode
+  const n = pic({ crop: { x: 0, y: 0, w: 0.5, h: 1 }, flipX: true })
+  const sheet = imageSheet(n)
+  const [gx, gy] = pixelAt(n, 0.75, 0.5)
+  check(
+    "a press on the ghost lands on the picture",
+    inSheet(sheet, gx, gy),
+    `${gx}, ${gy} not in ${JSON.stringify(round(sheet))}`
+  )
+  check("…and the same distance the other way is bare canvas", !inSheet(sheet, 2 * (n.x + n.w / 2) - gx, gy))
+}
+
+{
+  // Dragging a handle pins the sheet: whatever survives the trim is still the
+  // same pixels at the same size in the same place, whichever way round the
+  // picture is printed.
+  for (const [what, flipX, flipY] of WAYS) {
+    const n = pic({ crop: OFFSET, flipX, flipY })
+    const sheet = imageSheet(n)
+    const win = { x: n.x, y: n.y, w: n.w, h: n.h }
+    const pulls: [Handle, number, number][] = [
+      ["w", 30, 0],
+      ["e", -30, 0],
+      ["n", 0, 20],
+      ["s", 0, -20],
+    ]
+    for (const [handle, dx, dy] of pulls) {
+      const box = clampWindow(resizeBounds(win, handle, dx, dy), sheet)
+      const after = applied(n, cropPatch(box, sheet, flipX, flipY))
+      boxIs(`${what}: the ${handle} handle follows the pointer`, { x: after.x, y: after.y, w: after.w, h: after.h }, box)
+      pixelsMoved(`${what}: …and the ${handle} handle trims without moving the pixels`, n, after, 0, 0)
+    }
+  }
+
+  // the reviewer's case in plain numbers: the middle half of a photo, flipped,
+  // west handle pulled 40 in. The end that goes is the one under the handle —
+  // which on a flipped picture is the far end of the file, not the near one
+  const n = pic({ crop: { x: 0.25, y: 0, w: 0.5, h: 1 }, flipX: true })
+  const sheet = imageSheet(n)
+  const win = { x: n.x, y: n.y, w: n.w, h: n.h }
+  const c = applied(n, cropPatch(clampWindow(resizeBounds(win, "w", 40, 0), sheet), sheet, true, false)).crop!
+  check("a flipped west drag trims the far end of the file", close(c.x, 0.25) && close(c.x + c.w, 0.65), JSON.stringify(c))
+}
+
+{
+  // Dragging inside pins the window: the picture goes where the pointer goes,
+  // which on a flipped picture means the crop counts backwards to keep up.
+  for (const [what, flipX, flipY] of WAYS) {
+    const n = pic({ crop: OFFSET, flipX, flipY })
+    const win = { x: n.x, y: n.y, w: n.w, h: n.h }
+    const after = applied(n, cropPatch(win, panSheet(imageSheet(n), win, 30, -12), flipX, flipY))
+    boxIs(`${what}: a slide leaves the box alone`, { x: after.x, y: after.y, w: after.w, h: after.h }, win)
+    pixelsMoved(`${what}: …and carries the picture with the pointer`, n, after, 30, -12)
+  }
+}
+
+{
+  // Handing the pixels back is the one gesture with nothing to aim at, so the
+  // only thing to check is the whole of it: what you could see before is in
+  // exactly the same place after, with more of the picture around it.
+  for (const [what, flipX, flipY] of WAYS) {
+    const n = pic({ crop: OFFSET, flipX, flipY })
+    const back = applied(n, uncropPatch(n))
+    pixelsMoved(`${what}: reset leaves what you can see where it was`, n, back, 0, 0)
+    check(`${what}: …and clears the crop`, back.crop === undefined)
+    boxIs(
+      `${what}: …and grows the box to the whole picture`,
+      { x: back.x, y: back.y, w: back.w, h: back.h },
+      imageSheet(n)
+    )
+  }
+
+  // and the round trip every gesture rests on holds when it's mirrored
+  for (const [what, flipX, flipY] of WAYS) {
+    const n = pic({ crop: OFFSET, flipX, flipY })
+    const there = windowToCrop({ x: n.x, y: n.y, w: n.w, h: n.h }, imageSheet(n), flipX, flipY)
+    check(
+      `${what}: the window round-trips to the crop it came from`,
+      close(there.x, OFFSET.x) && close(there.y, OFFSET.y) && close(there.w, OFFSET.w) && close(there.h, OFFSET.h),
+      JSON.stringify(there)
+    )
+  }
+}
+
+{
+  // Unsquash is the one thing here a flip genuinely doesn't reach: a ratio has
+  // no handedness, and the box is resized about its centre, which the mirror
+  // holds still. Written down as a check rather than left as a hunch, because
+  // "a flip probably doesn't matter here" is how this file's bugs got in.
+  const squashed = { w: 200, h: 200, crop: OFFSET }
+  const plain = trueShapePatch(pic(squashed))!
+  for (const [what, flipX, flipY] of WAYS) {
+    const turned = pic({ ...squashed, flipX, flipY })
+    boxIs(`${what}: unsquash reaches the same box`, trueShapePatch(turned)! as Bounds, plain as Bounds)
+    check(`${what}: …off the same visible ratio`, close(visibleAspect(turned)!, visibleAspect(pic(squashed))!))
+  }
 }
 
 // ---------------------------------------------------------------------------

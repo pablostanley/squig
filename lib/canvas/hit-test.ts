@@ -10,6 +10,7 @@
 
 import { normalizeFill, type SquigNode } from "../types"
 import type { Bounds } from "../selection"
+import { mirrorPoint } from "./transform"
 
 /**
  * How far off a stroke the pointer may be and still count, in screen px.
@@ -103,14 +104,12 @@ function segmentNearRect(ax: number, ay: number, bx: number, by: number, r: Boun
  *
  * Flips live in the renderer, not the model, so the stored points still
  * describe the unmirrored line — mirror them here or clicking a flipped arrow
- * misses by the width of its own box.
+ * misses by the width of its own box. `mirrorPoint` is that mirror, shared
+ * with the crop maths, which learned the same lesson the hard way.
  */
 function polylineOf(n: SquigNode): [number, number][] | null {
   if (n.type !== "draw" && n.type !== "arrow") return null
-  return (n.points as [number, number][]).map(([px, py]) => [
-    n.x + (n.flipX ? n.w - px : px),
-    n.y + (n.flipY ? n.h - py : py),
-  ])
+  return (n.points as [number, number][]).map(([px, py]) => mirrorPoint(n, n.x + px, n.y + py))
 }
 
 /** Shapes are only solid to the pointer when they're actually filled. */

@@ -19,6 +19,49 @@ export const MIN_SIZE = 8
 
 const EPS = 1e-6
 
+// -- the mirror -------------------------------------------------------------
+
+/** A box, plus the flags that say which way round it gets drawn. */
+export interface Mirrored {
+  x: number
+  y: number
+  w: number
+  h: number
+  flipX?: boolean
+  flipY?: boolean
+}
+
+/**
+ * World space as an unflipped node sees it — and back out again.
+ *
+ * A flip in squig is a property of the node rather than of anything inside it:
+ * the stored geometry never turns over, the renderer mirrors the whole box on
+ * the way out (mirrorBox in canvas/sketch, mirrorPrims in sketch/kit). Which
+ * leaves every module in here holding coordinates that sit half a mirror away
+ * from what the user is pointing at — the reason clicking a flipped arrow used
+ * to miss it by the width of its own box, and the reason crop mode trimmed the
+ * wrong edge. The lesson keeps having to be learned once per gesture, so it
+ * lives here now, next to the resize maths every gesture already imports.
+ *
+ * Reflecting about the box on each flipped axis is the whole of that mirror.
+ * It is its own inverse — going in and coming back out are the same call — so
+ * this is one function and not a to/from pair whose names would say nothing
+ * except which way the caller happened to be facing.
+ */
+export function mirrorPoint(n: Mirrored, x: number, y: number): [number, number] {
+  return [n.flipX ? 2 * n.x + n.w - x : x, n.flipY ? 2 * n.y + n.h - y : y]
+}
+
+/** The same reflection for a rectangle: it lands mirrored, at the same size. */
+export function mirrorBounds(n: Mirrored, b: Bounds): Bounds {
+  return {
+    x: n.flipX ? 2 * n.x + n.w - (b.x + b.w) : b.x,
+    y: n.flipY ? 2 * n.y + n.h - (b.y + b.h) : b.y,
+    w: b.w,
+    h: b.h,
+  }
+}
+
 export interface ResizeOpts {
   /** Shift — lock the original aspect ratio. */
   aspect?: boolean
