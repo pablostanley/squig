@@ -9,6 +9,7 @@
 // ---------------------------------------------------------------------------
 
 import {
+  anchorTargetAt,
   arrowEnds,
   bindTargetAt,
   bindable,
@@ -18,9 +19,11 @@ import {
   remapBinds,
   routeEnds,
   settleBinds,
+  snapsToObjects,
   withBind,
+  withTarget,
 } from "../lib/canvas/arrow-binding.ts"
-import { normalizeBind, type ArrowNode, type ShapeNode, type SquigNode } from "../lib/types.ts"
+import { normalizeArrowAnchors, normalizeBind, type ArrowNode, type ShapeNode, type SquigNode } from "../lib/types.ts"
 
 let passed = 0
 const failures: string[] = []
@@ -134,7 +137,7 @@ function doc(list: SquigNode[]): Record<string, SquigNode> {
   // two 100×100 boxes, centres 300 apart on the x axis
   const a = box("a", 0, 0, 100, 100)
   const b = box("b", 300, 0, 100, 100)
-  const arr = arrowBetween([0, 0], [1, 1], { bind: ["a", "b"] })
+  const arr = arrowBetween([0, 0], [1, 1], { bind: ["a", "b"], anchors: ["right", "left"] })
   const nodes = doc([a, b, arr])
 
   const ends = routeEnds(arr, nodes)!
@@ -146,7 +149,8 @@ function doc(list: SquigNode[]): Record<string, SquigNode> {
   const moved = settleBinds(doc([a, { ...b, y: 400 }, arr]))
   const after = arrowEnds(moved.arr as ArrowNode)
   check("both bound: moving a box moves the arrow", after[1][1] > 100, `head y ${after[1][1]}`)
-  check("…and the tail comes off a different edge now", after[0][1] > 50)
+  pointIs("…and the tail stays locked to its chosen side", after[0], [100 + EDGE_GAP, 50])
+  pointIs("…while the head stays on b's left midpoint", after[1], [300 - EDGE_GAP, 450])
 
   // and resizing one is the same question asked again
   const grown = settleBinds(doc([{ ...a, w: 200 }, b, arr]))
@@ -158,6 +162,13 @@ function doc(list: SquigNode[]): Record<string, SquigNode> {
   const once = settleBinds(nodes)
   const twice = settleBinds(once)
   check("routing is a fixed point", twice === once)
+
+  // Bindings written before anchors existed are upgraded once, choosing the
+  // primary sides they currently face, then stop changing sides.
+  const legacy = settleBinds(doc([a, b, arrowBetween([0, 0], [1, 1], { bind: ["a", "b"] })]))
+  check("legacy bindings acquire stable anchors", JSON.stringify((legacy.arr as ArrowNode).anchors) === '["right","left"]')
+  const rearranged = settleBinds(doc([a, { ...b, y: 600 }, legacy.arr as ArrowNode]))
+  pointIs("a migrated anchor stays on the same side after rearranging", arrowEnds(rearranged.arr as ArrowNode)[0], [106, 50])
 }
 
 // -- one end bound ----------------------------------------------------------
@@ -165,17 +176,16 @@ function doc(list: SquigNode[]): Record<string, SquigNode> {
 {
   const a = box("a", 0, 0, 100, 100)
   // head parked out at (400, 50), tail attached to the box on the left
-  const arr = arrowBetween([50, 50], [400, 50], { bind: ["a", null] })
+  const arr = arrowBetween([50, 50], [400, 50], { bind: ["a", null], anchors: ["right", null] })
   const nodes = doc([a, arr])
   const ends = routeEnds(arr, nodes)!
   pointIs("one bound: the free end doesn't move", ends[1], [400, 50])
   pointIs("one bound: the bound end comes off the edge facing it", ends[0], [100 + EDGE_GAP, 50])
 
-  // the free end is what the bound end aims at, so dragging it round the box
-  // walks the tail onto another edge
+  // Dragging the free end around does not silently change the side the user chose.
   const above = settleBinds(doc([a, { ...arr, ...endsPatch([50, 50], [50, -400]) } as ArrowNode]))
   const up = arrowEnds(above.arr as ArrowNode)
-  pointIs("one bound: the free end decides which edge the bound one uses", up[0], [50, -EDGE_GAP])
+  pointIs("one bound: the chosen side remains stable", up[0], [100 + EDGE_GAP, 50])
 }
 
 // -- bound nodes that overlap -----------------------------------------------
@@ -185,13 +195,14 @@ function doc(list: SquigNode[]): Record<string, SquigNode> {
   // of trim each out of 60 units of centre-to-centre
   const a = box("a", 0, 0, 200, 100)
   const b = box("b", 60, 0, 200, 100)
-  const arr = arrowBetween([0, 0], [1, 1], { bind: ["a", "b"] })
+  const arr = arrowBetween([0, 0], [1, 1], { bind: ["a", "b"], anchors: ["right", "left"] })
   const ends = routeEnds(arr, doc([a, b, arr]))!
 
   check("overlapping: both ends are real numbers", finite(ends[0]) && finite(ends[1]))
   const run = Math.hypot(ends[1][0] - ends[0][0], ends[1][1] - ends[0][1])
   check("overlapping: there's still a visible run of line", run > 1, `run ${run}`)
-  check("overlapping: it still points from a to b", ends[1][0] > ends[0][0])
+  pointIs("overlapping: the tail keeps a's right anchor", ends[0], [200 + EDGE_GAP, 50])
+  pointIs("overlapping: the head keeps b's left anchor", ends[1], [60 - EDGE_GAP, 50])
   const mid = [(ends[0][0] + ends[1][0]) / 2, (ends[0][1] + ends[1][1]) / 2]
   // centres are 100 and 160, so halfway is 130
   pointIs("overlapping: it sits between the two centres", mid as Point, [130, 50])
@@ -227,7 +238,7 @@ function doc(list: SquigNode[]): Record<string, SquigNode> {
   // two boxes stacked dead on top of each other: no direction to point in
   const a = box("a", 0, 0, 100, 100)
   const b = box("b", 0, 0, 100, 100)
-  const ends = routeEnds(arrowBetween([0, 0], [1, 1], { bind: ["a", "b"] }), doc([a, b]))!
+  const ends = routeEnds(arrowBetween([0, 0], [1, 1], { bind: ["a", "b"], anchors: ["center", "center"] }), doc([a, b]))!
   check("coincident: no divide by zero", finite(ends[0]) && finite(ends[1]))
   check("coincident: the arrow lies down rather than collapsing", ends[1][0] > ends[0][0])
   check("…about the shared centre", close((ends[0][1] + ends[1][1]) / 2, 50))
@@ -304,10 +315,15 @@ function doc(list: SquigNode[]): Record<string, SquigNode> {
     ["b", "b2"],
     ["arr", "arr2"],
   ])
-  const clones: SquigNode[] = [box("a2", 0, 0, 100, 100), box("b2", 300, 0, 100, 100), arrowBetween([0, 0], [1, 1], { id: "arr2", bind: ["a", "b"] })]
+  const clones: SquigNode[] = [
+    box("a2", 0, 0, 100, 100),
+    box("b2", 300, 0, 100, 100),
+    arrowBetween([0, 0], [1, 1], { id: "arr2", bind: ["a", "b"], anchors: ["bottom", "center"] }),
+  ]
   remapBinds(clones, map)
   const copied = clones[2] as ArrowNode
   check("duplicate: the copy's arrow points at the copies", copied.bind?.[0] === "a2" && copied.bind?.[1] === "b2")
+  check("duplicate: the copy keeps both chosen anchors", JSON.stringify(copied.anchors) === '["bottom","center"]')
 
   // and the copy is genuinely independent: moving the original box leaves it
   const both = settleBinds(doc([box("a", 0, 0, 100, 100), box("b", 300, 0, 100, 100), ...clones]))
@@ -321,10 +337,11 @@ function doc(list: SquigNode[]): Record<string, SquigNode> {
   check("copying an arrow without its boxes gives a loose arrow", (lone[0] as ArrowNode).bind === undefined)
 
   // half a copy keeps the half it can
-  const half: SquigNode[] = [arrowBetween([0, 0], [1, 1], { id: "arr4", bind: ["a", "b"] })]
+  const half: SquigNode[] = [arrowBetween([0, 0], [1, 1], { id: "arr4", bind: ["a", "b"], anchors: ["top", "right"] })]
   remapBinds(half, new Map([["a", "a4"]]))
   check("copying one of the two boxes keeps that one end", (half[0] as ArrowNode).bind?.[0] === "a4")
   check("…and lets the other go", (half[0] as ArrowNode).bind?.[1] === null)
+  check("…and clears only the released end's anchor", JSON.stringify((half[0] as ArrowNode).anchors) === '["top",null]')
 }
 
 // -- a stranger's document --------------------------------------------------
@@ -335,6 +352,9 @@ function doc(list: SquigNode[]): Record<string, SquigNode> {
   check("…and not a number pretending to be an id", normalizeBind([1, 2]) === undefined)
   check("two nulls is spelled 'absent'", normalizeBind([null, null]) === undefined)
   check("one id survives on its own", JSON.stringify(normalizeBind([null, "b"])) === '[null,"b"]')
+  check("valid anchors survive", JSON.stringify(normalizeArrowAnchors(["top", "center"], ["a", "b"])) === '["top","center"]')
+  check("unknown anchors are dropped", JSON.stringify(normalizeArrowAnchors(["corner", "left"], ["a", "b"])) === '[null,"left"]')
+  check("a free end cannot retain an anchor", normalizeArrowAnchors(["top", null], [null, "b"]) === undefined)
 
   // an id nobody in the document answers to is dropped on the way in
   const stranger = settleBinds(doc([box("a", 0, 0, 100, 100), arrowBetween([0, 0], [200, 0], { bind: ["a", "ghost"] })]))
@@ -360,6 +380,20 @@ function doc(list: SquigNode[]): Record<string, SquigNode> {
   check("an oval isn't grabbable by the corner of its box", bindTargetAt(round, ["o"], 2, 2, 1) === null)
   check("…but is by its middle", bindTargetAt(round, ["o"], 50, 50, 1) === "o")
 
+  const top = anchorTargetAt(nodes, order, 50, 2, 1)
+  const right = anchorTargetAt(nodes, order, 98, 50, 1)
+  const bottom = anchorTargetAt(nodes, order, 50, 98, 1)
+  const left = anchorTargetAt(nodes, order, 2, 50, 1)
+  const center = anchorTargetAt(nodes, order, 50, 50, 1)
+  check("the top zone resolves to the top midpoint", top?.anchor === "top")
+  check("the right zone resolves to the right midpoint", right?.anchor === "right")
+  check("the bottom zone resolves to the bottom midpoint", bottom?.anchor === "bottom")
+  check("the left zone resolves to the left midpoint", left?.anchor === "left")
+  check("the center zone resolves to center", center?.anchor === "center")
+  check("the capture reach is screen-sized", anchorTargetAt(nodes, order, -15, 50, 1)?.anchor === "left")
+  check("the capture reach scales with zoom", anchorTargetAt(nodes, order, -8, 50, 2)?.anchor === "left")
+  check("the same world gap is too far when zoomed in", anchorTargetAt(nodes, order, -15, 50, 2) === null)
+
   check("an arrow can't be a binding target at all", !bindable(arr))
   check("…and a shape can", bindable(hollow))
 }
@@ -370,6 +404,16 @@ function doc(list: SquigNode[]): Record<string, SquigNode> {
   check("attaching the tail leaves the head alone", JSON.stringify(withBind([null, "b"], 0, "a")) === '["a","b"]')
   check("letting the head go leaves the tail attached", JSON.stringify(withBind(["a", "b"], 1, null)) === '["a",null]')
   check("letting the last one go clears the binding", withBind(["a", null], 0, null) === undefined)
+
+  const attached = arrow({ bind: ["a", null], anchors: ["top", null] })
+  const switched = withTarget(attached, 0, { id: "a", anchor: "bottom" })
+  check("switching sides updates the anchor without losing the target", switched.bind?.[0] === "a" && switched.anchors?.[0] === "bottom")
+
+  const free = arrowBetween([106, 50], [250, 50], { bind: ["a", null], anchors: ["right", null], snap: false })
+  const released = settleBinds(doc([box("a", 0, 0, 100, 100), free])).arr as ArrowNode
+  check("Snap off drops live relationships", released.bind === undefined && released.anchors === undefined)
+  pointIs("Snap off leaves the endpoint where it was", arrowEnds(released)[0], [106, 50])
+  check("Snap off is the only opt-out state", !snapsToObjects(released) && snapsToObjects(arrow({})))
 }
 
 // ---------------------------------------------------------------------------

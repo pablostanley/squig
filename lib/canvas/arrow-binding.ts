@@ -1,12 +1,10 @@
 // ---------------------------------------------------------------------------
 // Arrows that stick to the boxes they point at — pure.
 //
-// An arrow's two ends may each be bound to a node. A bound end doesn't
-// remember a spot on that node; it remembers only which node, and the line is
-// aimed centre-to-centre and cut off where it leaves the outline. Move either
-// box and the answer changes, which is the point: a napkin gets rearranged,
-// and an anchor pinned to the left edge is a promise about a layout that stops
-// being true the moment you drag the box past the thing it points at.
+// An arrow's two ends may each be bound to a node at one of five anchors. The
+// anchor is a relationship rather than a cached point: move or resize the node
+// and the end is recalculated from the same side. Old documents named only the
+// node; settleBinds gives those bindings the primary side they currently face.
 //
 // That inverts the usual arrangement. Everywhere else in squig the box is the
 // truth and `points` ride along inside it; for a bound arrow the two world
@@ -19,7 +17,7 @@
 // line between two boxes is the whole vocabulary.
 // ---------------------------------------------------------------------------
 
-import type { ArrowBind, ArrowNode, SquigNode } from "../types"
+import type { ArrowAnchor, ArrowAnchors, ArrowBind, ArrowNode, SquigNode } from "../types"
 import { hitsInterior, hitsPoint } from "./hit-test"
 
 /**
@@ -46,10 +44,26 @@ const EPS = 1e-6
 type Point = [number, number]
 
 const NO_BIND: ArrowBind = [null, null]
+const NO_ANCHORS: ArrowAnchors = [null, null]
+
+export interface ArrowTarget {
+  id: string
+  anchor: ArrowAnchor
+}
 
 /** An arrow's bindings, with the absent-means-neither case spelled out. */
 export function bindOf(n: ArrowNode): ArrowBind {
   return n.bind ?? NO_BIND
+}
+
+/** An arrow's explicit anchors, with the old-document case spelled out. */
+export function anchorsOf(n: ArrowNode): ArrowAnchors {
+  return n.anchors ?? NO_ANCHORS
+}
+
+/** Auto-snapping is opt-out so every existing arrow keeps the modern default. */
+export function snapsToObjects(n: ArrowNode): boolean {
+  return n.snap !== false
 }
 
 /**
@@ -117,6 +131,28 @@ export function withBind(bind: ArrowBind, end: 0 | 1, target: string | null): Ar
   return end === 0 ? bindPair(target, bind[1]) : bindPair(bind[0], target)
 }
 
+/** Two anchors, or undefined when neither end has one. */
+export function anchorPair(a: ArrowAnchor | null, b: ArrowAnchor | null): ArrowAnchors | undefined {
+  return a || b ? [a, b] : undefined
+}
+
+/** Set one end's anchor, leaving the other alone. */
+export function withAnchor(
+  anchors: ArrowAnchors,
+  end: 0 | 1,
+  anchor: ArrowAnchor | null
+): ArrowAnchors | undefined {
+  return end === 0 ? anchorPair(anchor, anchors[1]) : anchorPair(anchors[0], anchor)
+}
+
+/** Patch one end's complete relationship in one operation. */
+export function withTarget(n: ArrowNode, end: 0 | 1, target: ArrowTarget | null): Partial<ArrowNode> {
+  return {
+    bind: withBind(bindOf(n), end, target?.id ?? null),
+    anchors: withAnchor(anchorsOf(n), end, target?.anchor ?? null),
+  }
+}
+
 // -- the geometry -----------------------------------------------------------
 
 /**
@@ -158,22 +194,85 @@ export function edgeDistance(n: SquigNode, ux: number, uy: number): number {
 
 const centreOf = (n: SquigNode): Point => [n.x + n.w / 2, n.y + n.h / 2]
 
+/** The visible dot for one anchor, exactly on the node's box. */
+export function anchorPoint(n: SquigNode, anchor: ArrowAnchor): Point {
+  const cx = n.x + n.w / 2
+  const cy = n.y + n.h / 2
+  switch (anchor) {
+    case "top": return [cx, n.y]
+    case "right": return [n.x + n.w, cy]
+    case "bottom": return [cx, n.y + n.h]
+    case "left": return [n.x, cy]
+    case "center": return [cx, cy]
+  }
+}
+
+/**
+ * The endpoint drawn for an anchor. Side anchors keep the small bit of
+ * daylight Squig has always put between ink and outline; center means center.
+ */
+function connectionPoint(n: SquigNode, anchor: ArrowAnchor): Point {
+  const [x, y] = anchorPoint(n, anchor)
+  switch (anchor) {
+    case "top": return [x, y - EDGE_GAP]
+    case "right": return [x + EDGE_GAP, y]
+    case "bottom": return [x, y + EDGE_GAP]
+    case "left": return [x - EDGE_GAP, y]
+    case "center": return [x, y]
+  }
+}
+
+/** Which primary side of a node faces a point. Used only to upgrade old binds. */
+function facingAnchor(n: SquigNode, toward: Point, fallback: ArrowAnchor): ArrowAnchor {
+  const [cx, cy] = centreOf(n)
+  const dx = toward[0] - cx
+  const dy = toward[1] - cy
+  if (Math.abs(dx) <= EPS && Math.abs(dy) <= EPS) return fallback
+
+  // Compare in box-relative space so a wide card still gives its top and
+  // bottom useful zones instead of treating almost every direction as a side.
+  const nx = dx / Math.max(n.w / 2, EPS)
+  const ny = dy / Math.max(n.h / 2, EPS)
+  if (Math.abs(nx) >= Math.abs(ny)) return nx < 0 ? "left" : "right"
+  return ny < 0 ? "top" : "bottom"
+}
+
+/** Fill the missing anchors on a legacy binding from its current geometry. */
+function resolvedAnchors(n: ArrowNode, bind: ArrowBind, nodes: Record<string, SquigNode>): ArrowAnchors {
+  const existing = anchorsOf(n)
+  const ends = arrowEnds(n)
+  const rawA = bind[0] ? nodes[bind[0]] : undefined
+  const rawB = bind[1] ? nodes[bind[1]] : undefined
+  const a = bindable(rawA) ? rawA : undefined
+  const b = bindable(rawB) ? rawB : undefined
+  const towardA = b ? centreOf(b) : ends[1]
+  const towardB = a ? centreOf(a) : ends[0]
+  return [
+    a ? (existing[0] ?? facingAnchor(a, towardA, "right")) : null,
+    b ? (existing[1] ?? facingAnchor(b, towardB, "left")) : null,
+  ]
+}
+
 /**
  * Where a bound arrow's ends belong, given where its boxes are now.
  *
- * A bound end aims from its node's centre; a free end stays exactly where the
- * user last put it and does the aiming for the other one. Both ends are then
- * pulled back to their own outline plus the gap.
+ * A bound end is recalculated from its named anchor; a free end stays exactly
+ * where the user last put it. This is what keeps a relationship live without
+ * letting a rearranged board silently switch the side the user chose.
  */
 export function routeEnds(n: ArrowNode, nodes: Record<string, SquigNode>): [Point, Point] | null {
+  if (!snapsToObjects(n)) return null
   const [ba, bb] = bindOf(n)
-  const a = ba ? nodes[ba] : undefined
-  const b = bb ? nodes[bb] : undefined
-  if (!bindable(a) && !bindable(b)) return null
+  const rawA = ba ? nodes[ba] : undefined
+  const rawB = bb ? nodes[bb] : undefined
+  const a = bindable(rawA) ? rawA : undefined
+  const b = bindable(rawB) ? rawB : undefined
+  if (!a && !b) return null
 
   const ends = arrowEnds(n)
-  const from: Point = a ? centreOf(a) : ends[0]
-  const to: Point = b ? centreOf(b) : ends[1]
+  const anchors = resolvedAnchors(n, [a ? ba : null, b ? bb : null], nodes)
+  const from: Point = a && anchors[0] ? connectionPoint(a, anchors[0]) : ends[0]
+  const to: Point = b && anchors[1] ? connectionPoint(b, anchors[1]) : ends[1]
 
   const dx = to[0] - from[0]
   const dy = to[1] - from[1]
@@ -184,15 +283,7 @@ export function routeEnds(n: ArrowNode, nodes: Record<string, SquigNode>): [Poin
   const ux = d > EPS ? dx / d : 1
   const uy = d > EPS ? dy / d : 0
 
-  const ta = a ? edgeDistance(a, ux, uy) + EDGE_GAP : 0
-  const tb = b ? edgeDistance(b, ux, uy) + EDGE_GAP : 0
-
-  if (d - ta - tb >= MIN_RUN) {
-    return [
-      [from[0] + ux * ta, from[1] + uy * ta],
-      [to[0] - ux * tb, to[1] - uy * tb],
-    ]
-  }
+  if (d >= MIN_RUN) return [from, to]
 
   // no room left between the boxes — see MIN_RUN
   const mx = (from[0] + to[0]) / 2
@@ -237,8 +328,21 @@ export function settleBinds(nodes: Record<string, SquigNode>): Record<string, Sq
     const n = nodes[id]
     if (n?.type !== "arrow" || !n.bind) continue
 
+    // `snap: false` is the canonical free-line state. Sanitizers already drop
+    // stale relationships, but keeping this guard here makes direct store
+    // writes just as honest as imported files.
+    if (!snapsToObjects(n)) {
+      if (out === nodes) out = { ...nodes }
+      out[id] = { ...n, bind: undefined, anchors: undefined }
+      continue
+    }
+
     const bind = livingBind(n.bind, nodes)
-    let next: ArrowNode = bind === n.bind ? n : { ...n, bind }
+    const anchors = bind ? resolvedAnchors(n, bind, nodes) : undefined
+    const sameAnchors =
+      (!anchors && !n.anchors) ||
+      (!!anchors && !!n.anchors && anchors[0] === n.anchors[0] && anchors[1] === n.anchors[1])
+    let next: ArrowNode = bind === n.bind && sameAnchors ? n : { ...n, bind, anchors }
     if (bind) {
       const ends = routeEnds(next, nodes)
       const was = arrowEnds(next)
@@ -266,23 +370,78 @@ export function remapBinds(clones: readonly SquigNode[], idMap: ReadonlyMap<stri
   for (const c of clones) {
     if (c.type !== "arrow" || !c.bind) continue
     const [a, b] = c.bind
+    const anchors = anchorsOf(c)
     const na = a ? (idMap.get(a) ?? null) : null
     const nb = b ? (idMap.get(b) ?? null) : null
     c.bind = na || nb ? [na, nb] : undefined
+    c.anchors = anchorPair(na ? anchors[0] : null, nb ? anchors[1] : null)
   }
 }
 
 // -- aiming at a box --------------------------------------------------------
 
+/** Screen-space reach beyond an object's outline for connector detection. */
+export const ANCHOR_CAPTURE_PX = 18
+
+const ANCHOR_CHOICES = ["top", "right", "bottom", "left", "center"] as const
+const SIDE_ANCHORS = ["top", "right", "bottom", "left"] as const
+
+/** Whether a point is close enough for this object to offer its anchor zones. */
+function nearNode(n: SquigNode, x: number, y: number, zoom: number): boolean {
+  if (hitsPoint(n, x, y, zoom) || hitsInterior(n, x, y)) return true
+  const pad = ANCHOR_CAPTURE_PX / Math.max(zoom, EPS)
+  if (n.type === "shape" && n.shape === "ellipse") {
+    // The corners of an ellipse's bounding box are empty air. Outside the
+    // actual fill/stroke, only the four visible side dots extend detection.
+    return SIDE_ANCHORS.some((anchor) => {
+      const [ax, ay] = anchorPoint(n, anchor)
+      return Math.hypot(x - ax, y - ay) <= pad
+    })
+  }
+  return x >= n.x - pad && x <= n.x + n.w + pad && y >= n.y - pad && y <= n.y + n.h + pad
+}
+
+/** The closest of the four side midpoints and center. */
+export function closestAnchor(n: SquigNode, x: number, y: number): ArrowAnchor {
+  let best: ArrowAnchor = "center"
+  let distance = Infinity
+  for (const anchor of ANCHOR_CHOICES) {
+    const [ax, ay] = anchorPoint(n, anchor)
+    const d = (x - ax) ** 2 + (y - ay) ** 2
+    if (d < distance) {
+      distance = d
+      best = anchor
+    }
+  }
+  return best
+}
+
 /**
- * The node an endpoint dropped here would grab, or null.
+ * The node and stable anchor an endpoint dropped here would grab, or null.
  *
- * The whole box counts, hollow middle included — "point at the box" has to
- * mean the box, or binding to an empty rectangle would mean hitting its 1px
- * outline. That's a deliberate divergence from `pickAt`, which keeps hollow
- * shapes see-through so a marquee can start inside one; there's no marquee to
- * protect in the middle of an endpoint drag.
+ * The whole interior counts, plus a forgiving screen-sized reach around the
+ * boundary. Once a node is found, its five anchors divide that space by which
+ * dot is closest. The topmost eligible object wins, just like a normal pick.
  */
+export function anchorTargetAt(
+  nodes: Record<string, SquigNode>,
+  order: readonly string[],
+  x: number,
+  y: number,
+  zoom: number,
+  skip: readonly (string | null | undefined)[] = []
+): ArrowTarget | null {
+  for (let i = order.length - 1; i >= 0; i--) {
+    const id = order[i]
+    if (skip.includes(id)) continue
+    const n = nodes[id]
+    if (!bindable(n)) continue
+    if (nearNode(n, x, y, zoom)) return { id, anchor: closestAnchor(n, x, y) }
+  }
+  return null
+}
+
+/** The pre-anchor API retained for callers that only need the target id. */
 export function bindTargetAt(
   nodes: Record<string, SquigNode>,
   order: readonly string[],
@@ -291,12 +450,5 @@ export function bindTargetAt(
   zoom: number,
   skip: readonly (string | null | undefined)[] = []
 ): string | null {
-  for (let i = order.length - 1; i >= 0; i--) {
-    const id = order[i]
-    if (skip.includes(id)) continue
-    const n = nodes[id]
-    if (!bindable(n)) continue
-    if (hitsPoint(n, x, y, zoom) || hitsInterior(n, x, y)) return id
-  }
-  return null
+  return anchorTargetAt(nodes, order, x, y, zoom, skip)?.id ?? null
 }

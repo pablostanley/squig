@@ -138,16 +138,13 @@ export interface TextNode extends BaseNode {
   link?: string
 }
 
-/**
- * What an arrow's two ends are stuck to — [start, end], null for a free end.
- *
- * A binding is a node id and nothing else: no anchor, no side, no offset. The
- * end is routed to whichever part of the box faces the other end, worked out
- * fresh every time either box moves. That's the whole reason to prefer it over
- * a pinned anchor point — an anchor is a promise about a layout, and the one
- * thing a wireframe does all day is stop being that layout.
- */
+/** What an arrow's two ends are stuck to — [start, end], null for a free end. */
 export type ArrowBind = [string | null, string | null]
+
+/** The five stable places an attached end can occupy on a node. */
+export const ARROW_ANCHORS = ["top", "right", "bottom", "left", "center"] as const
+export type ArrowAnchor = (typeof ARROW_ANCHORS)[number]
+export type ArrowAnchors = [ArrowAnchor | null, ArrowAnchor | null]
 
 export interface ArrowNode extends BaseNode, Outlined {
   type: "arrow"
@@ -160,6 +157,10 @@ export interface ArrowNode extends BaseNode, Outlined {
    * and the box are a *consequence* of it — see lib/canvas/arrow-binding.
    */
   bind?: ArrowBind
+  /** The fixed anchor on each bound node. Old bindings acquire these on load. */
+  anchors?: ArrowAnchors
+  /** False makes this a free line. Absent is the default, auto-snapping state. */
+  snap?: false
 }
 
 /**
@@ -175,6 +176,18 @@ export function normalizeBind(v: unknown): ArrowBind | undefined {
   const end = (e: unknown) => (typeof e === "string" && e ? e : null)
   const a = end(v[0])
   const b = end(v[1])
+  return a || b ? [a, b] : undefined
+}
+
+/** Anchors from an imported document, with anchors on free ends discarded. */
+export function normalizeArrowAnchors(v: unknown, bind?: ArrowBind): ArrowAnchors | undefined {
+  if (!bind || !Array.isArray(v) || v.length !== 2) return undefined
+  const anchor = (value: unknown) =>
+    typeof value === "string" && (ARROW_ANCHORS as readonly string[]).includes(value)
+      ? (value as ArrowAnchor)
+      : null
+  const a = bind[0] ? anchor(v[0]) : null
+  const b = bind[1] ? anchor(v[1]) : null
   return a || b ? [a, b] : undefined
 }
 

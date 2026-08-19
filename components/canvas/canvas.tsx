@@ -18,9 +18,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import { useSquig } from "@/lib/store"
-import type { ArrowNode, ImageNode, SquigNode, TextNode } from "@/lib/types"
-import { screenToWorld } from "@/lib/types"
-import { arrowEnds, bindOf, bindPair, bindTargetAt, endsPatch, withBind } from "@/lib/canvas/arrow-binding"
+import type { ArrowAnchor, ArrowNode, ImageNode, SquigNode, TextNode } from "@/lib/types"
+import { ARROW_ANCHORS, screenToWorld } from "@/lib/types"
+import {
+  anchorPair,
+  anchorPoint,
+  anchorTargetAt,
+  arrowEnds,
+  bindOf,
+  bindPair,
+  endsPatch,
+  snapsToObjects,
+  withTarget,
+  type ArrowTarget,
+} from "@/lib/canvas/arrow-binding"
 import { clampWindow, cropAnchor, cropPatch, cropTarget, imageSheet, panSheet } from "@/lib/canvas/crop"
 import { autoSizeTextBox, setTextWidth } from "@/lib/canvas/text-reflow"
 import { computeSnap, computeResizeSnap, makeSnapRect, type GuideLine, type SnapRect } from "@/lib/canvas/snap-engine"
@@ -163,9 +174,9 @@ type Gesture =
       what: "shape" | "arrow"
       /** the node the press landed on, if any — an arrow started on a box is
        *  attached to it from its very first frame */
-      tailBind: string | null
+      tailTarget: ArrowTarget | null
       /** and the one under the pointer right now, which the head takes on release */
-      headBind: string | null
+      headTarget: ArrowTarget | null
     }
   | {
       /**
@@ -311,7 +322,7 @@ export function Canvas() {
    *  it but a drag would marquee, so the outline shows without a move cursor */
   const [hover, setHover] = useState<{ id: string; soft: boolean; locked: boolean } | null>(null)
   /** the node an arrow end would attach to if it were let go right now */
-  const [bindHint, setBindHint] = useState<string | null>(null)
+  const [bindHint, setBindHint] = useState<ArrowTarget | null>(null)
   const [altHeld, setAltHeld] = useState(false)
   const [gestureKind, setGestureKind] = useState<Gesture["kind"] | null>(null)
   /**
@@ -637,7 +648,9 @@ export function Canvas() {
         // whatever the far end is already holding is off the table: a straight
         // line from a box back to itself has nowhere to go, and squig has no
         // curve to draw instead
-        const target = bindTargetAt(s.nodes, s.order, wx, wy, v.zoom, [g.id, other])
+        const target = snapsToObjects(g.orig)
+          ? anchorTargetAt(s.nodes, s.order, wx, wy, v.zoom, [g.id, other])
+          : null
         setBindHint(target)
 
         // The end in hand goes exactly where the pointer is. If that's over a
@@ -647,7 +660,7 @@ export function Canvas() {
         const ends = arrowEnds(g.orig)
         ends[g.end] = [wx, wy]
         s.updateNodes({
-          [g.id]: { ...endsPatch(ends[0], ends[1]), bind: withBind(bind, g.end, target) } as Partial<SquigNode>,
+          [g.id]: { ...endsPatch(ends[0], ends[1]), ...withTarget(g.orig, g.end, target) } as Partial<SquigNode>,
         })
         return
       }
@@ -756,8 +769,8 @@ export function Canvas() {
         // aim as you draw: the box under the pointer lights up and takes the
         // head the moment you let go. The tail was decided on pointer down.
         if (g.what === "arrow" && g.exceeded) {
-          g.headBind = bindTargetAt(s.nodes, s.order, wx, wy, v.zoom, [g.id, g.tailBind])
-          setBindHint(g.headBind)
+          g.headTarget = anchorTargetAt(s.nodes, s.order, wx, wy, v.zoom, [g.id, g.tailTarget?.id])
+          setBindHint(g.headTarget)
         }
         if (!g.id) {
           if (!g.exceeded) return
@@ -782,7 +795,8 @@ export function Canvas() {
                   [0, 0],
                   [Math.max(w, 8), Math.max(h, 8)],
                 ],
-                bind: bindPair(g.tailBind, g.headBind),
+                bind: bindPair(g.tailTarget?.id ?? null, g.headTarget?.id ?? null),
+                anchors: anchorPair(g.tailTarget?.anchor ?? null, g.headTarget?.anchor ?? null),
               } as Omit<SquigNode, "id" | "seed">,
               { select: false }
             )
@@ -801,7 +815,8 @@ export function Canvas() {
             w: Math.max(w, 2),
             h: Math.max(h, 2),
             points: pts,
-            bind: bindPair(g.tailBind, g.headBind),
+            bind: bindPair(g.tailTarget?.id ?? null, g.headTarget?.id ?? null),
+            anchors: anchorPair(g.tailTarget?.anchor ?? null, g.headTarget?.anchor ?? null),
           } as Partial<SquigNode>)
         } else {
           s.updateNode(g.id, { x, y, w: Math.max(w, 2), h: Math.max(h, 2) })
@@ -949,7 +964,8 @@ export function Canvas() {
                     [0, 0],
                     [w, h],
                   ],
-                  bind: bindPair(g.tailBind, g.headBind),
+                  bind: bindPair(g.tailTarget?.id ?? null, g.headTarget?.id ?? null),
+                  anchors: anchorPair(g.tailTarget?.anchor ?? null, g.headTarget?.anchor ?? null),
                 } as Omit<SquigNode, "id" | "seed">,
                 { select: false }
               )
@@ -1419,7 +1435,7 @@ export function Canvas() {
         // an arrow that starts on top of a box starts attached to it, so the
         // common case — draw from this thing to that thing — needs no second
         // step at all
-        const tailBind = tool === "arrow" ? bindTargetAt(s.nodes, s.order, wx, wy, s.viewport.zoom) : null
+        const tailTarget = tool === "arrow" ? anchorTargetAt(s.nodes, s.order, wx, wy, s.viewport.zoom) : null
         beginGesture(
           {
             kind: "create",
@@ -1428,8 +1444,8 @@ export function Canvas() {
             wy,
             id: null,
             what: tool === "shape" ? "shape" : "arrow",
-            tailBind,
-            headBind: null,
+            tailTarget,
+            headTarget: null,
           },
           e
         )
@@ -1603,8 +1619,9 @@ export function Canvas() {
       pointerWorld.current = toWorld(e)
       // the ghost is driven at the window level instead — see below
       if (s.placing) return
-      if (gestureRef.current || s.tool !== "select" || isSpacebarHeld || s.editingId) {
+      if (gestureRef.current || isSpacebarHeld || s.editingId || (s.tool !== "select" && s.tool !== "arrow")) {
         if (hover) setHover(null)
+        if (!gestureRef.current) setBindHint(null)
         return
       }
       if (hoverRafRef.current !== null) return
@@ -1615,6 +1632,12 @@ export function Canvas() {
         // different geometry than the hit test is just a lie
         const cur = st()
         const [wx, wy] = toWorld({ clientX, clientY })
+        if (cur.tool === "arrow") {
+          setHover(null)
+          setBindHint(anchorTargetAt(cur.nodes, cur.order, wx, wy, cur.viewport.zoom))
+          return
+        }
+        setBindHint(null)
         // locked layers are in this pick and in no other: a click won't take
         // one, but the hover has to say so, or a held-down rectangle is
         // indistinguishable from a wedged app. What it draws is different too
@@ -1627,7 +1650,10 @@ export function Canvas() {
     [st, toWorld, hover, isSpacebarHeld]
   )
 
-  const onPointerLeave = useCallback(() => setHover(null), [])
+  const onPointerLeave = useCallback(() => {
+    setHover(null)
+    if (!gestureRef.current) setBindHint(null)
+  }, [])
 
   /**
    * The placement ghost tracks the pointer on `window`, not on the canvas, so a
@@ -2063,7 +2089,7 @@ export function Canvas() {
   // that happened to be stacked above it shouldn't sit in the middle of it
   const cropNode = cropTarget(nodes, selection, croppingId)
   const hoverNode = hover && !selection.includes(hover.id) && !cropNode ? nodes[hover.id] : null
-  const bindNode = bindHint ? nodes[bindHint] : null
+  const bindNode = bindHint ? nodes[bindHint.id] : null
   /**
    * The world worth drawing. Recomputed on every pan and zoom, which is
    * cheap — four divisions — and has to be, since it is what decides which
@@ -2202,18 +2228,7 @@ export function Canvas() {
       {/* what the arrow end in hand would attach to — the same hint the hover
           draws, turned up, because this one is a promise about what happens
           when you let go rather than a note about what's under the cursor */}
-      {bindNode && (
-        <div
-          className="pointer-events-none absolute rounded-sm"
-          style={{
-            left: bindNode.x * v.zoom + v.x,
-            top: bindNode.y * v.zoom + v.y,
-            width: bindNode.w * v.zoom,
-            height: bindNode.h * v.zoom,
-            border: "2px solid color-mix(in srgb, var(--sq-select) 75%, transparent)",
-          }}
-        />
-      )}
+      {bindNode && bindHint && <AnchorZones node={bindNode} active={bindHint.anchor} viewport={v} />}
 
       {/* selection rings + handles (screen space) — the crop window replaces
           them outright while it's up: two boxes with two meanings, one of them
@@ -2470,6 +2485,54 @@ function handleHitBox(hd: Handle, w: number, h: number, padX: number, padY: numb
   const [dx, width] = span(hd.includes("w"), hd.includes("e"), padX)
   const [dy, height] = span(hd.includes("n"), hd.includes("s"), padY)
   return { left: hx + dx, top: hy + dy, width, height, dotLeft: -dx - r, dotTop: -dy - r }
+}
+
+/** The target's complete connection vocabulary, with the nearest zone active. */
+function AnchorZones({
+  node,
+  active,
+  viewport,
+}: {
+  node: SquigNode
+  active: ArrowAnchor
+  viewport: { x: number; y: number; zoom: number }
+}) {
+  const v = viewport
+  return (
+    <>
+      <div
+        className="pointer-events-none absolute"
+        style={{
+          left: node.x * v.zoom + v.x,
+          top: node.y * v.zoom + v.y,
+          width: node.w * v.zoom,
+          height: node.h * v.zoom,
+          borderRadius: node.type === "shape" && node.shape === "ellipse" ? "9999px" : "4px",
+          border: "1px solid color-mix(in srgb, var(--sq-select) 58%, transparent)",
+        }}
+      />
+      {ARROW_ANCHORS.map((anchor) => {
+        const [wx, wy] = anchorPoint(node, anchor)
+        const selected = anchor === active
+        const size = selected ? 12 : 9
+        return (
+          <div
+            key={anchor}
+            className="pointer-events-none absolute rounded-full"
+            style={{
+              left: wx * v.zoom + v.x - size / 2,
+              top: wy * v.zoom + v.y - size / 2,
+              width: size,
+              height: size,
+              background: selected ? "var(--sq-select)" : "var(--sq-bg)",
+              border: "2px solid var(--sq-select)",
+              boxShadow: selected ? "0 0 0 3px color-mix(in srgb, var(--sq-select) 18%, transparent)" : undefined,
+            }}
+          />
+        )
+      })}
+    </>
+  )
 }
 
 /**

@@ -16,7 +16,7 @@
 // ---------------------------------------------------------------------------
 
 import type { SquigNode, TextNode } from "./types"
-import { normalizeBind, normalizeCrop } from "./types"
+import { normalizeArrowAnchors, normalizeBind, normalizeCrop } from "./types"
 
 const PAYLOAD_VERSION = 1
 /** the attribute the HTML carrier hides the payload in */
@@ -128,6 +128,14 @@ export function validNode(v: unknown): SquigNode | null {
       // the whole paste rather than this node, and gets answered where the
       // ids are remapped onto the copies — see cloneNodes in lib/store
       n.bind = normalizeBind(n.bind)
+      n.anchors = normalizeArrowAnchors(n.anchors, n.bind)
+      n.snap = n.snap === false ? false : undefined
+      // A free line cannot carry a live relationship in through a file or the
+      // clipboard. Keeping both spellings would make the inspector lie.
+      if (n.snap === false) {
+        n.bind = undefined
+        n.anchors = undefined
+      }
       break
     case "text":
       if (!str(n.text) || !num(n.fontSize)) return null

@@ -590,6 +590,27 @@ function SelectionEditor({ selected }: { selected: SquigNode[] }) {
               onChange={(on) => patch((n) => (n.type === "arrow" ? ({ head: on } as Partial<SquigNode>) : null))}
             />
           </Row>
+          <Row spread label="Snap">
+            <MixedSwitch
+              ariaLabel="Snap to objects"
+              shared={shared(arrows.map((n) => n.snap !== false))}
+              onChange={(on) =>
+                patch((n) =>
+                  n.type === "arrow"
+                    ? ({
+                        snap: on ? undefined : false,
+                        // Turning snapping off means free, not merely "do not
+                        // make another connection". The endpoints stay where
+                        // they are because their current points already hold
+                        // the last settled route.
+                        bind: on ? n.bind : undefined,
+                        anchors: on ? n.anchors : undefined,
+                      } as Partial<SquigNode>)
+                    : null
+                )
+              }
+            />
+          </Row>
         </PanelSection>
       )}
 
