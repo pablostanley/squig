@@ -151,6 +151,9 @@ interface SquigState {
 
   /** snapshot current doc onto the undo stack (call once at gesture start) */
   checkpoint: () => void
+  /** run one discrete command as exactly one undo step — or none, when it
+   *  turned out to change nothing. Returns whether it landed. */
+  edit: (fn: () => void) => boolean
   addNode: (node: Omit<SquigNode, "id" | "seed"> & Partial<Pick<SquigNode, "id" | "seed">>, opts?: { select?: boolean; checkpoint?: boolean }) => string
   addNodes: (nodes: SquigNode[], opts?: { select?: boolean; checkpoint?: boolean }) => void
   updateNode: (id: string, patch: Partial<SquigNode>, opts?: { checkpoint?: boolean }) => void
@@ -158,6 +161,11 @@ interface SquigState {
   removeNodes: (ids: string[], opts?: { checkpoint?: boolean }) => void
   /** discard the last checkpoint and restore it — cancels an in-flight gesture */
   revertToCheckpoint: () => void
+  /** an empty text editor closing: undo the click that placed the draft, or
+   *  delete the layer whose words were emptied */
+  dismissDraft: (id: string) => void
+  /** the text editor closing with words in it */
+  commitText: (id: string, patch: Partial<SquigNode>) => void
   /** clone the selection in place and select the clones — the alt-drag primitive */
   cloneSelectionInPlace: () => string[]
   /** remember copies and their origins, so ⌘D can repeat the move that followed */
@@ -247,6 +255,68 @@ function stampSelAfter(past: DocSnapshot[], selection: string[]): void {
   if (top) top.selAfter = [...selection]
 }
 
+/** Just the two fields an undo step is really about. */
+type Doc = Pick<SquigState, "nodes" | "order">
+
+/**
+ * Two values that say the same thing about the drawing.
+ *
+ * Only ever reached for the handful of nodes an edit rewrote, so the walk is
+ * small; `points` and `props` are the deepest anything here goes.
+ *
+ * A key holding `undefined` counts as a key that isn't there, because that is
+ * how this store spells taking something away — `{ locked: undefined }`,
+ * `{ link: undefined }` — and clearing a link off a layer that never had one
+ * draws exactly the same picture it did a moment ago.
+ */
+function sameValue(a: unknown, b: unknown): boolean {
+  if (a === b) return true
+  if (Array.isArray(a) || Array.isArray(b)) {
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false
+    return a.every((v, i) => sameValue(v, b[i]))
+  }
+  if (!a || !b || typeof a !== "object" || typeof b !== "object") return false
+  const ra = a as Record<string, unknown>
+  const rb = b as Record<string, unknown>
+  const ka = Object.keys(ra).filter((k) => ra[k] !== undefined)
+  const kb = Object.keys(rb).filter((k) => rb[k] !== undefined)
+  if (ka.length !== kb.length) return false
+  return ka.every((k) => sameValue(ra[k], rb[k]))
+}
+
+/**
+ * Did anything actually change?
+ *
+ * Cheap because it barely ever deep-compares: every write in this store
+ * rebuilds only the nodes it touched — `{ ...cur, ...patch }` — and settleBinds
+ * hands the untouched ones straight back, so one identity check clears the
+ * whole document bar the few an edit rewrote. Those few are compared by value,
+ * because "changed" has to mean the drawing came out different, not that a new
+ * object was allocated: align writes `x: minX` onto a node already sitting at
+ * minX, and bringToFront rebuilds `order` out of the same ids in the same
+ * places. Both hand back new objects holding old news, and an identity test
+ * would call each of them an edit.
+ *
+ * The other half of "cheap" is where this gets called from — once per discrete
+ * command, never inside a drag. See `edit` below.
+ */
+function sameDoc(a: Doc, b: Doc): boolean {
+  if (a.order !== b.order) {
+    if (a.order.length !== b.order.length) return false
+    for (let i = 0; i < a.order.length; i++) if (a.order[i] !== b.order[i]) return false
+  }
+  if (a.nodes === b.nodes) return true
+  const ids = Object.keys(a.nodes)
+  if (ids.length !== Object.keys(b.nodes).length) return false
+  for (const id of ids) {
+    const x = a.nodes[id]
+    const y = b.nodes[id]
+    if (x === y) continue
+    if (!y || !sameValue(x, y)) return false
+  }
+  return true
+}
+
 /**
  * Everything a document has to survive before the canvas will draw it.
  *
@@ -293,6 +363,20 @@ function sanitize(
   // to one the loop above just threw out. Those ends let go here, and the ones
   // that survive get routed to wherever their boxes actually are.
   return { nodes: settleBinds(clean), order: ord }
+}
+
+/**
+ * Was this node put on the canvas by the checkpoint currently on top?
+ *
+ * The text editor opens on two nodes wearing identical clothes: a draft the
+ * click before last just placed, and a layer that has been sitting there since
+ * before lunch. The undo stack can tell them apart on its own — a checkpoint
+ * that predates the node *is* the click that placed it — which saves passing a
+ * flag down through the view and back, and saves it being wrong.
+ */
+function placedByTop(past: DocSnapshot[], id: string): boolean {
+  const top = past[past.length - 1]
+  return !!top && !top.nodes[id]
 }
 
 const freshSeed = () => Math.floor(Math.random() * 2 ** 31)
@@ -374,6 +458,8 @@ function stepOrder(order: string[], ids: string[], dir: 1 | -1): string[] {
 let saveTimer: ReturnType<typeof setTimeout> | null = null
 /** true between an edit and the write that records it */
 let dirty = false
+/** an `edit` is running, so a nested one joins it instead of opening a step */
+let editing = false
 
 /** The four knobs that make up a look, gathered out of the flat state. */
 function lookOf(s: Pick<SquigState, "theme" | "paper" | "font" | "grid">): Look {
@@ -628,6 +714,58 @@ export const useSquig = create<SquigState>((set, get) => ({
     scheduleSave(get)
   },
 
+  /**
+   * One discrete command, one undo step — or none at all, when nothing moved.
+   *
+   * That arithmetic used to be left to each call site, and so it drifted:
+   * addNode and removeNodes take a checkpoint by default, updateNodes doesn't,
+   * and selAfter is a third thing you have to remember on top. Whether an
+   * action cost zero, one or two undo steps came down to which pair of
+   * primitives it happened to compose. Dismissing a text draft you never typed
+   * into cost two, with an invisible click-blocker parked between them; ] on
+   * the frontmost layer cost one and moved nothing.
+   *
+   * So the deal is a property of the store instead. edit() takes the
+   * checkpoint, runs the change, stamps the selection it ended on — that's
+   * what redo puts back — and, if the document came out the same, puts history
+   * back exactly as it found it. Call the primitives inside the cheap way,
+   * without a checkpoint of their own; nesting is safe regardless, since an
+   * edit that starts inside another one joins the one already running rather
+   * than opening a second step.
+   *
+   * This is for discrete commands, not for the inside of a drag. A gesture
+   * still takes its own checkpoint on the first move that counts and then
+   * writes freely: it already knows exactly when it began, and a pointer move
+   * arriving every few milliseconds is no place to be comparing documents.
+   */
+  edit: (fn) => {
+    const before = get()
+    if (editing) {
+      // already inside one — no second checkpoint, just say what this part did
+      fn()
+      return !sameDoc(before, get())
+    }
+    const { past, future } = before
+    before.checkpoint()
+    editing = true
+    try {
+      fn()
+    } finally {
+      editing = false
+    }
+    const after = get()
+    if (sameDoc(before, after)) {
+      // hand history back whole, rather than popping: `checkpoint` may have
+      // trimmed the far end of `past` to stay under MAX_HISTORY, and an edit
+      // that did nothing has no business costing anyone their oldest step
+      set({ past, future })
+      return false
+    }
+    stampSelAfter(after.past, after.selection)
+    scheduleSave(get)
+    return true
+  },
+
   addNode: (node, opts = {}) => {
     const id = node.id ?? nanoid(8)
     const seed = node.seed ?? Math.floor(Math.random() * 2 ** 31)
@@ -712,6 +850,39 @@ export const useSquig = create<SquigState>((set, get) => ({
 
   deleteSelected: () => get().removeNodes(get().selection),
 
+  /**
+   * The text editor closing on an empty run.
+   *
+   * An empty text node draws nothing and can never be clicked again, so it
+   * goes either way — but *how* it goes depends on where it came from. A draft
+   * you placed and then dismissed without typing gets the same deal a pen tap
+   * gets from finishGesture: the click that made it already took a checkpoint,
+   * so rolling back to that one takes the node and the step together. Removing
+   * it instead would spend a second undo step, and the ⌘Z in between would
+   * hand back a blank 120×23 rectangle you can't see but can still click.
+   *
+   * Emptying words that were already there is a real edit, and keeps its step.
+   */
+  dismissDraft: (id) => {
+    if (placedByTop(get().past, id)) get().revertToCheckpoint()
+    else get().removeNodes([id])
+  },
+
+  /**
+   * The text editor closing with words in it.
+   *
+   * Placing a draft and typing into it is one act, so the words land on the
+   * checkpoint the click already took — ⌘Z then lifts the whole text layer off
+   * the canvas instead of stopping halfway, on the same empty run dismissDraft
+   * exists to keep out of the history. Editing a layer that was already there
+   * is a step of its own and goes through edit(), which is also what makes
+   * closing the editor on words you didn't really change cost nothing.
+   */
+  commitText: (id, patch) => {
+    if (placedByTop(get().past, id)) get().updateNode(id, patch)
+    else get().edit(() => get().updateNode(id, patch))
+  },
+
   // -- locking ---------------------------------------------------------------
 
   /**
@@ -727,13 +898,11 @@ export const useSquig = create<SquigState>((set, get) => ({
     const { selection, nodes } = get()
     const ids = selection.filter((id) => nodes[id])
     if (!ids.length) return
-    get().checkpoint()
-    get().updateNodes(Object.fromEntries(ids.map((id) => [id, { locked: true } as Partial<SquigNode>])))
-    // updateNodes stamped the checkpoint with the selection as it was a
-    // moment ago; letting go is part of the edit, so redo has to land here too
-    set((s) => {
-      stampSelAfter(s.past, [])
-      return { selection: [], croppingId: null }
+    get().edit(() => {
+      get().updateNodes(Object.fromEntries(ids.map((id) => [id, { locked: true } as Partial<SquigNode>])))
+      // letting go is part of the edit, and edit() stamps the checkpoint with
+      // the selection the whole thing ended on — so redo lands here too
+      set({ selection: [], croppingId: null })
     })
     get().setNotice(
       ids.length > 1 ? "locked — right-click one to let that one go" : "locked — right-click it to let it go"
@@ -760,47 +929,50 @@ export const useSquig = create<SquigState>((set, get) => ({
     // ⌘D on the copies you just made repeats the gap you put between them and
     // their originals; anything else gets the polite diagonal nudge
     const step = repeatStep(dupTrail, selection, nodes) ?? { dx: offset, dy: offset }
-    get().checkpoint()
     const clones = cloneNodes(src, step.dx, step.dy)
-    set((s) => ({
-      nodes: settleBinds({ ...s.nodes, ...Object.fromEntries(clones.map((c) => [c.id, c])) }),
-      order: [...s.order, ...clones.map((c) => c.id)],
-      selection: clones.map((c) => c.id),
-      // where these copies came from, so the next ⌘D can measure the same way
-      dupTrail: {
-        ids: clones.map((c) => c.id),
-        from: Object.fromEntries(clones.map((c, i) => [c.id, { x: src[i].x, y: src[i].y }])),
-      },
-    }))
-    scheduleSave(get)
+    // through edit(), so the checkpoint remembers that the copies are what this
+    // ended selected — a redo that handed them back unselected would leave the
+    // next ⌘D measuring nothing, and stepping 16px diagonally instead of
+    // repeating the stride you were walking
+    get().edit(() =>
+      set((s) => ({
+        nodes: settleBinds({ ...s.nodes, ...Object.fromEntries(clones.map((c) => [c.id, c])) }),
+        order: [...s.order, ...clones.map((c) => c.id)],
+        selection: clones.map((c) => c.id),
+        // where these copies came from, so the next ⌘D can measure the same way
+        dupTrail: {
+          ids: clones.map((c) => c.id),
+          from: Object.fromEntries(clones.map((c, i) => [c.id, { x: src[i].x, y: src[i].y }])),
+        },
+      }))
+    )
     return clones.map((c) => c.id)
   },
 
   rememberDuplicate: (ids, from) => set({ dupTrail: ids.length ? { ids, from } : null }),
 
+  // all four go through edit(), which is what makes ] on the frontmost layer
+  // cost nothing: they reorder first and let the comparison notice that the
+  // ids came out in the places they were already in
   bringToFront: (ids) => {
     if (!ids.length) return
-    get().checkpoint()
-    set((s) => ({ order: [...s.order.filter((i) => !ids.includes(i)), ...s.order.filter((i) => ids.includes(i))] }))
-    scheduleSave(get)
+    get().edit(() =>
+      set((s) => ({ order: [...s.order.filter((i) => !ids.includes(i)), ...s.order.filter((i) => ids.includes(i))] }))
+    )
   },
   sendToBack: (ids) => {
     if (!ids.length) return
-    get().checkpoint()
-    set((s) => ({ order: [...s.order.filter((i) => ids.includes(i)), ...s.order.filter((i) => !ids.includes(i))] }))
-    scheduleSave(get)
+    get().edit(() =>
+      set((s) => ({ order: [...s.order.filter((i) => ids.includes(i)), ...s.order.filter((i) => !ids.includes(i))] }))
+    )
   },
   bringForward: (ids) => {
     if (!ids.length) return
-    get().checkpoint()
-    set((s) => ({ order: stepOrder(s.order, ids, 1) }))
-    scheduleSave(get)
+    get().edit(() => set((s) => ({ order: stepOrder(s.order, ids, 1) })))
   },
   sendBackward: (ids) => {
     if (!ids.length) return
-    get().checkpoint()
-    set((s) => ({ order: stepOrder(s.order, ids, -1) }))
-    scheduleSave(get)
+    get().edit(() => set((s) => ({ order: stepOrder(s.order, ids, -1) })))
   },
 
   undo: () => {
@@ -873,10 +1045,9 @@ export const useSquig = create<SquigState>((set, get) => ({
     watchWindow(get)
   },
 
+  // clearing a canvas that is already clear is the emptiest edit there is
   clearCanvas: () => {
-    get().checkpoint()
-    set({ nodes: {}, order: [], selection: [], editingId: null, croppingId: null })
-    scheduleSave(get)
+    get().edit(() => set({ nodes: {}, order: [], selection: [], editingId: null, croppingId: null }))
   },
 
   // -- groups ---------------------------------------------------------------
@@ -911,9 +1082,8 @@ export const useSquig = create<SquigState>((set, get) => ({
     const { selection, nodes, order } = get()
     const ids = order.filter((id) => selection.includes(id) && nodes[id])
     if (ids.length < 2) return
-    get().checkpoint()
     const gid = nanoid(8)
-    set((s) => {
+    get().edit(() => set((s) => {
       const map = { ...s.nodes }
       for (const id of ids) {
         const n = map[id]
@@ -925,8 +1095,7 @@ export const useSquig = create<SquigState>((set, get) => ({
       const before = s.order.slice(0, top + 1).filter((id) => !ids.includes(id))
       const after = s.order.slice(top + 1).filter((id) => !ids.includes(id))
       return { nodes: map, order: [...before, ...ids, ...after], selection: ids }
-    })
-    scheduleSave(get)
+    }))
   },
 
   ungroupSelected: () => {
@@ -935,14 +1104,14 @@ export const useSquig = create<SquigState>((set, get) => ({
     if (!sel.length) return
     const gids = new Set(sel.map((n) => n.groupIds?.[0]).filter(Boolean) as string[])
 
-    // nothing grouped? then ⇧⌘G means the other kind of coming apart
+    // nothing grouped? then ⇧⌘G means the other kind of coming apart. Handed
+    // over before any checkpoint is taken, so detach owns the whole step
     if (!gids.size) {
       get().detachSelected()
       return
     }
 
-    get().checkpoint()
-    set((s) => {
+    get().edit(() => set((s) => {
       const map = { ...s.nodes }
       const freed: string[] = []
       for (const id of s.order) {
@@ -957,16 +1126,16 @@ export const useSquig = create<SquigState>((set, get) => ({
       // what's being dissolved, and leaving one node stamped with a group that
       // no longer exists would be worse — but it doesn't come out selected
       return { nodes: map, selection: selectable(freed, map) }
-    })
-    scheduleSave(get)
+    }))
   },
 
   detachSelected: () => {
     const { selection, nodes } = get()
     const comps = selection.map((id) => nodes[id]).filter((n) => n?.type === "component") as ComponentNode[]
     if (!comps.length) return
-    get().checkpoint()
-    set((s) => {
+    // an icon-only selection walks the loop below and comes out the other side
+    // having done nothing at all; edit() is what stops that being an undo step
+    get().edit(() => set((s) => {
       const map = { ...s.nodes }
       let ord = [...s.order]
       const picked: string[] = []
@@ -986,10 +1155,11 @@ export const useSquig = create<SquigState>((set, get) => ({
         ord = [...ord.slice(0, at), ...pieces.map((p) => p.id), ...ord.slice(at + 1)]
         delete map[c.id]
       }
-      // a detached instance is gone as a node, so anything aimed at it lets go
-      return { nodes: settleBinds(map), order: ord, selection: picked }
-    })
-    scheduleSave(get)
+      // a detached instance is gone as a node, so anything aimed at it lets go.
+      // Nothing came apart? then keep the selection — deselecting the icon you
+      // asked about would be the only thing that happened
+      return { nodes: settleBinds(map), order: ord, selection: picked.length ? picked : s.selection }
+    }))
   },
 
   flipSelected: (axis) => {
@@ -998,7 +1168,6 @@ export const useSquig = create<SquigState>((set, get) => ({
     if (!sel.length) return
     const box = unionBox(sel)
     if (!box) return
-    get().checkpoint()
     const patches: Record<string, Partial<SquigNode>> = {}
     for (const n of sel) {
       patches[n.id] =
@@ -1006,17 +1175,18 @@ export const useSquig = create<SquigState>((set, get) => ({
           ? { x: box.minX + box.maxX - (n.x + n.w), flipX: !n.flipX }
           : { y: box.minY + box.maxY - (n.y + n.h), flipY: !n.flipY }
     }
-    get().updateNodes(patches)
+    get().edit(() => get().updateNodes(patches))
   },
 
   toggleTextStyle: (style) => {
     const { selection, nodes } = get()
     const texts = selection.map((id) => nodes[id]).filter((n) => n?.type === "text") as TextNode[]
     if (!texts.length) return
-    get().checkpoint()
     // mixed selection turns everything on first, like every text editor ever
     const on = texts.some((n) => !n[style])
-    get().updateNodes(Object.fromEntries(texts.map((n) => [n.id, { [style]: on } as Partial<SquigNode>])))
+    get().edit(() =>
+      get().updateNodes(Object.fromEntries(texts.map((n) => [n.id, { [style]: on } as Partial<SquigNode>])))
+    )
   },
 
   setTextAlign: (align) => {
@@ -1033,10 +1203,12 @@ export const useSquig = create<SquigState>((set, get) => ({
     const { selection, nodes } = get()
     const texts = selection.map((id) => nodes[id]).filter((n) => n?.type === "text") as TextNode[]
     if (!texts.length) return
-    get().checkpoint()
     const trimmed = url.trim()
-    get().updateNodes(
-      Object.fromEntries(texts.map((n) => [n.id, { link: trimmed || undefined } as Partial<SquigNode>]))
+    // ⌘K, look at the address that's already there, press Return: no edit
+    get().edit(() =>
+      get().updateNodes(
+        Object.fromEntries(texts.map((n) => [n.id, { link: trimmed || undefined } as Partial<SquigNode>]))
+      )
     )
   },
 
@@ -1060,14 +1232,16 @@ export const useSquig = create<SquigState>((set, get) => ({
     if (!list.length) return
     const box = unionBox([...list])!
     const [dx, dy] = at ? [at[0] - box.minX, at[1] - box.minY] : [16, 16]
-    get().checkpoint()
     const clones = cloneNodes([...list], dx, dy)
-    set((s) => ({
-      nodes: settleBinds({ ...s.nodes, ...Object.fromEntries(clones.map((c) => [c.id, c])) }),
-      order: [...s.order, ...clones.map((c) => c.id)],
-      selection: clones.map((c) => c.id),
-    }))
-    scheduleSave(get)
+    // same reason as duplicateSelected: what a paste leaves selected is part of
+    // the paste, so redo has to hand it back
+    get().edit(() =>
+      set((s) => ({
+        nodes: settleBinds({ ...s.nodes, ...Object.fromEntries(clones.map((c) => [c.id, c])) }),
+        order: [...s.order, ...clones.map((c) => c.id)],
+        selection: clones.map((c) => c.id),
+      }))
+    )
   },
 
   // -- zoom -----------------------------------------------------------------
@@ -1162,14 +1336,14 @@ export const useSquig = create<SquigState>((set, get) => ({
     const end = Math.max(...sorted.map((n) => pos(n) + size(n)))
     const used = sorted.reduce((sum, n) => sum + size(n), 0)
     const gap = (end - start - used) / (sorted.length - 1)
-    get().checkpoint()
     const patches: Record<string, Partial<SquigNode>> = {}
     let cursor = start
     for (const n of sorted) {
       patches[n.id] = axis === "h" ? { x: cursor } : { y: cursor }
       cursor += size(n) + gap
     }
-    get().updateNodes(patches)
+    // evening out gaps that are already even is the align case again
+    get().edit(() => get().updateNodes(patches))
   },
 
   // every one of these builds a selection straight out of `order` rather than
@@ -1229,7 +1403,6 @@ export const useSquig = create<SquigState>((set, get) => ({
     if (selection.length < 2) return
     const sel = selection.map((id) => nodes[id]).filter(Boolean)
     if (sel.length < 2) return
-    get().checkpoint()
     const minX = Math.min(...sel.map((n) => n.x))
     const maxX = Math.max(...sel.map((n) => n.x + n.w))
     const minY = Math.min(...sel.map((n) => n.y))
@@ -1245,7 +1418,9 @@ export const useSquig = create<SquigState>((set, get) => ({
         case "vcenter": patches[n.id] = { y: (minY + maxY) / 2 - n.h / 2 }; break
       }
     }
-    get().updateNodes(patches)
+    // a selection already flush against that edge writes its own coordinates
+    // back onto itself, which edit() reads as the nothing it is
+    get().edit(() => get().updateNodes(patches))
   },
 
   newFile: () => {

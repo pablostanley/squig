@@ -45,9 +45,11 @@ export function TextEditOverlay({ node, target }: { node: SquigNode; target: Edi
     if (s.editingId !== node.id) return
     // an empty text node draws nothing and can never be clicked again, so it
     // goes even when the draft is unchanged — that's the just-placed-then-
-    // dismissed case
+    // dismissed case. The store decides how it goes: a draft nobody typed into
+    // gets the click that placed it taken back, words you emptied yourself get
+    // an undo step of their own. See dismissDraft.
     if (isText && !value.trim()) {
-      s.removeNodes([node.id])
+      s.dismissDraft(node.id)
       s.setEditing(null)
       return
     }
@@ -56,16 +58,12 @@ export function TextEditOverlay({ node, target }: { node: SquigNode; target: Edi
       s.setEditing(null)
       return
     }
-    s.checkpoint()
+    // commitText decides whether this is its own undo step or part of the
+    // click that placed the layer a moment ago — see the note in lib/store
     if (isText) {
-      const trimmed = value.replace(/\s+$/, "")
-      if (!trimmed) {
-        s.removeNodes([node.id], { checkpoint: false })
-      } else {
-        s.updateNode(node.id, fitTextBox(node as TextNode, trimmed) as Partial<SquigNode>)
-      }
+      s.commitText(node.id, fitTextBox(node as TextNode, value.replace(/\s+$/, "")) as Partial<SquigNode>)
     } else if (target.propKey) {
-      s.updateNode(node.id, {
+      s.commitText(node.id, {
         props: { ...(node as ComponentNode).props, [target.propKey]: value },
       } as Partial<SquigNode>)
     }
