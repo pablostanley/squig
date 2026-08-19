@@ -166,3 +166,69 @@ export function uncropPatch(n: ImageNode): Partial<ImageNode> {
   const sheet = imageSheet(n)
   return { x: sheet.x, y: sheet.y, w: sheet.w, h: sheet.h, crop: undefined }
 }
+
+/**
+ * The ratio the picture actually shows: its own pixels, narrowed by the crop.
+ *
+ * The crop is the whole reason this isn't `naturalW / naturalH`. A photo cut
+ * down to a tall sliver is a tall picture now, whatever shape the file it came
+ * from was, and handing it the file's ratio back would be a second squash
+ * wearing a fix's coat.
+ *
+ * Null when the numbers can't answer — a picture that decoded to nothing, or
+ * one from a document written before natural size was recorded. Callers do
+ * nothing rather than divide by it.
+ */
+export function visibleAspect(n: ImageNode): number | null {
+  const c = cropOf(n)
+  const w = n.naturalW * c.w
+  const h = n.naturalH * c.h
+  if (!Number.isFinite(w) || !Number.isFinite(h) || w <= EPS || h <= EPS) return null
+  return w / h
+}
+
+/** Closer than this and nobody could see the difference, so there isn't one. */
+const HAIR = 0.5
+
+/**
+ * Give a picture its shape back — the same box, unbent.
+ *
+ * Two choices worth writing down, because both had a plausible other answer.
+ *
+ * The *area* is what's held, not the width. Keeping the width is a line
+ * shorter, but a picture someone had dragged out into a long letterbox would
+ * come back nearly as tall as it is wide and tower over whatever was arranged
+ * around it. Holding the area means the picture stays about as prominent on
+ * the page as it was: its shape changes, its weight doesn't.
+ *
+ * The *centre* holds still, not the top-left. The gesture that lands here most
+ * often is a double-click on a corner handle, and pinning the opposite corner
+ * would send the corner under the cursor the entire distance — the picture
+ * would read as having fled the pointer. Pinning the centre halves that on
+ * both axes, is the same answer whichever of the four corners was clicked, and
+ * leaves a row of pictures sitting roughly where the eye left them.
+ *
+ * Null means there is nothing to do: the box is already true, or the numbers
+ * won't say what true is. Callers skip the checkpoint on null, so this can't
+ * leave an undo step that undoes nothing — the same deal a tap with the pen
+ * gets in finishGesture.
+ */
+export function trueShapePatch(n: ImageNode): Partial<ImageNode> | null {
+  const ratio = visibleAspect(n)
+  if (ratio === null) return null
+  if (!Number.isFinite(n.w) || !Number.isFinite(n.h) || n.w <= EPS || n.h <= EPS) return null
+
+  const area = n.w * n.h
+  let w = Math.sqrt(area * ratio)
+  let h = Math.sqrt(area / ratio)
+  // a wild ratio on a small box can push one axis under the handle floor;
+  // growing both by one factor keeps the shape we just worked out
+  const grow = Math.max(1, MIN_SIZE / w, MIN_SIZE / h)
+  w *= grow
+  h *= grow
+
+  if (Math.abs(w - n.w) < HAIR && Math.abs(h - n.h) < HAIR) return null
+  // the crop rides along untouched: it's normalised, so the same window of the
+  // picture fills the new box, and the sheet resizes with it
+  return { x: n.x + (n.w - w) / 2, y: n.y + (n.h - h) / 2, w, h }
+}

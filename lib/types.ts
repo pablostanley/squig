@@ -73,6 +73,17 @@ export interface BaseNode {
   /** Mirrored along its own box — see mirrorPrims, which flips layout not glyphs */
   flipX?: boolean
   flipY?: boolean
+  /**
+   * Held down: the layer still prints and still exports, but the pointer walks
+   * straight past it. This is for the background rectangle and the screenshot
+   * everything else is drawn on top of — the things you keep grabbing by
+   * accident. Absent means loose, like every other flag here.
+   *
+   * The rule the rest of the app is built on: a locked layer is never in the
+   * selection. Getting one back is the right button's job, or Unlock all —
+   * see lib/selection for the filter and components/chrome/context-menu.
+   */
+  locked?: boolean
 }
 
 export interface ComponentNode extends BaseNode {

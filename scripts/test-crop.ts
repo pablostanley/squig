@@ -14,7 +14,9 @@ import {
   imageSheet,
   isCropped,
   panSheet,
+  trueShapePatch,
   uncropPatch,
+  visibleAspect,
   windowToCrop,
 } from "../lib/canvas/crop.ts"
 import { resizeBounds, MIN_SIZE } from "../lib/canvas/transform.ts"
@@ -251,6 +253,77 @@ function pic(over: Partial<ImageNode> = {}): ImageNode {
 
   const crop = cropPatch(tiny, sheet).crop!
   check("…and its crop is still a real rectangle", crop.w > 0 && crop.h > 0 && crop.x + crop.w <= 1 + 1e-9)
+}
+
+// -- giving a picture its shape back ---------------------------------------
+
+{
+  // the fixture is 400 × 200 pixels shown in a 200 × 100 box: already true
+  check("an untouched picture is already true", trueShapePatch(pic()) === null)
+  check("…and its ratio is the pixels' own", close(visibleAspect(pic())!, 2))
+
+  // squashed into a square: area 200 × 200 = 40000 held at 2:1 gives 283 × 141
+  const squashed = pic({ w: 200, h: 200 })
+  const fixed = trueShapePatch(squashed)!
+  check("a squashed picture comes back at the pixels' ratio", close(fixed.w! / fixed.h!, 2, 1e-9))
+  check("…holding the area it took up", close(fixed.w! * fixed.h!, 200 * 200, 1e-6))
+  check(
+    "…about its centre, so it doesn't jump away from the corner you clicked",
+    close(fixed.x! + fixed.w! / 2, 200) && close(fixed.y! + fixed.h! / 2, 200),
+    JSON.stringify(round(fixed as Bounds))
+  )
+  // and it says so out loud: neither axis simply kept its old value
+  check("…and neither axis was simply kept", fixed.w! > 200 && fixed.h! < 200)
+
+  // stretched the other way — a tall box on a wide picture — comes back wide
+  const tall = trueShapePatch(pic({ w: 60, h: 300 }))!
+  check("a stretched picture comes back the other way", tall.w! > tall.h! && close(tall.w! / tall.h!, 2, 1e-9))
+}
+
+{
+  // A crop is what makes this more than naturalW / naturalH. The picture is
+  // 400 × 200; showing a tenth of its width and all of its height leaves
+  // 40 × 200 of pixels — a tall sliver, whatever shape the file was.
+  const sliver = pic({ crop: { x: 0.3, y: 0, w: 0.1, h: 1 }, w: 200, h: 200 })
+  check("a crop changes what 'true' means", close(visibleAspect(sliver)!, 0.2))
+  const back = trueShapePatch(sliver)!
+  check("…so a tall crop comes back tall", close(back.w! / back.h!, 0.2, 1e-9), `${back.w} × ${back.h}`)
+  check("…still holding the area", close(back.w! * back.h!, 200 * 200, 1e-6))
+  check("…and leaving the crop alone", back.crop === undefined && !("crop" in back))
+
+  // the same picture cropped the other way is a wide one
+  const strip = pic({ crop: { x: 0, y: 0.4, w: 1, h: 0.1 }, w: 200, h: 200 })
+  check("a wide crop comes back wide", close(visibleAspect(strip)!, 20))
+
+  // a crop that isn't square on a picture that isn't square: 400 × 0.5 = 200
+  // wide by 200 × 0.25 = 50 tall, so 4:1 — neither the crop's ratio (2:1) nor
+  // the picture's (2:1) on their own would get here
+  const both = pic({ crop: { x: 0.1, y: 0.1, w: 0.5, h: 0.25 } })
+  check("…and both ratios multiply, rather than one winning", close(visibleAspect(both)!, 4))
+
+  // a box already at the cropped ratio has nothing to do
+  check("a picture already true to its crop is left alone", trueShapePatch(pic({ crop: { x: 0, y: 0, w: 0.5, h: 1 }, w: 100, h: 100 })) === null)
+}
+
+{
+  // NaN in the geometry gets autosaved and takes the file with it, so every
+  // way the numbers can fail has to end in "do nothing" rather than in maths
+  check("a picture with no pixels can't say what true is", visibleAspect(pic({ naturalH: 0 })) === null)
+  check("…and isn't touched", trueShapePatch(pic({ naturalW: 0, w: 200, h: 200 })) === null)
+  check("…nor is one whose natural size never got written down", trueShapePatch(pic({ naturalW: undefined as unknown as number })) === null)
+  check("a box with no height is left alone too", trueShapePatch(pic({ h: 0 })) === null)
+
+  const out = trueShapePatch(pic({ w: 200, h: 200 }))!
+  check(
+    "and what does come out is all finite",
+    [out.x!, out.y!, out.w!, out.h!].every((v) => Number.isFinite(v))
+  )
+
+  // an extreme ratio on a small box would put one axis under the handle floor;
+  // both grow together so the shape survives the floor
+  const wisp = trueShapePatch(pic({ naturalW: 4000, naturalH: 4, w: 20, h: 20 }))!
+  check("a wisp of a picture still clears the handle floor", wisp.h! >= MIN_SIZE - 1e-9, `${wisp.w} × ${wisp.h}`)
+  check("…and keeps its ratio anyway", close(wisp.w! / wisp.h!, 1000, 1e-6))
 }
 
 // ---------------------------------------------------------------------------

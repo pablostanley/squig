@@ -19,6 +19,7 @@ import { copyAsPngWithNotice } from "@/lib/export-image"
 import { relativeTime } from "@/lib/files"
 import { kbd } from "@/lib/shortcuts"
 import { isCropped } from "@/lib/canvas/crop"
+import { lockedIds } from "@/lib/selection"
 import {
   ArrowCounterClockwiseIcon,
   CropIcon,
@@ -46,6 +47,8 @@ import {
   UploadSimpleIcon,
   LinkBreakIcon,
   LinkIcon,
+  LockSimpleIcon,
+  LockSimpleOpenIcon,
   BoundingBoxIcon,
   FlipHorizontalIcon,
   FlipVerticalIcon,
@@ -94,6 +97,7 @@ export function CommandPalette() {
 function Palette() {
   const selection = useSquig((s) => s.selection)
   const nodes = useSquig((s) => s.nodes)
+  const order = useSquig((s) => s.order)
   const files = useSquig((s) => s.files)
   const docId = useSquig((s) => s.docId)
   const st = useSquig.getState
@@ -129,6 +133,7 @@ function Palette() {
     const n = nodes[id]
     return n?.type === "image" && isCropped(n)
   })
+  const lockedCount = lockedIds(nodes, order).length
 
   const actions = useMemo<Action[]>(
     () => [
@@ -156,7 +161,11 @@ function Palette() {
         icon: LinkBreakIcon, disabled: !hasComponent,
         run: () => st().detachSelected(),
       },
-      { id: "selectall", label: "Select all", hint: kbd("mod+a"), section: "Edit", icon: StackIcon, run: () => st().setSelection([...st().order]) },
+      { id: "selectall", label: "Select all", hint: kbd("mod+a"), section: "Edit", icon: StackIcon, run: () => st().selectAll() },
+      { id: "lock", label: "Lock", hint: kbd("mod+shift+l"), section: "Edit", keywords: "freeze pin hold still background protect", icon: LockSimpleIcon, disabled: !hasSel, run: () => st().lockSelected() },
+      // the one command that has to be here: with nothing selected and nothing
+      // clickable, ⌘K is the only door left into a canvas you've locked down
+      { id: "unlock", label: "Unlock all layers", section: "Edit", keywords: "lock free release loose", icon: LockSimpleOpenIcon, disabled: !lockedCount, run: () => st().unlockAll() },
 
       { id: "forward", label: "Bring forward", hint: kbd("mod+]"), section: "Arrange", icon: StackSimpleIcon, disabled: !hasSel, run: () => st().bringForward(st().selection) },
       { id: "backward", label: "Send backward", hint: kbd("mod+["), section: "Arrange", icon: StackSimpleIcon, disabled: !hasSel, run: () => st().sendBackward(st().selection) },
@@ -206,7 +215,7 @@ function Palette() {
           run: () => st().openFile(f.id),
         })),
     ],
-    [st, hasSel, hasComponent, hasText, hasGroup, loneImage, hasCrop, selection.length, files, docId]
+    [st, hasSel, hasComponent, hasText, hasGroup, loneImage, hasCrop, lockedCount, selection.length, files, docId]
   )
 
   const rows = useMemo<Row[]>(() => {

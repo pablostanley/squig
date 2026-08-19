@@ -40,6 +40,8 @@ import {
   KeyboardIcon,
   LinkBreakIcon,
   LinkSimpleIcon,
+  LockSimpleIcon,
+  LockSimpleOpenIcon,
   MagnifyingGlassIcon,
   NumberSquareOneIcon,
   SelectionAllIcon,
@@ -65,6 +67,7 @@ type Entry = Item | { separator: true }
 export function CanvasContextMenu() {
   const menu = useSquig((s) => s.contextMenu)
   const nodes = useSquig((s) => s.nodes)
+  const order = useSquig((s) => s.order)
   const selection = useSquig((s) => s.selection)
   const contextRow = useSquig((s) => s.contextRow)
   const st = useSquig.getState
@@ -110,10 +113,25 @@ export function CanvasContextMenu() {
   const hasComponent = targets.some((id) => nodes[id]?.type === "component")
   const hasText = targets.some((id) => nodes[id]?.type === "text")
   const hasGroup = targets.some((id) => nodes[id]?.groupIds?.length)
+  // A locked layer can't be selected, so the only way one reaches this menu is
+  // by being right-clicked on its own — which makes "all of them" and "the one
+  // under the pointer" the same set, and the menu a single question.
+  const lockedTarget = targets.length > 0 && targets.every((id) => nodes[id]?.locked)
+  const locked = order.filter((id) => nodes[id]?.locked)
 
   let entries: Entry[]
 
-  if (menu.nodeId) {
+  if (lockedTarget) {
+    // Nothing else belongs here. Every other item on the node menu either moves
+    // the layer, changes it or throws it away, and this one has been asked to
+    // sit still — the menu's whole job is to be the way back.
+    entries = [
+      { label: "Unlock", icon: LockSimpleOpenIcon, run: () => st().unlockNodes(targets) },
+      ...(locked.length > 1
+        ? [{ label: `Unlock all (${locked.length})`, icon: LockSimpleOpenIcon, run: () => st().unlockAll() } as Entry]
+        : []),
+    ]
+  } else if (menu.nodeId) {
     entries = [
       { label: "Duplicate", hint: kbd("mod+d"), icon: CopyIcon, run: () => st().duplicateSelected() },
       { label: "Copy", hint: kbd("mod+c"), icon: CopySimpleIcon, run: copySelection },
@@ -161,6 +179,7 @@ export function CanvasContextMenu() {
           ] as Entry[])
         : []),
       { separator: true },
+      { label: "Lock", hint: kbd("mod+shift+l"), icon: LockSimpleIcon, run: () => st().lockSelected() },
       { label: "Delete", hint: kbd("del"), icon: TrashIcon, danger: true, run: () => st().removeNodes(targets) },
     ]
   } else {
@@ -169,7 +188,18 @@ export function CanvasContextMenu() {
       { label: "Components", hint: kbd("c"), icon: SquaresFourIcon, run: () => st().setPanel("components") },
       { label: "Blocks", hint: kbd("b"), icon: StackIcon, run: () => st().setPanel("blocks") },
       { separator: true },
-      { label: "Select all", hint: kbd("mod+a"), icon: SelectionAllIcon, run: () => st().setSelection([...st().order]) },
+      { label: "Select all", hint: kbd("mod+a"), icon: SelectionAllIcon, run: () => st().selectAll() },
+      // the escape hatch that needs no aiming — right-clicking the layer works
+      // too, but only if you can find it under whatever is stacked on top
+      ...(locked.length
+        ? [
+            {
+              label: `Unlock all (${locked.length})`,
+              icon: LockSimpleOpenIcon,
+              run: () => st().unlockAll(),
+            } as Entry,
+          ]
+        : []),
       // always offered now: whatever is on the system clipboard is something
       // this can paste, and there is no way to know what that is from here
       { label: "Paste here", hint: kbd("mod+v"), icon: ClipboardTextIcon, run: () => pasteAt(menu.x, menu.y) },

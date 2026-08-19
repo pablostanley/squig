@@ -19,17 +19,25 @@ export const buttonDef: ComponentDef = {
   group: "Buttons",
   keywords: ["btn", "cta", "action"],
   size: { w: 132, h: 40 },
-  defaults: { label: "Click me", variant: "filled", size: "md", icon: "none" },
+  defaults: { label: "Click me", variant: "filled", size: "md", icon: "none", glyph: "plus" },
   controls: [
     { key: "label", label: "Label", type: "text" },
     { key: "variant", label: "Variant", type: "select", options: ["filled", "outline", "ghost"], quick: true },
     { key: "size", label: "Size", type: "select", options: ["sm", "md", "lg"], quick: true },
-    { key: "icon", label: "Icon", type: "select", options: ["none", "left", "right"], quick: true },
+    { key: "icon", label: "Icon side", type: "select", options: ["none", "left", "right"], quick: true },
+    {
+      key: "glyph",
+      label: "Glyph",
+      type: "select",
+      options: ["plus", "arrow-right", "arrow-left", "download-simple", "paper-plane-tilt", "sparkle"],
+    },
   ],
   render(p, w, h) {
     const variant = str(p, "variant", "filled")
     const size = str(p, "size", "md")
     const iconPos = str(p, "icon", "none")
+    // Old nodes have no glyph key: fall back to what each side used to hardcode.
+    const glyph = str(p, "glyph", iconPos === "right" ? "arrow-right" : "plus")
     const fontSize = size === "sm" ? 13 : size === "lg" ? 18 : 15
     const prims: Prim[] = []
     if (variant === "filled") {
@@ -46,11 +54,11 @@ export const buttonDef: ComponentDef = {
     const startX = (w - total) / 2
     const cy = h / 2
     if (iconPos === "left") {
-      prims.push(...icon("plus", startX + iconSize / 2, cy, iconSize))
+      prims.push(...icon(glyph, startX + iconSize / 2, cy, iconSize))
       prims.push(text(startX + iconSize + 8, cy + fontSize * 0.35, label, fontSize))
     } else if (iconPos === "right") {
       prims.push(text(startX, cy + fontSize * 0.35, label, fontSize))
-      prims.push(...icon("arrow-right", startX + tw + 8 + iconSize / 2, cy, iconSize))
+      prims.push(...icon(glyph, startX + tw + 8 + iconSize / 2, cy, iconSize))
     } else {
       prims.push(text(w / 2, cy + fontSize * 0.35, label, fontSize, { align: "center" }))
     }
@@ -65,12 +73,13 @@ export const badgeDef: ComponentDef = {
   name: "Badge",
   category: "components",
   group: "Display",
-  keywords: ["tag", "chip", "pill", "label"],
+  keywords: ["tag", "chip", "pill", "label", "status", "dot"],
   size: { w: 64, h: 24 },
-  defaults: { label: "New", variant: "outline" },
+  defaults: { label: "New", variant: "outline", dot: false },
   controls: [
     { key: "label", label: "Label", type: "text" },
     { key: "variant", label: "Variant", type: "select", options: ["filled", "outline"], quick: true },
+    { key: "dot", label: "Status dot", type: "toggle", quick: true },
   ],
   render(p, w, h) {
     const prims: Prim[] = [
@@ -78,7 +87,17 @@ export const badgeDef: ComponentDef = {
         ? pill(0, 0, w, h, { fill: "shade", fillColor: "ink" })
         : pill(0, 0, w, h),
     ]
-    prims.push(text(w / 2, h / 2 + 4, truncate(str(p, "label", "New"), 12, w - 12), 12, { align: "center" }))
+    // Too narrow for a dot and a word, so the word wins.
+    const dot = bool(p, "dot") && w > 34
+    const d = Math.max(4, Math.min(7, h * 0.26))
+    const label = truncate(str(p, "label", "New"), 12, w - 12 - (dot ? d + 6 : 0))
+    if (dot) {
+      const startX = Math.max(6, (w - (d + 6 + textWidth(label, 12))) / 2)
+      prims.push(ellipse(startX, h / 2 - d / 2, d, d, { fill: "solid", fillColor: "ink" }))
+      prims.push(text(startX + d + 6, h / 2 + 4, label, 12))
+    } else {
+      prims.push(text(w / 2, h / 2 + 4, label, 12, { align: "center" }))
+    }
     return prims
   },
 }
@@ -277,7 +296,7 @@ export const switchDef: ComponentDef = {
   defaults: { label: "Turn me on", on: true, showLabel: true },
   controls: [
     { key: "on", label: "On", type: "toggle", quick: true },
-    { key: "showLabel", label: "Show label", type: "toggle" },
+    { key: "showLabel", label: "Show label", type: "toggle", quick: true },
     { key: "label", label: "Label", type: "text" },
   ],
   render(p, w, h) {
@@ -309,24 +328,41 @@ export const sliderDef: ComponentDef = {
   group: "Forms",
   keywords: ["range", "volume", "form"],
   size: { w: 200, h: 28 },
-  defaults: { value: 60, showValue: false },
+  defaults: { label: "Volume", showLabel: false, value: 60, showValue: false },
   controls: [
+    { key: "label", label: "Label", type: "text" },
+    { key: "showLabel", label: "Show label", type: "toggle", quick: true },
     { key: "value", label: "Value", type: "number", min: 0, max: 100, quick: true },
-    { key: "showValue", label: "Show value", type: "toggle" },
+    { key: "showValue", label: "Show value", type: "toggle", quick: true },
   ],
   render(p, w, h) {
-    const v = Math.max(0, Math.min(100, num(p, "value", 60))) / 100
-    const cy = h / 2
-    const knob = 16
-    const trackW = w - (bool(p, "showValue") ? 36 : 0)
-    const kx = v * (trackW - knob) + knob / 2
+    const raw = Math.max(0, Math.min(100, num(p, "value", 60)))
+    const v = raw / 100
+    // Below 26px tall the label would sit on top of the track, so it steps aside.
+    const showLabel = bool(p, "showLabel") && h >= 26
+    const top = showLabel ? Math.min(22, h * 0.5) : 0
+    const cy = top + (h - top) / 2
+    // Without a label the knob is the 16 it has always been; with one it
+    // shrinks into whatever band the label left behind.
+    const knob = showLabel ? Math.max(8, Math.min(16, h - top)) : 16
+    const trackW = Math.max(2, w - (bool(p, "showValue") ? 36 : 0))
+    // On a track narrower than the knob, park the knob instead of pushing it
+    // off the left edge.
+    const kx = Math.max(knob / 2, v * (trackW - knob) + knob / 2)
     const prims: Prim[] = [
       line(0, cy, trackW, cy, { stroke: "muted", strokeWidth: 2 }),
       line(0, cy, kx, cy, { strokeWidth: 2.5 }),
       ellipse(kx - knob / 2, cy - knob / 2, knob, knob, { fill: "solid", fillColor: "paper" }),
       ellipse(kx - knob / 2, cy - knob / 2, knob, knob),
     ]
-    if (bool(p, "showValue")) prims.push(text(trackW + 8, cy + 5, String(num(p, "value", 60)), 13, { color: "muted" }))
+    if (showLabel) prims.push(text(2, 13, truncate(str(p, "label", "Volume"), 13, w - 40), 13))
+    if (bool(p, "showValue")) {
+      // The label pushes the track down; keep the number off the bottom edge.
+      const vy = showLabel ? Math.min(cy + 5, h - 4) : cy + 5
+      // Same number the knob is standing on, and short enough for the 36px
+      // the track gave up — "33.333" would run off the right edge.
+      prims.push(text(trackW + 8, vy, String(Math.round(raw)), 13, { color: "muted" }))
+    }
     return prims
   },
 }
@@ -340,12 +376,28 @@ export const progressDef: ComponentDef = {
   group: "Feedback",
   keywords: ["bar", "loading", "meter"],
   size: { w: 200, h: 16 },
-  defaults: { value: 40 },
-  controls: [{ key: "value", label: "Value", type: "number", min: 0, max: 100, quick: true }],
+  defaults: { value: 40, showValue: false },
+  controls: [
+    { key: "value", label: "Value", type: "number", min: 0, max: 100, quick: true },
+    { key: "showValue", label: "Show value", type: "toggle", quick: true },
+  ],
   render(p, w, h) {
-    const v = Math.max(0, Math.min(100, num(p, "value", 40))) / 100
-    const prims: Prim[] = [rect(0, 0, w, h)]
-    if (v > 0.02) prims.push(rect(2, 2, (w - 4) * v, h - 4, { fill: "shade", fillColor: "ink", strokeWidth: 1 }))
+    const raw = Math.max(0, Math.min(100, num(p, "value", 40)))
+    const v = raw / 100
+    const showValue = bool(p, "showValue")
+    // The number needs 36px; on a bar too short to spare them, the track keeps
+    // a sliver rather than going inside out.
+    const trackW = Math.max(2, w - (showValue ? 36 : 0))
+    const fillW = Math.max(0, (trackW - 4) * v)
+    const prims: Prim[] = [rect(0, 0, trackW, h)]
+    if (v > 0.02 && fillW > 0) {
+      prims.push(rect(2, 2, fillW, h - 4, { fill: "shade", fillColor: "ink", strokeWidth: 1 }))
+    }
+    if (showValue) {
+      // A progress bar is short — shrink the number rather than let it hang out.
+      const fs = Math.max(8, Math.min(13, h - 3))
+      prims.push(text(trackW + 8, h / 2 + fs * 0.35, `${Math.round(raw)}%`, fs, { color: "muted" }))
+    }
     return prims
   },
 }

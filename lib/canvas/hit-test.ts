@@ -247,6 +247,33 @@ export function hitsInterior(n: SquigNode, x: number, y: number): boolean {
   return true
 }
 
+// ---------------------------------------------------------------------------
+
+/**
+ * A locked layer is invisible to the pointer.
+ *
+ * This is the lever the whole lock feature hangs off: the three pickers below
+ * are what clicking, hovering, marqueeing and double-clicking all ask, so
+ * dropping locked layers here stops every one of them at once — no click
+ * selects it, no marquee sweeps it up, no double-click steps into it.
+ *
+ * The geometry predicates above stay honest about it, because "is the pointer
+ * over this box" and "may the pointer have it" are different questions and
+ * only the second one has an opinion about locks.
+ *
+ * `locked: true` is the way back in. The right button passes it, so a menu can
+ * be opened on a locked layer and offer to unlock it — right-clicking is a
+ * deliberate act, which is exactly the kind of press a lock has no business
+ * refusing. See components/canvas/canvas's onContextMenu.
+ */
+export interface PickOpts {
+  /** reach locked layers too — for the right button, and nothing else */
+  locked?: boolean
+}
+
+const reachable = (n: SquigNode | undefined, opts?: PickOpts): n is SquigNode =>
+  !!n && (opts?.locked === true || !n.locked)
+
 /**
  * Topmost hollow node whose interior holds the point, or null.
  *
@@ -259,11 +286,12 @@ export function pickSoftAt(
   nodes: Record<string, SquigNode>,
   order: readonly string[],
   x: number,
-  y: number
+  y: number,
+  opts?: PickOpts
 ): string | null {
   for (let i = order.length - 1; i >= 0; i--) {
     const n = nodes[order[i]]
-    if (n && hitsInterior(n, x, y)) return order[i]
+    if (reachable(n, opts) && hitsInterior(n, x, y)) return order[i]
   }
   return null
 }
@@ -274,11 +302,12 @@ export function pickAt(
   order: readonly string[],
   x: number,
   y: number,
-  zoom: number
+  zoom: number,
+  opts?: PickOpts
 ): string | null {
   for (let i = order.length - 1; i >= 0; i--) {
     const n = nodes[order[i]]
-    if (n && hitsPoint(n, x, y, zoom)) return order[i]
+    if (reachable(n, opts) && hitsPoint(n, x, y, zoom)) return order[i]
   }
   return null
 }
@@ -288,12 +317,13 @@ export function pickInRect(
   nodes: Record<string, SquigNode>,
   order: readonly string[],
   rect: Bounds,
-  zoom: number
+  zoom: number,
+  opts?: PickOpts
 ): string[] {
   const out: string[] = []
   for (const id of order) {
     const n = nodes[id]
-    if (n && hitsRect(n, rect, zoom)) out.push(id)
+    if (reachable(n, opts) && hitsRect(n, rect, zoom)) out.push(id)
   }
   return out
 }

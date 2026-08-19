@@ -98,6 +98,8 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
       { keys: ["mod+v"], label: "Paste at cursor" },
       { keys: ["mod+shift+v"], label: "Paste in place" },
       { keys: ["mod+a"], label: "Select all" },
+      { keys: ["mod+shift+l"], label: "Lock — the pointer walks past it" },
+      { keys: ["right-click"], label: "Unlock a locked layer" },
       { keys: ["del"], label: "Delete" },
       { keys: ["esc"], label: "Deselect" },
     ],
