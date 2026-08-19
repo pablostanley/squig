@@ -27,6 +27,18 @@ const bool = (p: Props, k: string): boolean => Boolean(p[k])
 const num = (p: Props, k: string, fallback = 0): number => Number(p[k] ?? fallback)
 const clamp = (v: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, v))
 
+/**
+ * A comma-separated list, backfilled from the words the block ships with —
+ * name two columns of a three-column board and the third keeps the one it
+ * already had. The stock array is also what `defaults` joins, so a block
+ * nobody has typed into reads back exactly the list it started with.
+ */
+const listOr = (p: Props, k: string, stock: readonly string[]): string[] => {
+  const given = str(p, k, "").split(",").map((s) => s.trim())
+  const n = Math.max(stock.length, given.length)
+  return Array.from({ length: n }, (_, i) => given[i] || stock[i % stock.length])
+}
+
 function sub(def: ComponentDef, props: Props, x: number, y: number, w: number, h: number): Prim[] {
   return place(def.render({ ...def.defaults, ...props }, w, h), x, y)
 }
@@ -329,6 +341,15 @@ export const billingBlockDef: ComponentDef = {
 
 // -- notifications ----------------------------------------------------------
 
+const NOTIFICATION_TITLES = [
+  "Maya mentioned you",
+  "Build finished. Finally.",
+  "3 new comments",
+  "Your trial ends Friday",
+  "Luis shared a board",
+  "Someone starred you",
+]
+
 export const notificationListDef: ComponentDef = {
   kind: "notification-list",
   name: "Notifications",
@@ -336,18 +357,26 @@ export const notificationListDef: ComponentDef = {
   group: "App",
   keywords: ["alerts", "bell", "updates", "unread", "inbox"],
   size: { w: 420, h: 360 },
-  defaults: { rows: 4, header: true, avatars: true },
+  defaults: {
+    rows: 4,
+    header: true,
+    avatars: true,
+    title: "Notifications",
+    titles: NOTIFICATION_TITLES.join(", "),
+  },
   controls: [
     { key: "rows", label: "Rows", type: "number", min: 2, max: 6, quick: true },
     { key: "header", label: "Header", type: "toggle", quick: true },
     { key: "avatars", label: "Avatars", type: "toggle" },
+    { key: "title", label: "Title", type: "text" },
+    { key: "titles", label: "Rows (comma-sep)", type: "text" },
   ],
   render(p, w, h) {
     const prims: Prim[] = [rect(0, 0, w, h)]
     const pad = 14
     let y = pad
     if (bool(p, "header")) {
-      prims.push(text(pad, y + 16, "Notifications", 16, { bold: true }))
+      prims.push(text(pad, y + 16, truncate(str(p, "title", "Notifications"), 16, w - pad * 2 - 90), 16, { bold: true }))
       if (w > 260) prims.push(text(w - pad, y + 16, "Mark all read", 12, { align: "right", color: "muted" }))
       prims.push(hair(pad, y + 28, w - pad * 2))
       y += 38
@@ -355,14 +384,7 @@ export const notificationListDef: ComponentDef = {
     const avail = h - y - pad
     const n = clamp(Math.min(num(p, "rows", 4), Math.floor(avail / 54)), 1, 6)
     const rowH = Math.min(76, avail / Math.max(1, n))
-    const titles = [
-      "Maya mentioned you",
-      "Build finished. Finally.",
-      "3 new comments",
-      "Your trial ends Friday",
-      "Luis shared a board",
-      "Someone starred you",
-    ]
+    const titles = listOr(p, "titles", NOTIFICATION_TITLES)
     const times = ["2m", "18m", "1h", "3h", "Yest.", "Mon"]
     const icons = ["chat-circle", "check", "chat-teardrop-dots", "clock", "folder", "star"]
     const useAvatar = bool(p, "avatars")
@@ -387,6 +409,15 @@ export const notificationListDef: ComponentDef = {
 
 // -- activity feed ----------------------------------------------------------
 
+const ACTIVITY_LINES = [
+  "Maya renamed the doc. Again.",
+  "Luis merged final-final-v3",
+  "Ana invited four humans",
+  "You archived 12 old boards",
+  "Kai left a slightly rude note",
+  "The robot shipped to prod",
+]
+
 export const activityFeedDef: ComponentDef = {
   kind: "activity-feed",
   name: "Activity feed",
@@ -394,18 +425,26 @@ export const activityFeedDef: ComponentDef = {
   group: "App",
   keywords: ["timeline", "history", "log", "recent", "events"],
   size: { w: 400, h: 320 },
-  defaults: { rows: 4, header: true, avatars: true },
+  defaults: {
+    rows: 4,
+    header: true,
+    avatars: true,
+    title: "Recently",
+    lines: ACTIVITY_LINES.join(", "),
+  },
   controls: [
     { key: "rows", label: "Entries", type: "number", min: 2, max: 6, quick: true },
     { key: "header", label: "Header", type: "toggle", quick: true },
     { key: "avatars", label: "Avatars", type: "toggle" },
+    { key: "title", label: "Title", type: "text" },
+    { key: "lines", label: "Entries (comma-sep)", type: "text" },
   ],
   render(p, w, h) {
     const prims: Prim[] = [rect(0, 0, w, h)]
     const pad = 16
     let y = pad
     if (bool(p, "header")) {
-      prims.push(text(pad, y + 14, "Recently", 15, { bold: true }))
+      prims.push(text(pad, y + 14, truncate(str(p, "title", "Recently"), 15, w - pad * 2), 15, { bold: true }))
       y += 28
     }
     const avail = h - y - pad
@@ -413,14 +452,7 @@ export const activityFeedDef: ComponentDef = {
     const rowH = Math.min(64, avail / Math.max(1, n))
     const d = Math.min(28, rowH - 16)
     const cxDot = pad + d / 2
-    const lines = [
-      "Maya renamed the doc. Again.",
-      "Luis merged final-final-v3",
-      "Ana invited four humans",
-      "You archived 12 old boards",
-      "Kai left a slightly rude note",
-      "The robot shipped to prod",
-    ]
+    const lines = listOr(p, "lines", ACTIVITY_LINES)
     const times = ["just now", "12m ago", "an hour ago", "yesterday", "Tuesday", "last week"]
     const first = y + rowH / 2
     const last = y + (n - 0.5) * rowH
@@ -444,6 +476,8 @@ export const activityFeedDef: ComponentDef = {
 
 // -- comments ---------------------------------------------------------------
 
+const COMMENT_NAMES = ["Maya", "Luis", "Ana", "Kai"]
+
 export const commentsDef: ComponentDef = {
   kind: "comments",
   name: "Comments",
@@ -451,11 +485,19 @@ export const commentsDef: ComponentDef = {
   group: "App",
   keywords: ["thread", "replies", "discussion", "chat", "feedback"],
   size: { w: 440, h: 400 },
-  defaults: { rows: 3, composer: true, threaded: true },
+  defaults: {
+    rows: 3,
+    composer: true,
+    threaded: true,
+    names: COMMENT_NAMES.join(", "),
+    placeholder: "Say something kind…",
+  },
   controls: [
     { key: "rows", label: "Comments", type: "number", min: 1, max: 4, quick: true },
     { key: "composer", label: "Composer", type: "toggle", quick: true },
     { key: "threaded", label: "Threaded", type: "toggle" },
+    { key: "names", label: "People (comma-sep)", type: "text" },
+    { key: "placeholder", label: "Composer text", type: "text" },
   ],
   render(p, w, h) {
     const prims: Prim[] = [rect(0, 0, w, h)]
@@ -465,7 +507,7 @@ export const commentsDef: ComponentDef = {
     const avail = h - pad * 2 - composerH
     const n = clamp(Math.min(num(p, "rows", 3), Math.floor(avail / 82)), 1, 4)
     const rowH = Math.min(104, avail / Math.max(1, n))
-    const names = ["Maya", "Luis", "Ana", "Kai"]
+    const names = listOr(p, "names", COMMENT_NAMES)
     const times = ["2h ago", "1h ago", "34m ago", "just now"]
     const threaded = bool(p, "threaded")
     let y = pad
@@ -476,8 +518,9 @@ export const commentsDef: ComponentDef = {
       prims.push(...sub(avatarDef, { content: "initials", initials: names[i].slice(0, 2) }, x, y, d, d))
       const tx = x + d + 12
       const tw = w - tx - pad
-      prims.push(text(tx, y + 14, names[i], 14, { bold: true }))
-      prims.push(text(tx + textWidth(names[i], 14) + 16, y + 14, times[i], 11, { color: "muted" }))
+      const who = truncate(names[i], 14, tw - 60)
+      prims.push(text(tx, y + 14, who, 14, { bold: true }))
+      prims.push(text(tx + textWidth(who, 14) + 16, y + 14, times[i], 11, { color: "muted" }))
       prims.push(...loremLines(tx, y + 32, tw, 2, 15))
       const ay = y + 68
       if (ay < y + rowH - 4) {
@@ -494,7 +537,7 @@ export const commentsDef: ComponentDef = {
       const fx = pad + d + 10
       const fw = w - fx - pad
       prims.push(rect(fx, cy, fw, 44))
-      prims.push(text(fx + 14, cy + 27, truncate("Say something kind…", 14, fw - 90), 14, { color: "muted" }))
+      prims.push(text(fx + 14, cy + 27, truncate(str(p, "placeholder", "Say something kind…"), 14, fw - 90), 14, { color: "muted" }))
       prims.push(...icon("paper-plane-tilt", fx + fw - 22, cy + 22, 16, { stroke: "muted" }))
     }
     return prims
@@ -503,6 +546,8 @@ export const commentsDef: ComponentDef = {
 
 // -- inbox list -------------------------------------------------------------
 
+const INBOX_SENDERS = ["Maya", "GitHub", "Luis", "Squig", "Mom", "Calendar", "Ana", "No-reply"]
+
 export const inboxListDef: ComponentDef = {
   kind: "inbox-list",
   name: "Inbox list",
@@ -510,17 +555,18 @@ export const inboxListDef: ComponentDef = {
   group: "App",
   keywords: ["mail", "email", "messages", "rows", "threads"],
   size: { w: 620, h: 320 },
-  defaults: { rows: 6, star: true, checkbox: true },
+  defaults: { rows: 6, star: true, checkbox: true, senders: INBOX_SENDERS.join(", ") },
   controls: [
     { key: "rows", label: "Rows", type: "number", min: 3, max: 8, quick: true },
     { key: "star", label: "Stars", type: "toggle", quick: true },
     { key: "checkbox", label: "Checkboxes", type: "toggle", quick: true },
+    { key: "senders", label: "Senders (comma-sep)", type: "text" },
   ],
   render(p, w, h) {
     const prims: Prim[] = [rect(0, 0, w, h)]
     const n = clamp(Math.min(num(p, "rows", 6), Math.floor(h / 34)), 1, 8)
     const rowH = h / n
-    const senders = ["Maya", "GitHub", "Luis", "Squig", "Mom", "Calendar", "Ana", "No-reply"]
+    const senders = listOr(p, "senders", INBOX_SENDERS)
     const subjects = [
       "Re: the thing",
       "PR #482 merged",
@@ -582,6 +628,9 @@ export const inboxListDef: ComponentDef = {
 
 // -- kanban board -----------------------------------------------------------
 
+const KANBAN_COLUMNS = ["To do", "Doing", "Done", "Nope"]
+const KANBAN_TAGS = ["bug", "copy", "design", "chore", "spike", "ugh"]
+
 export const kanbanBoardDef: ComponentDef = {
   kind: "kanban-board",
   name: "Kanban board",
@@ -589,20 +638,28 @@ export const kanbanBoardDef: ComponentDef = {
   group: "App",
   keywords: ["board", "columns", "cards", "tasks", "trello", "backlog"],
   size: { w: 680, h: 420 },
-  defaults: { columns: 3, cards: 3, avatars: true },
+  defaults: {
+    columns: 3,
+    cards: 3,
+    avatars: true,
+    colNames: KANBAN_COLUMNS.join(", "),
+    tags: KANBAN_TAGS.join(", "),
+  },
   controls: [
     { key: "columns", label: "Columns", type: "number", min: 2, max: 4, quick: true },
     { key: "cards", label: "Cards", type: "number", min: 1, max: 4, quick: true },
     { key: "avatars", label: "Avatars", type: "toggle" },
+    { key: "colNames", label: "Columns (comma-sep)", type: "text" },
+    { key: "tags", label: "Tags (comma-sep)", type: "text" },
   ],
   render(p, w, h) {
     const prims: Prim[] = []
     const gap = 14
     const cols = clamp(num(p, "columns", 3), 2, 4)
     const colW = (w - gap * (cols - 1)) / cols
-    const names = ["To do", "Doing", "Done", "Nope"]
+    const names = listOr(p, "colNames", KANBAN_COLUMNS)
     const counts = ["6", "3", "9", "1"]
-    const tags = ["bug", "copy", "design", "chore", "spike", "ugh"]
+    const tags = listOr(p, "tags", KANBAN_TAGS)
     const headH = 30
     const bodyY = headH + 4
     const bodyH = h - bodyY
@@ -639,6 +696,8 @@ export const kanbanBoardDef: ComponentDef = {
 
 // -- calendar ---------------------------------------------------------------
 
+const CALENDAR_EVENTS = ["Standup", "1:1 w/ Maya", "Deep work", "Doodle jam"]
+
 export const calendarBlockDef: ComponentDef = {
   kind: "calendar-block",
   name: "Calendar",
@@ -646,16 +705,24 @@ export const calendarBlockDef: ComponentDef = {
   group: "App",
   keywords: ["schedule", "week", "month", "events", "agenda", "dates"],
   size: { w: 640, h: 400 },
-  defaults: { view: "week", events: true },
+  defaults: {
+    view: "week",
+    events: true,
+    month: "July",
+    eventNames: CALENDAR_EVENTS.join(", "),
+  },
   controls: [
     { key: "view", label: "View", type: "select", options: ["week", "month"], quick: true },
     { key: "events", label: "Events", type: "toggle", quick: true },
+    { key: "month", label: "Month", type: "text" },
+    { key: "eventNames", label: "Events (comma-sep)", type: "text" },
   ],
   render(p, w, h) {
     const prims: Prim[] = [rect(0, 0, w, h)]
     const headH = Math.min(44, h * 0.14)
-    prims.push(text(16, headH / 2 + 6, "July", 17, { bold: true }))
-    if (w > 260) prims.push(text(16 + textWidth("July", 17) + 10, headH / 2 + 6, "2026", 14, { color: "muted" }))
+    const month = truncate(str(p, "month", "July"), 17, Math.max(40, w - 220))
+    prims.push(text(16, headH / 2 + 6, month, 17, { bold: true }))
+    if (w > 260) prims.push(text(16 + textWidth(month, 17) + 10, headH / 2 + 6, "2026", 14, { color: "muted" }))
     prims.push(...icon("caret-left", w - 46, headH / 2, 13, { stroke: "muted" }))
     prims.push(...icon("caret-right", w - 20, headH / 2, 13, { stroke: "muted" }))
     if (w > 320) {
@@ -716,13 +783,15 @@ export const calendarBlockDef: ComponentDef = {
     prims.push(hair(0, gridY, w))
     for (let r = 1; r < slots; r++) prims.push(hair(0, gridY + r * slotH, w))
     if (withEvents) {
-      const evs: [number, number, number, string][] = [
-        [1, 0, 1.4, "Standup"],
-        [2, 0.6, 1, "1:1 w/ Maya"],
-        [4, 1.2, 1.8, "Deep work"],
-        [5, 2.2, 1, "Doodle jam"],
+      const labels = listOr(p, "eventNames", CALENDAR_EVENTS)
+      const evs: [number, number, number][] = [
+        [1, 0, 1.4],
+        [2, 0.6, 1],
+        [4, 1.2, 1.8],
+        [5, 2.2, 1],
       ]
-      for (const [c, s, len, label] of evs) {
+      for (const [i, [c, s, len]] of evs.entries()) {
+        const label = labels[i]
         if (c >= cols) continue
         const y = gridY + s * slotH + 4
         const eh = Math.min(len * slotH - 8, gridY + gridH - y - 4)
@@ -825,6 +894,10 @@ export const fileBrowserDef: ComponentDef = {
 
 // -- search results ---------------------------------------------------------
 
+// The result titles and snippets stay stock on purpose — they read as prose,
+// commas and all, which the comma-separated idiom would chop in half.
+const SEARCH_FILTERS = ["Boards", "Docs", "People", "Archived"]
+
 export const searchResultsDef: ComponentDef = {
   kind: "search-results",
   name: "Search results",
@@ -832,11 +905,19 @@ export const searchResultsDef: ComponentDef = {
   group: "App",
   keywords: ["search", "results", "query", "list", "find"],
   size: { w: 660, h: 440 },
-  defaults: { results: 4, bar: true, sidebar: false },
+  defaults: {
+    results: 4,
+    bar: true,
+    sidebar: false,
+    query: "boxes that look hand drawn",
+    filters: SEARCH_FILTERS.join(", "),
+  },
   controls: [
     { key: "results", label: "Results", type: "number", min: 2, max: 6, quick: true },
     { key: "bar", label: "Search bar", type: "toggle", quick: true },
     { key: "sidebar", label: "Filters", type: "toggle", quick: true },
+    { key: "query", label: "Query", type: "text" },
+    { key: "filters", label: "Filters (comma-sep)", type: "text" },
   ],
   render(p, w, h) {
     const prims: Prim[] = [rect(0, 0, w, h)]
@@ -845,7 +926,7 @@ export const searchResultsDef: ComponentDef = {
     if (bool(p, "bar")) {
       const bw = Math.min(96, w * 0.18)
       const fw = w - pad * 2 - (w > 380 ? bw + 10 : 0)
-      prims.push(...sub(inputDef, { showLabel: false, icon: "search", placeholder: "boxes that look hand drawn" }, pad, y, fw, 40))
+      prims.push(...sub(inputDef, { showLabel: false, icon: "search", placeholder: str(p, "query", "boxes that look hand drawn") }, pad, y, fw, 40))
       if (w > 380) prims.push(...sub(buttonDef, { label: "Search", variant: "filled", size: "sm" }, pad + fw + 10, y, bw, 40))
       y += 50
       prims.push(text(pad, y, "About 4,382 results (0.24 seconds)", 11, { color: "muted" }))
@@ -857,7 +938,7 @@ export const searchResultsDef: ComponentDef = {
     if (bool(p, "sidebar") && w > 460) {
       const sw = Math.min(150, w * 0.24)
       prims.push(text(pad, y + 16, "Filters", 13, { bold: true }))
-      const opts = ["Boards", "Docs", "People", "Archived"]
+      const opts = listOr(p, "filters", SEARCH_FILTERS)
       for (let i = 0; i < opts.length; i++) {
         const fy = y + 32 + i * 28
         if (fy + 20 > h - pad) break
@@ -989,6 +1070,8 @@ export const emptyBlockDef: ComponentDef = {
 
 // -- settings rows ----------------------------------------------------------
 
+const SETTINGS_LABELS = ["Email me", "Dark mode", "Time zone", "Weekly digest", "Two-factor"]
+
 export const settingsBlockDef: ComponentDef = {
   kind: "settings-block",
   name: "Settings rows",
@@ -996,10 +1079,12 @@ export const settingsBlockDef: ComponentDef = {
   group: "App",
   keywords: ["preferences", "toggles", "options", "switches", "config"],
   size: { w: 520, h: 330 },
-  defaults: { rows: 4, header: true },
+  defaults: { rows: 4, header: true, title: "Preferences", labels: SETTINGS_LABELS.join(", ") },
   controls: [
     { key: "rows", label: "Rows", type: "number", min: 2, max: 5, quick: true },
     { key: "header", label: "Header", type: "toggle", quick: true },
+    { key: "title", label: "Title", type: "text" },
+    { key: "labels", label: "Rows (comma-sep)", type: "text" },
   ],
   render(p, w, h) {
     const prims: Prim[] = [rect(0, 0, w, h)]
@@ -1007,11 +1092,11 @@ export const settingsBlockDef: ComponentDef = {
     const cw = w - pad * 2
     let y = pad
     if (bool(p, "header")) {
-      prims.push(text(pad, y + 16, "Preferences", 16, { bold: true }))
+      prims.push(text(pad, y + 16, truncate(str(p, "title", "Preferences"), 16, cw), 16, { bold: true }))
       prims.push(hair(pad, y + 28, cw))
       y += 38
     }
-    const titles = ["Email me", "Dark mode", "Time zone", "Weekly digest", "Two-factor"]
+    const titles = listOr(p, "labels", SETTINGS_LABELS)
     const descs = [
       "Only when something actually happens.",
       "For the late-night doodling.",
@@ -1050,11 +1135,13 @@ export const profileHeaderDef: ComponentDef = {
   group: "App",
   keywords: ["profile", "cover", "banner", "bio", "stats", "follow"],
   size: { w: 560, h: 250 },
-  defaults: { cover: true, stats: true, cta: true },
+  defaults: { cover: true, stats: true, cta: true, name: "Pablo Scribbles", handle: "@squiggle" },
   controls: [
     { key: "cover", label: "Cover", type: "toggle", quick: true },
     { key: "stats", label: "Stats", type: "toggle", quick: true },
     { key: "cta", label: "Button", type: "toggle" },
+    { key: "name", label: "Name", type: "text" },
+    { key: "handle", label: "Handle", type: "text" },
   ],
   render(p, w, h) {
     const prims: Prim[] = [rect(0, 0, w, h)]
@@ -1071,8 +1158,9 @@ export const profileHeaderDef: ComponentDef = {
     prims.push(...sub(avatarDef, { content: "initials", initials: "PS", status: true }, ax, ay, d, d))
 
     let y = ay + d + 26
-    prims.push(text(pad, y, truncate("Pablo Scribbles", 20, w - pad * 2 - 110), 20, { bold: true }))
-    prims.push(text(pad + textWidth("Pablo Scribbles", 20) + 18, y - 2, "@squiggle", 13, { color: "muted" }))
+    const who = truncate(str(p, "name", "Pablo Scribbles"), 20, w - pad * 2 - 110)
+    prims.push(text(pad, y, who, 20, { bold: true }))
+    prims.push(text(pad + textWidth(who, 20) + 18, y - 2, str(p, "handle", "@squiggle"), 13, { color: "muted" }))
     y += 20
     if (y < h - 6) {
       prims.push(text(pad, y, truncate("Draws boxes. Occasionally circles. Rarely on time.", 13, w - pad * 2 - 20), 13, { color: "muted" }))
@@ -1213,11 +1301,12 @@ export const aiChatDef: ComponentDef = {
   group: "AI",
   keywords: ["assistant", "conversation", "bubbles", "chatbot", "thread"],
   size: { w: 460, h: 440 },
-  defaults: { turns: 2, typing: true, composer: true },
+  defaults: { turns: 2, typing: true, composer: true, placeholder: "Ask anything, even the dumb one" },
   controls: [
     { key: "turns", label: "Turns", type: "number", min: 1, max: 3, quick: true },
     { key: "typing", label: "Typing dots", type: "toggle", quick: true },
     { key: "composer", label: "Composer", type: "toggle", quick: true },
+    { key: "placeholder", label: "Composer text", type: "text" },
   ],
   render(p, w, h) {
     const prims: Prim[] = [rect(0, 0, w, h)]
@@ -1263,7 +1352,7 @@ export const aiChatDef: ComponentDef = {
       const cy0 = h - pad - 48
       prims.push(rect(pad, cy0, cw, 48))
       prims.push(...icon("paperclip", pad + 22, cy0 + 24, 15, { stroke: "muted" }))
-      prims.push(text(pad + 40, cy0 + 29, truncate("Ask anything, even the dumb one", 14, cw - 96), 14, { color: "muted" }))
+      prims.push(text(pad + 40, cy0 + 29, truncate(str(p, "placeholder", "Ask anything, even the dumb one"), 14, cw - 96), 14, { color: "muted" }))
       prims.push(ellipse(pad + cw - 42, cy0 + 8, 32, 32, { fill: "shade", fillColor: "ink" }))
       prims.push(...icon("paper-plane-tilt", pad + cw - 26, cy0 + 24, 15))
     }
@@ -1545,6 +1634,8 @@ export const orderSummaryDef: ComponentDef = {
 
 // -- cart -------------------------------------------------------------------
 
+const CART_ITEMS = ["Doodle Pad", "Fine-tip pens", "Sticker chaos pack", "Eraser deluxe"]
+
 export const cartDef: ComponentDef = {
   kind: "cart",
   name: "Cart",
@@ -1552,18 +1643,20 @@ export const cartDef: ComponentDef = {
   group: "Commerce",
   keywords: ["basket", "bag", "line items", "quantity", "shopping"],
   size: { w: 560, h: 430 },
-  defaults: { items: 3, totals: true, cta: true },
+  defaults: { items: 3, totals: true, cta: true, title: "Your cart", names: CART_ITEMS.join(", ") },
   controls: [
     { key: "items", label: "Items", type: "number", min: 1, max: 4, quick: true },
     { key: "totals", label: "Totals", type: "toggle", quick: true },
     { key: "cta", label: "Checkout button", type: "toggle", quick: true },
+    { key: "title", label: "Title", type: "text" },
+    { key: "names", label: "Items (comma-sep)", type: "text" },
   ],
   render(p, w, h) {
     const prims: Prim[] = [rect(0, 0, w, h)]
     const pad = 16
     const cw = w - pad * 2
     let y = pad
-    prims.push(text(pad, y + 16, "Your cart", 18, { bold: true }))
+    prims.push(text(pad, y + 16, truncate(str(p, "title", "Your cart"), 18, cw - 70), 18, { bold: true }))
     prims.push(text(w - pad, y + 16, "3 things", 12, { align: "right", color: "muted" }))
     prims.push(hair(pad, y + 28, cw))
     y += 38
@@ -1571,7 +1664,7 @@ export const cartDef: ComponentDef = {
     const cta = bool(p, "cta")
     const totals = bool(p, "totals")
     const footH = (totals ? 74 : 0) + (cta ? 52 : 0)
-    const names = ["Doodle Pad", "Fine-tip pens", "Sticker chaos pack", "Eraser, deluxe"]
+    const names = listOr(p, "names", CART_ITEMS)
     const variants = ["A5 · dotted", "Pack of 4 · black", "38 stickers", "Pink, obviously"]
     const prices = ["$24.00", "$18.00", "$6.00", "$4.00"]
     const avail = h - y - pad - footH
@@ -1621,10 +1714,12 @@ export const checkoutDef: ComponentDef = {
   group: "Commerce",
   keywords: ["payment", "pay", "card", "billing", "order"],
   size: { w: 720, h: 520 },
-  defaults: { summary: true, express: true },
+  defaults: { summary: true, express: true, title: "Checkout", cta: "Pay $58.32" },
   controls: [
     { key: "summary", label: "Order summary", type: "toggle", quick: true },
     { key: "express", label: "Express pay", type: "toggle", quick: true },
+    { key: "title", label: "Title", type: "text" },
+    { key: "cta", label: "Pay button", type: "text" },
   ],
   render(p, w, h) {
     const prims: Prim[] = [rect(0, 0, w, h)]
@@ -1633,7 +1728,7 @@ export const checkoutDef: ComponentDef = {
     const sumW = withSummary ? clamp(w * 0.36, 220, 280) : 0
     const cw = w - pad * 2 - (sumW ? sumW + 24 : 0)
     let y = pad + 18
-    prims.push(text(pad, y, "Checkout", 20, { bold: true }))
+    prims.push(text(pad, y, truncate(str(p, "title", "Checkout"), 20, cw), 20, { bold: true }))
     y += 18
 
     if (bool(p, "express") && cw > 240) {
@@ -1669,7 +1764,7 @@ export const checkoutDef: ComponentDef = {
       prims.push(...sub(inputDef, { label: "Name on card", placeholder: "Pablo Scribbles" }, pad, y, cw, fieldH))
       y += fieldH + 12
     }
-    prims.push(...sub(buttonDef, { label: "Pay $58.32", variant: "filled" }, pad, h - pad - payH - 20, cw, payH))
+    prims.push(...sub(buttonDef, { label: str(p, "cta", "Pay $58.32"), variant: "filled" }, pad, h - pad - payH - 20, cw, payH))
     prims.push(text(pad + cw / 2, h - pad - 4, "Cancel any time. We won't be weird about it.", 11, { align: "center", color: "muted" }))
 
     if (withSummary) {
@@ -1682,6 +1777,8 @@ export const checkoutDef: ComponentDef = {
 
 // -- product detail ---------------------------------------------------------
 
+const PRODUCT_SIZES = ["A6", "A5", "A4"]
+
 export const productDetailDef: ComponentDef = {
   kind: "product-detail",
   name: "Product detail",
@@ -1689,11 +1786,21 @@ export const productDetailDef: ComponentDef = {
   group: "Commerce",
   keywords: ["product", "pdp", "gallery", "buy", "add to cart"],
   size: { w: 720, h: 460 },
-  defaults: { thumbs: true, options: true, rating: true },
+  defaults: {
+    thumbs: true,
+    options: true,
+    rating: true,
+    title: "The Doodle Pad",
+    price: "$24.00",
+    sizes: PRODUCT_SIZES.join(", "),
+  },
   controls: [
     { key: "thumbs", label: "Thumbnails", type: "toggle", quick: true },
     { key: "options", label: "Options", type: "toggle", quick: true },
     { key: "rating", label: "Rating", type: "toggle" },
+    { key: "title", label: "Title", type: "text" },
+    { key: "price", label: "Price", type: "text" },
+    { key: "sizes", label: "Options (comma-sep)", type: "text" },
   ],
   render(p, w, h) {
     const prims: Prim[] = [rect(0, 0, w, h)]
@@ -1719,7 +1826,7 @@ export const productDetailDef: ComponentDef = {
     let y = pad + 16
     prims.push(text(x, y, "STATIONERY", 10, { color: "muted", bold: true }))
     y += 24
-    for (const l of wrap("The Doodle Pad", 24, rw, 2)) {
+    for (const l of wrap(str(p, "title", "The Doodle Pad"), 24, rw, 2)) {
       prims.push(text(x, y, l, 24, { bold: true }))
       y += 28
     }
@@ -1728,8 +1835,9 @@ export const productDetailDef: ComponentDef = {
       prims.push(text(x + 5 * 15 + 8, y, "128 opinions", 11, { color: "muted" }))
       y += 22
     }
-    prims.push(text(x, y + 12, "$24.00", 22, { bold: true }))
-    const oldX = x + textWidth("$24.00", 22) + 22
+    const price = truncate(str(p, "price", "$24.00"), 22, rw - 80)
+    prims.push(text(x, y + 12, price, 22, { bold: true }))
+    const oldX = x + textWidth(price, 22) + 22
     prims.push(text(oldX, y + 12, "$32.00", 14, { color: "muted" }))
     prims.push(line(oldX - 2, y + 7, oldX + textWidth("$32.00", 14) + 2, y + 7, { stroke: "muted", strokeWidth: 1.2 }))
     y += 32
@@ -1738,13 +1846,13 @@ export const productDetailDef: ComponentDef = {
 
     if (bool(p, "options") && y + 44 < h - 60) {
       prims.push(text(x, y, "Size", 11, { color: "muted", bold: true }))
-      const opts = ["A6", "A5", "A4"]
+      const opts = listOr(p, "sizes", PRODUCT_SIZES)
       opts.forEach((o, i) => {
         const ow = 52
         const ox = x + i * (ow + 10)
         if (ox + ow > x + rw) return
         prims.push(pill(ox, y + 10, ow, 30, i === 1 ? { fill: "shade", fillColor: "ink" } : { stroke: "muted" }))
-        prims.push(text(ox + ow / 2, y + 30, o, 13, { align: "center" }))
+        prims.push(text(ox + ow / 2, y + 30, truncate(o, 13, ow - 10), 13, { align: "center" }))
       })
       y += 54
     }
@@ -1766,6 +1874,12 @@ export const productDetailDef: ComponentDef = {
 
 // -- product grid -----------------------------------------------------------
 
+// Two of the stock names carry their own comma ("Ink, one liter", "Paper, a
+// ream") and both land inside the default three-by-two drop, so a comma-
+// separated list would chop them and change how the block looks untouched.
+// Prices take the control; the names wait for a follow-up.
+const PRODUCT_PRICES = ["$24", "$18", "$6", "$4", "$14", "$32", "$9", "$3", "$11", "$2", "$26", "$7"]
+
 export const productGridDef: ComponentDef = {
   kind: "product-grid",
   name: "Product grid",
@@ -1773,11 +1887,12 @@ export const productGridDef: ComponentDef = {
   group: "Commerce",
   keywords: ["catalog", "shop", "listing", "cards", "store"],
   size: { w: 660, h: 440 },
-  defaults: { cols: 3, rows: 2, price: true },
+  defaults: { cols: 3, rows: 2, price: true, prices: PRODUCT_PRICES.join(", ") },
   controls: [
     { key: "cols", label: "Columns", type: "number", min: 2, max: 4, quick: true },
     { key: "rows", label: "Rows", type: "number", min: 1, max: 3, quick: true },
     { key: "price", label: "Prices", type: "toggle", quick: true },
+    { key: "prices", label: "Prices (comma-sep)", type: "text" },
   ],
   render(p, w, h) {
     const prims: Prim[] = []
@@ -1800,7 +1915,7 @@ export const productGridDef: ComponentDef = {
       "Marker set",
       "Paper, a ream",
     ]
-    const prices = ["$24", "$18", "$6", "$4", "$14", "$32", "$9", "$3", "$11", "$2", "$26", "$7"]
+    const prices = listOr(p, "prices", PRODUCT_PRICES)
     const showPrice = bool(p, "price")
     for (let r = 0; r < rows; r++) {
       for (let c = 0; c < cols; c++) {
@@ -1887,18 +2002,27 @@ export const appShellDef: ComponentDef = {
   group: "Screens",
   keywords: ["layout", "sidebar", "topbar", "frame", "skeleton", "admin"],
   size: { w: 1000, h: 660 },
-  defaults: { sidebar: true, topbar: true, placeholder: true },
+  defaults: {
+    sidebar: true,
+    topbar: true,
+    placeholder: true,
+    items: "Home, Projects, Tasks, Inbox, Reports, Settings",
+    title: "Projects",
+  },
   controls: [
     { key: "sidebar", label: "Sidebar", type: "toggle", quick: true },
     { key: "topbar", label: "Topbar", type: "toggle", quick: true },
     { key: "placeholder", label: "Placeholder", type: "toggle", quick: true },
+    { key: "items", label: "Nav items (comma-sep)", type: "text" },
+    { key: "title", label: "Page title", type: "text" },
   ],
   render(p, w, h) {
     const prims: Prim[] = [rect(0, 0, w, h)]
     const sw = bool(p, "sidebar") ? clamp(w * 0.22, 160, 230) : 0
     const th = bool(p, "topbar") ? 58 : 0
     if (sw) {
-      prims.push(...sub(sidebarDef, { items: "Home, Projects, Tasks, Inbox, Reports, Settings", active: 2, user: true, icons: true }, 0, 0, sw, h))
+      const items = str(p, "items", "Home, Projects, Tasks, Inbox, Reports, Settings")
+      prims.push(...sub(sidebarDef, { items, active: 2, user: true, icons: true }, 0, 0, sw, h))
     }
     if (th) {
       prims.push(rect(sw, 0, w - sw, th))
@@ -1918,7 +2042,7 @@ export const appShellDef: ComponentDef = {
     const cx = sw + pad
     const cw = w - sw - pad * 2
     let y = th + pad
-    prims.push(text(cx, y + 16, "Projects", 22, { bold: true }))
+    prims.push(text(cx, y + 16, truncate(str(p, "title", "Projects"), 22, cw - 160), 22, { bold: true }))
     prims.push(...sub(buttonDef, { label: "New project", variant: "filled", size: "sm", icon: "left" }, cx + cw - 148, y - 2, 148, 36))
     y += 46
     prims.push(text(cx, y, "Three of them are the same project.", 12, { color: "muted" }))
@@ -1932,6 +2056,8 @@ export const appShellDef: ComponentDef = {
 
 // -- landing page -----------------------------------------------------------
 
+const LANDING_FEATURES = ["Absurdly fast", "Smart enough", "Made for two", "Nothing leaks"]
+
 export const landingPageDef: ComponentDef = {
   kind: "landing-page",
   name: "Landing page",
@@ -1939,18 +2065,30 @@ export const landingPageDef: ComponentDef = {
   group: "Screens",
   keywords: ["marketing", "hero", "features", "website", "home", "site"],
   size: { w: 1000, h: 830 },
-  defaults: { hero: "split", features: 3, footer: true },
+  defaults: {
+    hero: "split",
+    features: 3,
+    footer: true,
+    headline: "Wireframes that look like you meant it",
+    links: "Product, Pricing, Docs, Blog",
+    featureNames: LANDING_FEATURES.join(", "),
+  },
   controls: [
     { key: "hero", label: "Hero", type: "select", options: ["split", "center"], quick: true },
     { key: "features", label: "Features", type: "number", min: 2, max: 4, quick: true },
     { key: "footer", label: "Footer", type: "toggle", quick: true },
+    { key: "headline", label: "Headline", type: "text" },
+    { key: "links", label: "Nav links (comma-sep)", type: "text" },
+    { key: "featureNames", label: "Features (comma-sep)", type: "text" },
   ],
   render(p, w, h) {
     const prims: Prim[] = [rect(0, 0, w, h)]
     const pad = clamp(w * 0.06, 24, 72)
     const cw = w - pad * 2
     const navH = Math.min(64, h * 0.09)
-    prims.push(...sub(navbarDef, { links: "Product, Pricing, Docs, Blog", search: false, avatar: false, cta: true }, 0, 0, w, navH))
+    const links = str(p, "links", "Product, Pricing, Docs, Blog")
+    prims.push(...sub(navbarDef, { links, search: false, avatar: false, cta: true }, 0, 0, w, navH))
+    const headline = str(p, "headline", "Wireframes that look like you meant it")
 
     const footerH = bool(p, "footer") ? Math.min(150, h * 0.19) : 0
     const ctaH = Math.min(130, h * 0.16)
@@ -1961,7 +2099,7 @@ export const landingPageDef: ComponentDef = {
     let y = navH + Math.min(48, heroH * 0.16)
     if (str(p, "hero", "split") === "split" && cw > 520) {
       const colW = cw * 0.48
-      for (const l of wrap("Wireframes that look like you meant it", 34, colW, 3)) {
+      for (const l of wrap(headline, 34, colW, 3)) {
         prims.push(text(pad, y, l, 34, { bold: true }))
         y += 40
       }
@@ -1976,7 +2114,7 @@ export const landingPageDef: ComponentDef = {
       prims.push(rect(ix, navH + Math.min(48, heroH * 0.16) - 8, iw, ih, { fill: "shade", fillColor: "faint" }))
       prims.push(...icon("image", ix + iw / 2, navH + Math.min(48, heroH * 0.16) - 8 + ih / 2, 54, { stroke: "faint" }))
     } else {
-      for (const l of wrap("Wireframes that look like you meant it", 32, cw * 0.72, 2)) {
+      for (const l of wrap(headline, 32, cw * 0.72, 2)) {
         prims.push(text(w / 2, y, l, 32, { align: "center", bold: true }))
         y += 38
       }
@@ -1999,7 +2137,7 @@ export const landingPageDef: ComponentDef = {
     const gap = 26
     const colW = (cw - gap * (n - 1)) / n
     const names = ["lightning", "sparkle", "users", "shield-check"]
-    const titles = ["Absurdly fast", "Smart enough", "Made for two", "Nothing leaks"]
+    const titles = listOr(p, "featureNames", LANDING_FEATURES)
     for (let i = 0; i < n; i++) {
       const x = pad + i * (colW + gap)
       prims.push(ellipse(x, fy, 36, 36, { stroke: "faint" }))
@@ -2040,6 +2178,8 @@ export const landingPageDef: ComponentDef = {
 
 // -- chat screen ------------------------------------------------------------
 
+const CHAT_NAMES = ["Maya", "Luis", "Ana", "Kai", "Design crew", "Mom", "Robot", "Nobody"]
+
 export const chatScreenDef: ComponentDef = {
   kind: "chat-screen",
   name: "Chat screen",
@@ -2047,21 +2187,29 @@ export const chatScreenDef: ComponentDef = {
   group: "Screens",
   keywords: ["messages", "dm", "conversation", "messenger", "slack"],
   size: { w: 1000, h: 660 },
-  defaults: { convos: 6, sidebar: true, composer: true },
+  defaults: {
+    convos: 6,
+    sidebar: true,
+    composer: true,
+    title: "Messages",
+    names: CHAT_NAMES.join(", "),
+  },
   controls: [
     { key: "convos", label: "Conversations", type: "number", min: 3, max: 8, quick: true },
     { key: "sidebar", label: "List pane", type: "toggle", quick: true },
     { key: "composer", label: "Composer", type: "toggle", quick: true },
+    { key: "title", label: "Title", type: "text" },
+    { key: "names", label: "People (comma-sep)", type: "text" },
   ],
   render(p, w, h) {
     const prims: Prim[] = [rect(0, 0, w, h)]
+    const names = listOr(p, "names", CHAT_NAMES)
     const lw = bool(p, "sidebar") ? clamp(w * 0.29, 200, 310) : 0
     if (lw) {
       prims.push(line(lw, 0, lw, h, { stroke: "faint" }))
-      prims.push(text(18, 34, "Messages", 18, { bold: true }))
+      prims.push(text(18, 34, truncate(str(p, "title", "Messages"), 18, lw - 54), 18, { bold: true }))
       prims.push(...icon("pencil-simple", lw - 24, 28, 16, { stroke: "muted" }))
       prims.push(...sub(inputDef, { showLabel: false, icon: "search", placeholder: "Search people" }, 16, 50, lw - 32, 34))
-      const names = ["Maya", "Luis", "Ana", "Kai", "Design crew", "Mom", "Robot", "Nobody"]
       const previews = [
         "ok but hear me out…",
         "merged, finally",
@@ -2094,8 +2242,11 @@ export const chatScreenDef: ComponentDef = {
     const cw = w - lw
     const headH = 62
     prims.push(hair(cx, headH, cw))
-    prims.push(...sub(avatarDef, { content: "initials", initials: "MA", status: true }, cx + 18, headH / 2 - 18, 36, 36))
-    prims.push(text(cx + 66, headH / 2 - 1, "Maya", 16, { bold: true }))
+    // the open thread is whoever sits at the top of the list
+    const open = names[0]
+    const openInitials = open.slice(0, 2).toUpperCase()
+    prims.push(...sub(avatarDef, { content: "initials", initials: openInitials, status: true }, cx + 18, headH / 2 - 18, 36, 36))
+    prims.push(text(cx + 66, headH / 2 - 1, truncate(open, 16, cw - 180), 16, { bold: true }))
     prims.push(text(cx + 66, headH / 2 + 16, "typing, allegedly", 11, { color: "muted" }))
     prims.push(...icon("phone", cx + cw - 88, headH / 2, 16, { stroke: "muted" }))
     prims.push(...icon("video-camera", cx + cw - 56, headH / 2, 16, { stroke: "muted" }))
@@ -2114,7 +2265,7 @@ export const chatScreenDef: ComponentDef = {
       const mine = i % 2 === 1
       const bx = mine ? cx + cw - pad - bw : cx + pad + 44
       if (!mine) {
-        prims.push(...sub(avatarDef, { content: "initials", initials: "MA" }, cx + pad, y + bh - 32, 32, 32))
+        prims.push(...sub(avatarDef, { content: "initials", initials: openInitials }, cx + pad, y + bh - 32, 32, 32))
       }
       if (mine) prims.push(rect(bx, y, bw, bh, { fill: "shade", fillColor: "faint", stroke: "faint", strokeWidth: 0.8 }))
       prims.push(rect(bx, y, bw, bh))
@@ -2137,6 +2288,8 @@ export const chatScreenDef: ComponentDef = {
 
 // -- inbox screen -----------------------------------------------------------
 
+const INBOX_FOLDERS = ["Inbox", "Starred", "Sent", "Drafts", "Archive", "Trash"]
+
 export const inboxScreenDef: ComponentDef = {
   kind: "inbox-screen",
   name: "Inbox screen",
@@ -2144,14 +2297,23 @@ export const inboxScreenDef: ComponentDef = {
   group: "Screens",
   keywords: ["mail", "email", "reading pane", "three column", "client"],
   size: { w: 1040, h: 680 },
-  defaults: { rows: 6, pane: true, folders: true },
+  defaults: {
+    rows: 6,
+    pane: true,
+    folders: true,
+    folderNames: INBOX_FOLDERS.join(", "),
+    senders: INBOX_SENDERS.join(", "),
+  },
   controls: [
     { key: "rows", label: "Messages", type: "number", min: 3, max: 8, quick: true },
     { key: "pane", label: "Reading pane", type: "toggle", quick: true },
     { key: "folders", label: "Folder rail", type: "toggle", quick: true },
+    { key: "folderNames", label: "Folders (comma-sep)", type: "text" },
+    { key: "senders", label: "Senders (comma-sep)", type: "text" },
   ],
   render(p, w, h) {
     const prims: Prim[] = [rect(0, 0, w, h)]
+    const folders = listOr(p, "folderNames", INBOX_FOLDERS)
     const fw = bool(p, "folders") ? clamp(w * 0.18, 140, 200) : 0
     const pane = bool(p, "pane") && w - fw > 480
     const listW = pane ? clamp((w - fw) * 0.42, 240, 360) : w - fw
@@ -2159,15 +2321,14 @@ export const inboxScreenDef: ComponentDef = {
     if (fw) {
       prims.push(line(fw, 0, fw, h, { stroke: "faint" }))
       prims.push(...sub(buttonDef, { label: "Compose", variant: "filled", size: "sm", icon: "left" }, 16, 18, fw - 32, 38))
-      const folders = ["Inbox", "Starred", "Sent", "Drafts", "Archive", "Trash"]
       const counts = ["12", "3", "", "1", "", ""]
       const names = ["envelope", "star", "paper-plane-tilt", "file", "package", "trash"]
       for (let i = 0; i < folders.length; i++) {
         const y = 76 + i * 40
         if (y + 32 > h - 20) break
         if (i === 0) prims.push(rect(8, y, fw - 16, 32, { fill: "shade", fillColor: "faint", stroke: "faint", strokeWidth: 0.8 }))
-        prims.push(...icon(names[i], 26, y + 16, 15, { stroke: i === 0 ? "ink" : "muted" }))
-        prims.push(text(44, y + 21, folders[i], 13, { bold: i === 0, color: i === 0 ? "ink" : "muted" }))
+        prims.push(...icon(names[i % names.length], 26, y + 16, 15, { stroke: i === 0 ? "ink" : "muted" }))
+        prims.push(text(44, y + 21, truncate(folders[i], 13, fw - 70), 13, { bold: i === 0, color: i === 0 ? "ink" : "muted" }))
         if (counts[i]) prims.push(text(fw - 16, y + 21, counts[i], 11, { align: "right", color: "muted" }))
       }
     }
@@ -2176,10 +2337,20 @@ export const inboxScreenDef: ComponentDef = {
     const lx = fw
     const listHeadH = 52
     prims.push(hair(lx, listHeadH, listW))
-    prims.push(text(lx + 16, 32, "Inbox", 16, { bold: true }))
+    // the list is whichever folder the rail has selected — the first one
+    prims.push(text(lx + 16, 32, truncate(folders[0], 16, listW - 90), 16, { bold: true }))
     prims.push(...icon("funnel", lx + listW - 58, 26, 15, { stroke: "muted" }))
     prims.push(...icon("arrows-clockwise", lx + listW - 26, 26, 15, { stroke: "muted" }))
-    prims.push(...sub(inboxListDef, { rows: num(p, "rows", 6), star: listW > 280, checkbox: listW > 320 }, lx, listHeadH, listW, h - listHeadH))
+    prims.push(
+      ...sub(
+        inboxListDef,
+        { rows: num(p, "rows", 6), star: listW > 280, checkbox: listW > 320, senders: str(p, "senders", INBOX_SENDERS.join(", ")) },
+        lx,
+        listHeadH,
+        listW,
+        h - listHeadH
+      )
+    )
     if (pane) prims.push(line(lx + listW, 0, lx + listW, h, { stroke: "faint" }))
 
     if (!pane) return prims
@@ -2197,9 +2368,10 @@ export const inboxScreenDef: ComponentDef = {
       y += 26
     }
     y += 10
-    prims.push(...sub(avatarDef, { content: "initials", initials: "MA" }, rx + pad, y - 12, 38, 38))
-    prims.push(text(rx + pad + 50, y + 4, "Maya", 14, { bold: true }))
-    prims.push(text(rx + pad + 50 + textWidth("Maya", 14) + 10, y + 4, "to me", 11, { color: "muted" }))
+    const from = truncate(listOr(p, "senders", INBOX_SENDERS)[0], 14, rw - pad * 2 - 140)
+    prims.push(...sub(avatarDef, { content: "initials", initials: from.slice(0, 2).toUpperCase() }, rx + pad, y - 12, 38, 38))
+    prims.push(text(rx + pad + 50, y + 4, from, 14, { bold: true }))
+    prims.push(text(rx + pad + 50 + textWidth(from, 14) + 10, y + 4, "to me", 11, { color: "muted" }))
     prims.push(text(rx + pad + 50, y + 22, "maya@somewhere.co", 11, { color: "muted" }))
     prims.push(text(rx + rw - pad, y + 4, "9:41 AM", 11, { align: "right", color: "muted" }))
     y += 44
@@ -2224,24 +2396,36 @@ export const profileScreenDef: ComponentDef = {
   group: "Screens",
   keywords: ["profile", "user page", "portfolio", "tabs", "grid"],
   size: { w: 960, h: 720 },
-  defaults: { cards: 6, tabs: true, navbar: true },
+  defaults: {
+    cards: 6,
+    tabs: true,
+    navbar: true,
+    name: "Pablo Scribbles",
+    links: "Explore, Boards, People",
+    tabLabels: "Boards, Liked, About",
+  },
   controls: [
     { key: "cards", label: "Cards", type: "number", min: 2, max: 9, quick: true },
     { key: "tabs", label: "Tabs", type: "toggle", quick: true },
     { key: "navbar", label: "Navbar", type: "toggle" },
+    { key: "name", label: "Name", type: "text" },
+    { key: "links", label: "Nav links (comma-sep)", type: "text" },
+    { key: "tabLabels", label: "Tabs (comma-sep)", type: "text" },
   ],
   render(p, w, h) {
     const prims: Prim[] = [rect(0, 0, w, h)]
     const navH = bool(p, "navbar") ? 58 : 0
     if (navH) {
-      prims.push(...sub(navbarDef, { links: "Explore, Boards, People", search: true, avatar: true, cta: false }, 0, 0, w, navH))
+      prims.push(...sub(navbarDef, { links: str(p, "links", "Explore, Boards, People"), search: true, avatar: true, cta: false }, 0, 0, w, navH))
     }
     const pad = clamp(w * 0.04, 20, 40)
     const headerH = clamp(h * 0.32, 180, 250)
-    prims.push(...sub(profileHeaderDef, { cover: true, stats: true, cta: true }, pad, navH + 18, w - pad * 2, headerH))
+    prims.push(
+      ...sub(profileHeaderDef, { cover: true, stats: true, cta: true, name: str(p, "name", "Pablo Scribbles") }, pad, navH + 18, w - pad * 2, headerH)
+    )
     let y = navH + 18 + headerH + 18
     if (bool(p, "tabs") && y + 48 < h) {
-      prims.push(...sub(tabsDef, { labels: "Boards, Liked, About", active: 1 }, pad, y, Math.min(360, w - pad * 2), 40))
+      prims.push(...sub(tabsDef, { labels: str(p, "tabLabels", "Boards, Liked, About"), active: 1 }, pad, y, Math.min(360, w - pad * 2), 40))
       prims.push(hair(pad, y + 38, w - pad * 2))
       y += 56
     }

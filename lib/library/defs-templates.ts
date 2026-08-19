@@ -4,7 +4,7 @@
 // ---------------------------------------------------------------------------
 
 import type { Prim } from "@/lib/sketch/kit"
-import { rect, ellipse, line, text, icon, place, loremLines } from "@/lib/sketch/kit"
+import { rect, ellipse, line, text, icon, place, loremLines, truncate } from "@/lib/sketch/kit"
 import type { ComponentDef, Props } from "./registry"
 import { buttonDef, inputDef, checkboxDef, switchDef, avatarDef } from "./defs-basic"
 import { chartDef, tableDef, dividerDef } from "./defs-display"
@@ -13,6 +13,18 @@ import { navbarDef, sidebarDef } from "./defs-nav"
 const str = (p: Props, k: string, fallback = ""): string => String(p[k] ?? fallback)
 const bool = (p: Props, k: string): boolean => Boolean(p[k])
 const num = (p: Props, k: string, fallback = 0): number => Number(p[k] ?? fallback)
+
+/**
+ * A comma-separated list, backfilled from the words the screen ships with —
+ * name two of four plans and the other two keep the names they had. The stock
+ * array is also what `defaults` joins, so a screen nobody has typed into reads
+ * back exactly the list it started with.
+ */
+const listOr = (p: Props, k: string, stock: readonly string[]): string[] => {
+  const given = str(p, k, "").split(",").map((s) => s.trim())
+  const n = Math.max(stock.length, given.length)
+  return Array.from({ length: n }, (_, i) => given[i] || stock[i % stock.length])
+}
 
 function sub(def: ComponentDef, props: Props, x: number, y: number, w: number, h: number): Prim[] {
   return place(def.render({ ...def.defaults, ...props }, w, h), x, y)
@@ -105,6 +117,8 @@ export const signupDef: ComponentDef = {
 
 // -- settings ---------------------------------------------------------------
 
+const SETTINGS_NAV = ["Profile", "Account", "Billing", "Alerts", "Team"]
+
 export const settingsDef: ComponentDef = {
   kind: "settings",
   name: "Settings page",
@@ -112,10 +126,12 @@ export const settingsDef: ComponentDef = {
   group: "Screens",
   keywords: ["preferences", "account", "profile", "form"],
   size: { w: 640, h: 460 },
-  defaults: { nav: true, danger: true },
+  defaults: { nav: true, danger: true, title: "Settings", items: SETTINGS_NAV.join(", ") },
   controls: [
     { key: "nav", label: "Side nav", type: "toggle", quick: true },
     { key: "danger", label: "Danger zone", type: "toggle", quick: true },
+    { key: "title", label: "Title", type: "text" },
+    { key: "items", label: "Nav items (comma-sep)", type: "text" },
   ],
   render(p, w, h) {
     const prims: Prim[] = [rect(0, 0, w, h)]
@@ -123,19 +139,19 @@ export const settingsDef: ComponentDef = {
     if (bool(p, "nav")) {
       left = Math.min(170, w * 0.28)
       prims.push(line(left, 0, left, h, { stroke: "faint" }))
-      const items = ["Profile", "Account", "Billing", "Alerts", "Team"]
+      const items = listOr(p, "items", SETTINGS_NAV)
       items.forEach((item, i) => {
         const y = 30 + i * 36
         if (y > h - 20) return
         if (i === 0) prims.push(rect(10, y - 18, left - 20, 30, { fill: "shade", fillColor: "faint", stroke: "faint" }))
-        prims.push(text(22, y + 2, item, 14, { color: i === 0 ? "ink" : "muted", bold: i === 0 }))
+        prims.push(text(22, y + 2, truncate(item, 14, left - 34), 14, { color: i === 0 ? "ink" : "muted", bold: i === 0 }))
       })
     }
     const pad = 28
     const cx = left + pad
     const cw = w - left - pad * 2
     let y = 34
-    prims.push(text(cx, y, "Settings", 22, { bold: true }))
+    prims.push(text(cx, y, truncate(str(p, "title", "Settings"), 22, cw), 22, { bold: true }))
     y += 24
     prims.push(...place(avatarDef.render({ ...avatarDef.defaults, content: "icon" }, 56, 56), cx, y))
     prims.push(...sub(buttonDef, { label: "Change photo", variant: "outline", size: "sm" }, cx + 72, y + 12, 120, 32))
@@ -168,11 +184,19 @@ export const dashboardDef: ComponentDef = {
   group: "Screens",
   keywords: ["admin", "analytics", "stats", "app"],
   size: { w: 760, h: 520 },
-  defaults: { sidebar: true, stats: 3, chart: "line" },
+  defaults: {
+    sidebar: true,
+    stats: 3,
+    chart: "line",
+    title: "Good morning, doodler",
+    items: "Overview, Reports, Users, Settings",
+  },
   controls: [
     { key: "sidebar", label: "Sidebar", type: "toggle", quick: true },
     { key: "stats", label: "Stat cards", type: "number", min: 2, max: 4, quick: true },
     { key: "chart", label: "Chart style", type: "select", options: ["line", "bars"], quick: true },
+    { key: "title", label: "Greeting", type: "text" },
+    { key: "items", label: "Nav items (comma-sep)", type: "text" },
   ],
   render(p, w, h) {
     const prims: Prim[] = [rect(0, 0, w, h)]
@@ -181,13 +205,13 @@ export const dashboardDef: ComponentDef = {
     let left = 0
     if (bool(p, "sidebar")) {
       left = Math.min(170, w * 0.24)
-      prims.push(...sub(sidebarDef, { user: false, items: "Overview, Reports, Users, Settings" }, 0, navH, left, h - navH))
+      prims.push(...sub(sidebarDef, { user: false, items: str(p, "items", "Overview, Reports, Users, Settings") }, 0, navH, left, h - navH))
     }
     const pad = 20
     const cx = left + pad
     const cw = w - left - pad * 2
     let y = navH + pad
-    prims.push(text(cx, y + 8, "Good morning, doodler", 20, { bold: true }))
+    prims.push(text(cx, y + 8, truncate(str(p, "title", "Good morning, doodler"), 20, cw), 20, { bold: true }))
     y += 26
     // stat cards
     const n = Math.max(2, Math.min(4, num(p, "stats", 3)))
@@ -216,6 +240,9 @@ export const dashboardDef: ComponentDef = {
 
 // -- pricing ----------------------------------------------------------------
 
+const PLAN_NAMES = ["Doodle", "Sketch", "Masterpiece", "Gallery"]
+const PLAN_PRICES = ["$0", "$12", "$49", "$199"]
+
 export const pricingDef: ComponentDef = {
   kind: "pricing",
   name: "Pricing table",
@@ -223,10 +250,12 @@ export const pricingDef: ComponentDef = {
   group: "Screens",
   keywords: ["plans", "tiers", "billing", "money"],
   size: { w: 680, h: 400 },
-  defaults: { plans: 3, highlight: 2 },
+  defaults: { plans: 3, highlight: 2, names: PLAN_NAMES.join(", "), prices: PLAN_PRICES.join(", ") },
   controls: [
     { key: "plans", label: "Plans", type: "number", min: 2, max: 4, quick: true },
     { key: "highlight", label: "Highlighted", type: "number", min: 0, max: 4, quick: true },
+    { key: "names", label: "Plans (comma-sep)", type: "text" },
+    { key: "prices", label: "Prices (comma-sep)", type: "text" },
   ],
   render(p, w, h) {
     const prims: Prim[] = []
@@ -234,8 +263,8 @@ export const pricingDef: ComponentDef = {
     const hi = num(p, "highlight", 2)
     const gap = 18
     const cardW = (w - gap * (n - 1)) / n
-    const names = ["Doodle", "Sketch", "Masterpiece", "Gallery"]
-    const prices = ["$0", "$12", "$49", "$199"]
+    const names = listOr(p, "names", PLAN_NAMES)
+    const prices = listOr(p, "prices", PLAN_PRICES)
     for (let i = 0; i < n; i++) {
       const x = i * (cardW + gap)
       const isHi = i + 1 === hi
@@ -247,9 +276,9 @@ export const pricingDef: ComponentDef = {
         prims.push(text(x + cardW / 2, y0 + 18, "most popular", 12, { align: "center" }))
       }
       let y = y0 + (isHi ? 50 : 34)
-      prims.push(text(x + cardW / 2, y, names[i], 17, { align: "center", bold: true }))
+      prims.push(text(x + cardW / 2, y, truncate(names[i], 17, cardW - 16), 17, { align: "center", bold: true }))
       y += 34
-      prims.push(text(x + cardW / 2, y, prices[i], 26, { align: "center", bold: true }))
+      prims.push(text(x + cardW / 2, y, truncate(prices[i], 26, cardW - 16), 26, { align: "center", bold: true }))
       prims.push(text(x + cardW / 2, y + 16, "/month-ish", 11, { align: "center", color: "muted" }))
       y += 36
       const feats = Math.min(4, Math.floor((h - y - 70) / 26))
