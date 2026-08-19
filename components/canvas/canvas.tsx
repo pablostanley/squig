@@ -39,6 +39,7 @@ import { getDef, renderComponent } from "@/lib/library/registry"
 import { exportDoc } from "@/lib/file-io"
 import { copyAsPngWithNotice } from "@/lib/export-image"
 import { clampGestureZoom, zoomFloor, MAX_ZOOM, MIN_ZOOM } from "@/lib/canvas/navigate"
+import { inViewBox, visibleBox } from "@/lib/canvas/cull"
 import { ContextRow } from "./context-row"
 import { EmptyCanvas } from "./empty-canvas"
 import { TextEditOverlay } from "./text-edit-overlay"
@@ -333,6 +334,24 @@ export function Canvas() {
   const [bindHint, setBindHint] = useState<string | null>(null)
   const [altHeld, setAltHeld] = useState(false)
   const [gestureKind, setGestureKind] = useState<Gesture["kind"] | null>(null)
+  /**
+   * How big the stage is, in screen px — what the culling measures against.
+   * Zero until the observer has read it, which lib/canvas/cull reads as
+   * "draw everything", so the first frame is never blank.
+   */
+  const [stage, setStage] = useState({ w: 0, h: 0 })
+  /** the canvas has the keyboard, and arrived by keyboard — see the ring */
+  const [ring, setRing] = useState(false)
+  /**
+   * Escape has handed Tab back to the browser.
+   *
+   * The canvas keeps DOM focus — every other shortcut still works — but the
+   * next Tab is allowed through instead of cycling the selection, which is
+   * the whole of how a keyboard user gets back out to the chrome. Blurring
+   * instead would be worse than useless: the canvas is the first thing in the
+   * document, so a Tab from nowhere lands straight back on it.
+   */
+  const tabReleased = useRef(false)
 
   const { isSpacebarHeld } = useSpacebarPan()
   // ⌘C/⌘X/⌘V live on the browser's clipboard events, not in onKey below
@@ -391,6 +410,22 @@ export function Canvas() {
     },
     [st]
   )
+
+  // -- how much glass there is ----------------------------------------------
+
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const read = () => setStage({ w: el.clientWidth, h: el.clientHeight })
+    read()
+    // observed rather than taken from the window: the canvas is inset-0 today,
+    // but the culling would go quietly wrong the day it isn't, and a wrong
+    // culling rectangle is a node that isn't there rather than a layout nit
+    if (typeof ResizeObserver === "undefined") return
+    const ro = new ResizeObserver(read)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
 
   // -- wheel: pan / pinch-zoom ---------------------------------------------
 
@@ -1331,6 +1366,12 @@ export function Canvas() {
       // focus here would blur the editor mid-click and end the edit
       if (s.editingId && (e.target as HTMLElement).closest?.("textarea")) return
       containerRef.current?.focus({ preventScroll: true })
+      // a press re-arms Tab even when the canvas already had focus, which the
+      // focus handler below would never hear about. It also puts the ring
+      // away: a pointer is its own answer to "where am I", and the ring is
+      // there for the people who don't have one.
+      tabReleased.current = false
+      setRing(false)
 
       if (s.editingId) {
         // let the click both dismiss the editor and land where it was aimed,
@@ -1895,7 +1936,12 @@ export function Canvas() {
           else if (s.selection.length) s.selectNone()
           else {
             s.setTool("select")
-            containerRef.current?.blur()
+            // and with nothing left to step out of, Escape steps out of the
+            // canvas itself: the ring goes and the next Tab is the browser's
+            // again. Focus stays put on purpose — the tool keys go on working,
+            // and a click is not needed to get the selection cycling back.
+            tabReleased.current = true
+            setRing(false)
           }
           break
         case "Enter": {
@@ -1926,11 +1972,19 @@ export function Canvas() {
           break
         }
         case "Tab": {
-          // Tab is how you move between controls. Only claim it when the
-          // canvas itself has focus — otherwise a click on the rail traps the
-          // keyboard and every Tab cycles the selection instead of moving on.
-          const focused = document.activeElement
-          if (focused !== containerRef.current && focused !== document.body) break
+          // Tab means two things and the canvas only gets one of them. While
+          // the canvas itself holds focus, Tab steps through the drawing; the
+          // moment focus is anywhere else it is the browser's, and stepping
+          // through the drawing instead would trap the keyboard on the first
+          // click on the rail.
+          //
+          // Which leaves the way back out, now that the canvas is in the tab
+          // order and is the first thing in the document: Escape releases it
+          // (see above), and this one Tab goes where it would have gone. The
+          // release lasts until focus comes back, so it can't strand anyone
+          // who reaches for Tab a second time.
+          if (document.activeElement !== containerRef.current) break
+          if (tabReleased.current) break
           e.preventDefault()
           s.cycleSelection(e.shiftKey ? -1 : 1)
           break
@@ -1984,6 +2038,29 @@ export function Canvas() {
     return () => window.removeEventListener("keydown", onKey)
   }, [st])
 
+  /**
+   * When an edit ends, the canvas takes the keyboard back.
+   *
+   * The editor's textarea holds focus while it's up, and removing it drops
+   * focus on the floor — activeElement goes to <body>, where Tab no longer
+   * steps through the drawing. So a keyboard user who typed a label would
+   * have had to reach for the mouse to carry on, which is the whole thing
+   * this was meant to fix. Only when focus really did fall to nowhere: an
+   * edit dismissed by clicking a control in the inspector leaves that control
+   * with the keyboard, and it should keep it.
+   */
+  const wasEditing = useRef(false)
+  useEffect(() => {
+    if (editingId) {
+      wasEditing.current = true
+      return
+    }
+    if (!wasEditing.current) return
+    wasEditing.current = false
+    const focused = document.activeElement
+    if (!focused || focused === document.body) containerRef.current?.focus({ preventScroll: true })
+  }, [editingId])
+
   // any selection change ends the nudge burst
   useEffect(() => {
     const nudge = nudgeRef.current
@@ -2007,6 +2084,13 @@ export function Canvas() {
   const cropNode = croppingImage(nodes, selection, croppingId)
   const hoverNode = hover && !selection.includes(hover.id) && !cropNode ? nodes[hover.id] : null
   const bindNode = bindHint ? nodes[bindHint] : null
+  /**
+   * The world worth drawing. Recomputed on every pan and zoom, which is
+   * cheap — four divisions — and has to be, since it is what decides which
+   * nodes are in the DOM this frame. See lib/canvas/cull for what it is not
+   * allowed to affect.
+   */
+  const view = useMemo(() => visibleBox(v, stage.w, stage.h), [v, stage.w, stage.h])
 
   // a soft hover keeps the default cursor: a click there selects, but a drag
   // marquees, and a move cursor would promise a drag this press won't do
@@ -2031,7 +2115,16 @@ export function Canvas() {
   return (
     <div
       ref={containerRef}
-      tabIndex={-1}
+      // In the tab order, and first in the document, so the drawing is the
+      // first thing a keyboard reaches rather than the last. Everything a
+      // no-mouse edit needs was already here — Tab cycles the selection, the
+      // arrows nudge, Return steps into the words — and none of it could be
+      // got at without a click.
+      tabIndex={0}
+      // One label, no more. A hand-drawn canvas is never going to be
+      // meaningfully navigable by screen reader, and a tree of ARIA saying
+      // otherwise would be a promise squig can't keep.
+      aria-label="Drawing canvas. Tab steps through the layers, Escape hands the keyboard back."
       // touch-none hands us every finger: one to draw with instead of
       // scrolling the page away, and two for the pinch — which has to be ours
       // rather than the browser's, because the browser would zoom the document
@@ -2044,6 +2137,15 @@ export function Canvas() {
         backgroundSize: `${24 * v.zoom}px ${24 * v.zoom}px`,
         backgroundPosition: `${v.x}px ${v.y}px`,
       }}
+      onFocus={() => {
+        tabReleased.current = false
+        // the ring is for the people who can't see where the click went. A
+        // pointer already said where it landed, and a 2px rule round the whole
+        // window on every press would read as a flicker, so the ring is asked
+        // for by :focus-visible rather than by focus.
+        setRing(containerRef.current?.matches(":focus-visible") ?? false)
+      }}
+      onBlur={() => setRing(false)}
       onPointerDownCapture={onPointerDownCapture}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMoveLocal}
@@ -2058,6 +2160,10 @@ export function Canvas() {
           {order.map((id) => {
             const n = nodes[id]
             if (!n || id === cropNode?.id) return null
+            // off the glass, so no paths for it — except for the one being
+            // edited, which the editor is standing over and whose runs the
+            // renderer has to keep agreeing with
+            if (id !== editingId && !inViewBox(n, view)) return null
             return (
               <g key={id} transform={`translate(${n.x} ${n.y})`}>
                 <NodeSketch node={n} hiddenText={id === editingId ? editing?.hidden : undefined} />
@@ -2198,6 +2304,18 @@ export function Canvas() {
 
       {/* empty-canvas nudge */}
       {order.length === 0 && !placing && <EmptyCanvas />}
+
+      {/* The focus ring — the same 2px at 40% the rail buttons wear, run round
+          the inside of the window because an outline on a box at inset-0 would
+          be drawn outside the glass and never seen. It is a DOM element and
+          the export writes its own SVG from the prims, so it can't print into
+          a PNG, an SVG or a ⌘⇧C. */}
+      {ring && (
+        <div
+          className="pointer-events-none absolute inset-0"
+          style={{ boxShadow: "inset 0 0 0 2px color-mix(in srgb, var(--sq-ink) 40%, transparent)" }}
+        />
+      )}
     </div>
   )
 }

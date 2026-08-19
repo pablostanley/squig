@@ -194,6 +194,11 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
     rows: [
       { keys: ["mod+k", "mod+/"], label: "Search everything" },
       { keys: ["shift+/"], label: "This list" },
+      // The pair that makes the canvas reachable without a mouse. They read as
+      // one thing on purpose: Tab is the way in, Escape is the way back out,
+      // and a keyboard user who only learns the first half is stuck.
+      { keys: ["tab"], label: "Put the keyboard on the canvas" },
+      { keys: ["esc"], label: "Hand the keyboard back" },
     ],
   },
 ]
