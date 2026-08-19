@@ -3,7 +3,8 @@
 import { create } from "zustand"
 import { nanoid } from "nanoid"
 import type { ComponentNode, ImageNode, SquigNode, TextAlign, TextNode, Tool, Viewport, ShapeKind } from "./types"
-import { normalizeBind, normalizeCrop, normalizeFill, screenToWorld, unionBox } from "./types"
+import { normalizeFill, screenToWorld, unionBox } from "./types"
+import { validNode } from "./clipboard-payload"
 import { remapBinds, settleBinds } from "./canvas/arrow-binding"
 import { isCropped, trueShapePatch, uncropPatch } from "./canvas/crop"
 import { lockedIds, selectable } from "./selection"
@@ -246,36 +247,39 @@ function stampSelAfter(past: DocSnapshot[], selection: string[]): void {
   if (top) top.selAfter = [...selection]
 }
 
-const FINITE_KEYS = ["x", "y", "w", "h"] as const
-
 /**
- * Drop anything that would put a NaN on the canvas. One non-finite coordinate
- * makes the selection box collapse and gets written straight back to
- * localStorage, so a single bad node can wedge the document across reloads.
+ * Everything a document has to survive before the canvas will draw it.
+ *
+ * The check itself is `validNode` — the same gate a paste goes through. There
+ * used to be two of them, and the weaker one guarded the wider door: this
+ * function looked at x/y/w/h and waved the rest past, while the clipboard's
+ * looked at the node type, the points a line is made of, the words a label is
+ * made of. So a .squig.json that had lost its `points` — a truncated export,
+ * an older writer, a file somebody edited by hand — imported happily, threw on
+ * the first render, and left no screen to fix it from. One gate now, on both
+ * doors, which also means a node type only has to be vouched for in one place
+ * the next time squig grows one.
+ *
+ * What stays here is the part no single node can answer for itself: the
+ * boolean fill old shapes wrote, the z-order, and arrow ends that name nodes
+ * this document turns out not to have.
  */
 function sanitize(
   nodes: Record<string, SquigNode> | undefined,
   order: string[] | undefined
 ): { nodes: Record<string, SquigNode>; order: string[] } {
   const clean: Record<string, SquigNode> = {}
-  for (const [id, n] of Object.entries(nodes ?? {})) {
-    if (!n || typeof n !== "object") continue
-    if (FINITE_KEYS.some((k) => !Number.isFinite((n as SquigNode)[k]))) continue
-    const node: SquigNode = { ...n, w: Math.max(0, n.w), h: Math.max(0, n.h) }
+  for (const [id, raw] of Object.entries(nodes ?? {})) {
+    const node = validNode(raw)
+    if (!node) continue
+    // the key is the name the rest of the document knows this node by — the
+    // z-order, an arrow's binding and the selection all spell it that way.
+    // validNode calls an unnamed node "pasted", since a paste renames it on
+    // the way down; here the key is the name, so stamp it back on.
+    node.id = id
     // shapes stored a boolean fill before they had a tonal ladder; upgrade on
     // the way in so nothing downstream has to know the old spelling existed
     if (node.type === "shape") node.fill = normalizeFill(node.fill)
-    // an imported file is a stranger's document: a picture in it carries its
-    // own pixels or it doesn't render at all — never a URL we'd go and fetch
-    if (node.type === "image") {
-      if (!/^data:image\//i.test(node.src ?? "")) continue
-      // a crop is four numbers that divide the box; one bad one would render
-      // the picture at infinity and take the file with it
-      node.crop = normalizeCrop(node.crop)
-    }
-    // only the shape of a binding can be judged one node at a time; whether
-    // the ids name anything is settled below, once the document is whole
-    if (node.type === "arrow") node.bind = normalizeBind(node.bind)
     clean[id] = node
   }
   const seen = new Set<string>()
@@ -1334,10 +1338,16 @@ export const useSquig = create<SquigState>((set, get) => ({
     try {
       const doc = JSON.parse(json)
       if (!doc || typeof doc !== "object" || !doc.nodes || !Array.isArray(doc.order)) return false
+      const clean = sanitize(doc.nodes, doc.order)
+      // A file that had layers and lost every one of them is not an empty
+      // drawing — it's a document squig can't read. Taking it anyway would
+      // trade the canvas you're looking at for a blank one, make that blank
+      // the file the drawer reopens, and leave nothing on screen to say why.
+      // A genuinely empty export still comes in: it had nothing to lose.
+      if (Object.keys(doc.nodes).length && !clean.order.length) return false
       // an opened file joins the drawer as its own document, so importing
       // never writes over whatever was on the canvas
       flushSave(get)
-      const clean = sanitize(doc.nodes, doc.order)
       set({
         docId: nanoid(8),
         fileName: typeof doc.fileName === "string" ? doc.fileName : "imported scribbles",

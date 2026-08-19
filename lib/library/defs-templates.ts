@@ -27,6 +27,18 @@ const list = (p: Props, k: string, fallback: string): string[] => {
 /** safe indexed pick from a cycling pool — a short list repeats instead of drawing blanks */
 const pick = (pool: string[], i: number): string => pool[((i % pool.length) + pool.length) % pool.length]
 
+/**
+ * A comma-separated list, backfilled from the words the screen ships with —
+ * name two of four plans and the other two keep the names they had. The stock
+ * array is also what `defaults` joins, so a screen nobody has typed into reads
+ * back exactly the list it started with.
+ */
+const listOr = (p: Props, k: string, stock: readonly string[]): string[] => {
+  const given = str(p, k, "").split(",").map((s) => s.trim())
+  const n = Math.max(stock.length, given.length)
+  return Array.from({ length: n }, (_, i) => given[i] || stock[i % stock.length])
+}
+
 function sub(def: ComponentDef, props: Props, x: number, y: number, w: number, h: number): Prim[] {
   return place(def.render({ ...def.defaults, ...props }, w, h), x, y)
 }
@@ -162,6 +174,8 @@ export const signupDef: ComponentDef = {
 
 // -- settings ---------------------------------------------------------------
 
+const SETTINGS_NAV = ["Profile", "Account", "Billing", "Alerts", "Team"]
+
 export const settingsDef: ComponentDef = {
   kind: "settings",
   name: "Settings page",
@@ -169,12 +183,13 @@ export const settingsDef: ComponentDef = {
   group: "Screens",
   keywords: ["preferences", "account", "profile", "form"],
   size: { w: 640, h: SETTINGS_H },
-  defaults: { title: "Settings", nav: true, active: 1, danger: true },
+  defaults: { title: "Settings", nav: true, active: 1, danger: true, items: SETTINGS_NAV.join(", ") },
   controls: [
     { key: "title", label: "Title", type: "text" },
     { key: "nav", label: "Side nav", type: "toggle", quick: true },
     { key: "active", label: "Active section", type: "number", min: 1, max: 5, quick: true },
     { key: "danger", label: "Danger zone", type: "toggle", quick: true },
+    { key: "items", label: "Nav items (comma-sep)", type: "text" },
   ],
   render(p, w, h) {
     const prims: Prim[] = [rect(0, 0, w, h)]
@@ -182,13 +197,13 @@ export const settingsDef: ComponentDef = {
     if (bool(p, "nav")) {
       left = Math.min(170, w * 0.28)
       prims.push(line(left, 0, left, h, { stroke: "faint" }))
-      const items = ["Profile", "Account", "Billing", "Alerts", "Team"]
+      const items = listOr(p, "items", SETTINGS_NAV)
       const active = Math.max(1, Math.min(items.length, Math.round(num(p, "active", 1)))) - 1
       items.forEach((item, i) => {
         const y = 30 + i * 36
         if (y > h - 20) return
         if (i === active) prims.push(rect(10, y - 18, left - 20, 30, { fill: "shade", fillColor: "faint", stroke: "faint" }))
-        prims.push(text(22, y + 2, item, 14, { color: i === active ? "ink" : "muted", bold: i === active }))
+        prims.push(text(22, y + 2, truncate(item, 14, left - 34), 14, { color: i === active ? "ink" : "muted", bold: i === active }))
       })
     }
     const pad = 28
@@ -265,13 +280,21 @@ export const dashboardDef: ComponentDef = {
   group: "Screens",
   keywords: ["admin", "analytics", "stats", "app"],
   size: { w: 760, h: 520 },
-  defaults: { title: "Good morning, doodler", sidebar: true, stats: 3, chart: "line", table: true },
+  defaults: {
+    title: "Good morning, doodler",
+    sidebar: true,
+    stats: 3,
+    chart: "line",
+    table: true,
+    items: "Overview, Reports, Users, Settings",
+  },
   controls: [
     { key: "title", label: "Title", type: "text" },
     { key: "sidebar", label: "Sidebar", type: "toggle", quick: true },
     { key: "stats", label: "Stat cards", type: "number", min: 2, max: 4, quick: true },
     { key: "chart", label: "Chart style", type: "select", options: ["line", "bars", "pie"], quick: true },
     { key: "table", label: "Side table", type: "toggle" },
+    { key: "items", label: "Nav items (comma-sep)", type: "text" },
   ],
   render(p, w, h) {
     const prims: Prim[] = [rect(0, 0, w, h)]
@@ -280,7 +303,7 @@ export const dashboardDef: ComponentDef = {
     let left = 0
     if (bool(p, "sidebar")) {
       left = Math.min(170, w * 0.24)
-      prims.push(...sub(sidebarDef, { user: false, items: "Overview, Reports, Users, Settings" }, 0, navH, left, h - navH))
+      prims.push(...sub(sidebarDef, { user: false, items: str(p, "items", "Overview, Reports, Users, Settings") }, 0, navH, left, h - navH))
     }
     const pad = 20
     const cx = left + pad
