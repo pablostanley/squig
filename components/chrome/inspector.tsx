@@ -17,7 +17,7 @@
 import { useSquig } from "@/lib/store"
 import type { ArrowNode, ComponentNode, FillTone, ImageNode, InkTone, ShapeNode, SquigNode, StrokeWeight, TextNode } from "@/lib/types"
 import { normalizeFill, normalizeInk } from "@/lib/types"
-import { isCropped } from "@/lib/canvas/crop"
+import { isCropped, trueShapePatch } from "@/lib/canvas/crop"
 import { getDef } from "@/lib/library/registry"
 import { selectionSummary, shared, sharedControls, sharedNumber, unionBounds } from "@/lib/selection"
 import { scaleNodes, MIN_SIZE } from "@/lib/canvas/transform"
@@ -37,6 +37,7 @@ import {
   CropIcon,
   FlipHorizontalIcon,
   FlipVerticalIcon,
+  FrameCornersIcon,
   LinkBreakIcon,
   SelectionAllIcon,
   TrashIcon,
@@ -488,6 +489,23 @@ function SelectionEditor({ selected }: { selected: SquigNode[] }) {
                 <ArrowCounterClockwiseIcon className="size-3" /> Reset
               </Button>
             </div>
+          </StackRow>
+
+          {/* A box dragged off its ratio and a box with pixels hidden are two
+              different mistakes, so this gets its own row rather than a third
+              button under Crop. It runs over every picture selected — each one
+              knows its own ratio — and the ones already true sit it out, which
+              is also why the button greys out when there's nothing to fix. */}
+          <StackRow label="Proportions">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!images.some((n) => !!trueShapePatch(n))}
+              className="h-ctl w-full rounded-chrome-sm text-label"
+              onClick={() => st().restoreAspect(images.map((n) => n.id))}
+            >
+              <FrameCornersIcon className="size-3" /> Unsquash
+            </Button>
           </StackRow>
         </PanelSection>
       )}
