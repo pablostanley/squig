@@ -24,6 +24,7 @@ import { clampWindow, cropAnchor, cropPatch, imageSheet, panSheet } from "@/lib/
 import { autoSizeTextBox, setTextWidth } from "@/lib/canvas/text-reflow"
 import { computeSnap, computeResizeSnap, makeSnapRect, type GuideLine, type SnapRect } from "@/lib/canvas/snap-engine"
 import { useSpacebarPan } from "@/lib/canvas/use-spacebar-pan"
+import { useFileDrop } from "@/lib/canvas/use-file-drop"
 import { HANDLES, HANDLE_CURSORS, handleOffset, resizeBounds, scaleNodes, type Handle } from "@/lib/canvas/transform"
 import { pickAt, pickInRect, pickSoftAt } from "@/lib/canvas/hit-test"
 import { canvasOwnsKeyboard } from "@/lib/canvas/keyboard-owner"
@@ -242,6 +243,9 @@ export function Canvas() {
   const { isSpacebarHeld } = useSpacebarPan()
   // ⌘C/⌘X/⌘V live on the browser's clipboard events, not in onKey below
   useClipboard(pointerWorld)
+  // a picture dragged in off the desktop — HTML5 drag and drop, which shares
+  // nothing with the pointer gestures above, including the library's drag-out
+  const dropping = useFileDrop(containerRef)
 
   const st = useSquig.getState
 
@@ -1747,7 +1751,7 @@ export function Canvas() {
           selectedNodes={selectedNodes}
           viewport={v}
           onStartResize={startResize}
-          editing={!!editingId}
+          editing={!!editingId && selection.includes(editingId)}
           gestureKind={gestureKind}
         />
       )}
@@ -1776,6 +1780,19 @@ export function Canvas() {
             height: marquee.h * v.zoom,
             borderColor: "var(--sq-select)",
             backgroundColor: "color-mix(in srgb, var(--sq-select) 8%, transparent)",
+          }}
+        />
+      )}
+
+      {/* a file is hovering over the window: the same dashed line the marquee
+          draws, run round the edge of the paper. Enough to say "let go and it
+          lands here", and nothing moves to say it */}
+      {dropping && (
+        <div
+          className="pointer-events-none absolute inset-3 rounded-lg border border-dashed"
+          style={{
+            borderColor: "color-mix(in srgb, var(--sq-select) 45%, transparent)",
+            backgroundColor: "color-mix(in srgb, var(--sq-select) 5%, transparent)",
           }}
         />
       )}
@@ -1978,7 +1995,10 @@ function SelectionOverlay({
   gestureKind: Gesture["kind"] | null
 }) {
   const b = unionBounds(selectedNodes)
-  // the text editor draws its own dashed box; two boxes on one node is noise
+  // the text editor draws its own dashed box; two boxes on one node is noise.
+  // Only when it's the *selected* node being edited, mind: a picture dropped in
+  // while the caret is still blinking somewhere else is selected and has every
+  // right to say so
   if (!b || editing) return null
 
   const v = viewport
