@@ -4,7 +4,7 @@ import { create } from "zustand"
 import { nanoid } from "nanoid"
 import type { ComponentNode, ImageNode, SquigNode, TextAlign, TextNode, Tool, Viewport, ShapeKind } from "./types"
 import { normalizeCrop, normalizeFill, screenToWorld, unionBox } from "./types"
-import { isCropped, uncropPatch } from "./canvas/crop"
+import { isCropped, trueShapePatch, uncropPatch } from "./canvas/crop"
 import { repeatStep, type DupTrail } from "./canvas/duplicate"
 import { getDef } from "./library/registry"
 import { breakApart } from "./library/break-apart"
@@ -123,6 +123,8 @@ interface SquigState {
   setCropping: (id: string | null) => void
   /** give a picture back every pixel it's hiding */
   resetCrop: (ids?: string[]) => void
+  /** put a squashed picture back on the ratio its pixels actually have */
+  restoreAspect: (ids?: string[]) => void
   setContextRow: (on: boolean) => void
   setTheme: (t: ThemeName) => void
   setFont: (f: FontMode) => void
@@ -477,6 +479,22 @@ export const useSquig = create<SquigState>((set, get) => ({
       Object.fromEntries(targets.map((n) => [n.id, uncropPatch(n) as Partial<SquigNode>])),
       { checkpoint: true }
     )
+  },
+
+  restoreAspect: (ids) => {
+    const s = get()
+    const patches: Record<string, Partial<SquigNode>> = {}
+    for (const id of ids ?? s.selection) {
+      const n = s.nodes[id]
+      if (n?.type !== "image") continue
+      // a picture already on its ratio hands back null, and so drops out of
+      // the batch — a selection of twelve where one is squashed moves that one
+      const p = trueShapePatch(n)
+      if (p) patches[id] = p as Partial<SquigNode>
+    }
+    // nothing was out of shape: no checkpoint, no undo step that undoes nothing
+    if (!Object.keys(patches).length) return
+    s.updateNodes(patches, { checkpoint: true })
   },
 
   setContextRow: (on) => {

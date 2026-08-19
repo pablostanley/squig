@@ -947,20 +947,29 @@ export function Canvas() {
       const b = unionBounds(sel)
       if (!b) return
 
-      // double-clicking a side handle of a fixed-width text layer un-fixes it
+      // the second press on the same handle, soon enough after the first
       const prev = lastHandlePress.current
       lastHandlePress.current = { handle, t: e.timeStamp }
-      if (
-        prev &&
-        prev.handle === handle &&
-        e.timeStamp - prev.t < 400 &&
-        (handle === "e" || handle === "w") &&
-        sel.length === 1 &&
-        sel[0].type === "text" &&
-        sel[0].fixedW
-      ) {
+      const doubled = !!prev && prev.handle === handle && e.timeStamp - prev.t < 400
+      const lone = sel.length === 1 ? sel[0] : null
+
+      // double-clicking a side handle of a fixed-width text layer un-fixes it
+      if (doubled && (handle === "e" || handle === "w") && lone?.type === "text" && lone.fixedW) {
         swallowDblClickUntil.current = e.timeStamp + 600
         resetTextWidth()
+        return
+      }
+
+      // and double-clicking a corner handle of a picture puts it back on the
+      // ratio its own pixels have. Corners rather than sides because a corner
+      // is already the handle you reach for when you want the shape kept, so
+      // it's the one to ask for the shape back — and the sides are spoken for
+      // above. The swallow happens even when the maths turns out to be a
+      // no-op: the press was a handle double-press either way, and letting it
+      // through would step into the crop window instead.
+      if (doubled && handle.length === 2 && lone?.type === "image") {
+        swallowDblClickUntil.current = e.timeStamp + 600
+        s.restoreAspect([lone.id])
         return
       }
       modsRef.current = readMods(e)
