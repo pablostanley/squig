@@ -13,6 +13,7 @@ import { CanvasContextMenu } from "@/components/chrome/context-menu"
 import { ShortcutsSheet } from "@/components/chrome/shortcuts-sheet"
 import { LinkEditor } from "@/components/chrome/link-editor"
 import { Notice } from "@/components/chrome/notice"
+import { SmallScreenNote } from "@/components/chrome/small-screen-note"
 import { kbd } from "@/lib/shortcuts"
 
 export default function Home() {
@@ -47,6 +48,7 @@ export default function Home() {
           <Inspector />
           <ZoomPill />
           <CommandHint />
+          <SmallScreenNote />
         </>
       )}
       {uiHidden && (

@@ -24,6 +24,7 @@ import { arrowEnds, bindOf, bindPair, bindTargetAt, endsPatch, withBind } from "
 import { clampWindow, cropAnchor, cropPatch, imageSheet, panSheet } from "@/lib/canvas/crop"
 import { autoSizeTextBox, setTextWidth } from "@/lib/canvas/text-reflow"
 import { computeSnap, computeResizeSnap, makeSnapRect, type GuideLine, type SnapRect } from "@/lib/canvas/snap-engine"
+import { pinchViewport, type PinchStart, type Pt } from "@/lib/canvas/pinch"
 import { useSpacebarPan } from "@/lib/canvas/use-spacebar-pan"
 import { useFileDrop } from "@/lib/canvas/use-file-drop"
 import { HANDLES, HANDLE_CURSORS, handleOffset, resizeBounds, scaleNodes, type Handle } from "@/lib/canvas/transform"
@@ -43,6 +44,7 @@ import { TextEditOverlay } from "./text-edit-overlay"
 
 const MIN_ZOOM = 0.1
 const MAX_ZOOM = 4
+const ZOOM_RANGE = { min: MIN_ZOOM, max: MAX_ZOOM }
 const SNAP_THRESHOLD = 6
 /** screen px of travel before a press stops being a click */
 const DRAG_THRESHOLD = 3
@@ -78,6 +80,31 @@ const marqueeMode = (m: Mods): MarqueeMode => (m.shift || m.toggle ? "xor" : "re
 
 type Gesture =
   | { kind: "pan"; sx: number; sy: number; ox: number; oy: number; pointerId: number; exceeded: boolean }
+  | {
+      /**
+       * Two fingers on the paper — pan and zoom at once, the way every map
+       * works. It's the only gesture that rides two pointers and the only one
+       * that touches no node at all, so it skips the world-anchored machinery
+       * every other gesture shares and writes the viewport straight from the
+       * finger positions (lib/canvas/pinch).
+       *
+       * `pointerId` is the first finger, which keeps everything the other
+       * gestures do with a single id — pointer capture, the release listener —
+       * working unchanged; `idB` is the second, and both have to be watched
+       * because either one lifting ends the pinch.
+       */
+      kind: "pinch"
+      sx: number
+      sy: number
+      pointerId: number
+      exceeded: boolean
+      idB: number
+      /** the snapshot every frame is computed from, never the frame before */
+      start: PinchStart
+      /** where those same two fingers are now, canvas-local px */
+      a: Pt
+      b: Pt
+    }
   | {
       kind: "move"
       /** world anchor */
@@ -195,6 +222,9 @@ type Gesture =
 
 const inRect = (b: Bounds, x: number, y: number) => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h
 
+/** Every pointer a gesture is riding on. Only a pinch has more than one. */
+const gesturePointers = (g: Gesture): number[] => (g.kind === "pinch" ? [g.pointerId, g.idB] : [g.pointerId])
+
 /**
  * The picture the crop mode is on, or null.
  *
@@ -234,6 +264,12 @@ export function Canvas() {
     top: null,
   })
   const modsRef = useRef<Mods>(NO_MODS)
+  /**
+   * Every finger currently on the canvas, in the order they landed, at the
+   * position they landed. The second entry is what starts a pinch, so this
+   * has to be kept whether or not a gesture is running.
+   */
+  const touchesRef = useRef<Map<number, Pt>>(new Map())
   const lastPointRef = useRef<{ clientX: number; clientY: number } | null>(null)
   /**
    * Double-press bookkeeping for the side handles. A DOM dblclick can't carry
@@ -361,6 +397,39 @@ export function Canvas() {
     el.addEventListener("wheel", onWheel, { passive: false })
     return () => el.removeEventListener("wheel", onWheel)
   }, [st])
+
+  // -- touch: keeping the tally, and keeping Safari out of it ---------------
+
+  useEffect(() => {
+    // Fingers come off anywhere — over the inspector, past the edge of the
+    // screen — so the tally is kept at the window rather than on the canvas.
+    // Miss one and it stays counted forever, which reads as a third finger
+    // and quietly stops pinching from ever starting again.
+    const drop = (e: PointerEvent) => {
+      if (e.pointerType === "touch") touchesRef.current.delete(e.pointerId)
+    }
+    window.addEventListener("pointerup", drop)
+    window.addEventListener("pointercancel", drop)
+    return () => {
+      window.removeEventListener("pointerup", drop)
+      window.removeEventListener("pointercancel", drop)
+    }
+  }, [])
+
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    // Safari on iOS runs its own two-finger zoom of the whole page and
+    // announces it through these non-standard events. Left alone, a pinch on
+    // the canvas would scale the document out from under the drawing instead
+    // of zooming it. No other engine fires them, so this costs nothing else.
+    const swallow = (e: Event) => e.preventDefault()
+    const kinds = ["gesturestart", "gesturechange", "gestureend"]
+    for (const k of kinds) el.addEventListener(k, swallow)
+    return () => {
+      for (const k of kinds) el.removeEventListener(k, swallow)
+    }
+  }, [])
 
   // -- snapping -------------------------------------------------------------
 
@@ -769,11 +838,14 @@ export function Canvas() {
   const teardownGesture = useCallback(() => {
     const g = gestureRef.current
     const el = containerRef.current
-    if (g && el?.hasPointerCapture?.(g.pointerId)) {
-      try {
-        el.releasePointerCapture(g.pointerId)
-      } catch {
-        // the pointer is already gone — nothing to release
+    if (g && el) {
+      for (const id of gesturePointers(g)) {
+        if (!el.hasPointerCapture?.(id)) continue
+        try {
+          el.releasePointerCapture(id)
+        } catch {
+          // the pointer is already gone — nothing to release
+        }
       }
     }
     gestureRef.current = null
@@ -944,7 +1016,22 @@ export function Canvas() {
   const onPointerMove = useCallback(
     (e: PointerEvent) => {
       const g = gestureRef.current
-      if (!g || e.pointerId !== g.pointerId) return
+      if (!g || !gesturePointers(g).includes(e.pointerId)) return
+
+      // A pinch is answered here rather than in updateGesture: it takes two
+      // pointers instead of one, and it has no world anchor, no drag
+      // threshold and no node to move — all updateGesture deals in. It also
+      // skips the buttons===0 rescue below, because a touch that vanishes
+      // arrives as a pointercancel and ending a two-finger gesture off one
+      // finger's stale button state would cut pinches short mid-squeeze.
+      if (g.kind === "pinch") {
+        const pt = toLocal(e)
+        if (e.pointerId === g.pointerId) g.a = pt
+        else g.b = pt
+        st().setViewport(pinchViewport(g.start, g.a, g.b, ZOOM_RANGE))
+        return
+      }
+
       modsRef.current = readMods(e)
       lastPointRef.current = { clientX: e.clientX, clientY: e.clientY }
       // the button came up somewhere we couldn't see it — keep the work
@@ -955,7 +1042,7 @@ export function Canvas() {
       updateGesture(e.clientX, e.clientY)
       maybeAutoPan()
     },
-    [updateGesture, maybeAutoPan, finishGesture]
+    [updateGesture, maybeAutoPan, finishGesture, toLocal, st]
   )
 
   const beginGesture = useCallback(
@@ -964,10 +1051,13 @@ export function Canvas() {
       setGestureKind(g.kind)
 
       // capture keeps events coming even when the pointer leaves the window
-      try {
-        containerRef.current?.setPointerCapture(g.pointerId)
-      } catch {
-        // some pointer types refuse capture; window listeners still cover us
+      const ids = gesturePointers(g)
+      for (const id of ids) {
+        try {
+          containerRef.current?.setPointerCapture(id)
+        } catch {
+          // some pointer types refuse capture; window listeners still cover us
+        }
       }
 
       // one controller per gesture: aborting removes every listener at once, so
@@ -978,17 +1068,20 @@ export function Canvas() {
       const opts = { signal: ac.signal }
 
       window.addEventListener("pointermove", onPointerMove, opts)
+      // either finger coming up ends a pinch — there is no one-finger half of
+      // it to carry on with, and the finger still down is left alone until it
+      // either lifts or is joined again
       window.addEventListener(
         "pointerup",
         (ev: PointerEvent) => {
-          if (ev.pointerId === g.pointerId) finishGesture()
+          if (ids.includes(ev.pointerId)) finishGesture()
         },
         opts
       )
       window.addEventListener(
         "pointercancel",
         (ev: PointerEvent) => {
-          if (ev.pointerId === g.pointerId) cancelGesture()
+          if (ids.includes(ev.pointerId)) cancelGesture()
         },
         opts
       )
@@ -1155,6 +1248,61 @@ export function Canvas() {
       )
     },
     [st, beginGesture, toWorld]
+  )
+
+  /**
+   * The touch tally, and the moment a second finger turns it into a pinch.
+   *
+   * This runs in the capture phase, ahead of everything else that answers a
+   * press — the resize handles, the crop handles, the arrow endpoints, the
+   * canvas itself. A finger that happens to land on a handle is still the
+   * second half of a pinch, and letting the handle have it would start a
+   * resize with another finger already down on the paper.
+   */
+  const onPointerDownCapture = useCallback(
+    (e: React.PointerEvent) => {
+      if (e.pointerType !== "touch") return
+      const pts = touchesRef.current
+      pts.set(e.pointerId, toLocal(e))
+
+      // one finger is a pencil: let it through to draw, select, drag, resize
+      if (pts.size < 2) return
+
+      // from here the press belongs to the pinch and nothing else sees it —
+      // including a third finger or a resting palm, which must not re-aim a
+      // pinch already in flight or start some other gesture underneath it
+      e.stopPropagation()
+      e.preventDefault()
+      if (pts.size > 2) return
+
+      const [[idA, a], [idB, b]] = [...pts]
+
+      // Whatever the first finger had started gives way. Cancelling rather
+      // than finishing is the deliberate part: a stroke, a drag or a marquee
+      // that turned out to be the first half of a pinch was never meant to
+      // land, so it reverts to its checkpoint and leaves nothing behind —
+      // no stray one-pixel scribble, no node nudged half a step, and no undo
+      // step to spend on either.
+      if (gestureRef.current) cancelGesture()
+
+      beginGesture(
+        {
+          kind: "pinch",
+          sx: e.clientX,
+          sy: e.clientY,
+          pointerId: idA,
+          idB,
+          // a pinch is a drag from its first frame — there's no click hiding
+          // inside it that a threshold would need to protect
+          exceeded: true,
+          start: { viewport: st().viewport, a, b },
+          a,
+          b,
+        },
+        e
+      )
+    },
+    [toLocal, st, beginGesture, cancelGesture]
   )
 
   const onPointerDown = useCallback(
@@ -1854,6 +2002,10 @@ export function Canvas() {
     <div
       ref={containerRef}
       tabIndex={-1}
+      // touch-none hands us every finger: one to draw with instead of
+      // scrolling the page away, and two for the pinch — which has to be ours
+      // rather than the browser's, because the browser would zoom the document
+      // and the drawing lives in a viewport of its own
       className="absolute inset-0 overflow-hidden touch-none outline-none select-none"
       style={{
         cursor: cursorStyle,
@@ -1862,6 +2014,7 @@ export function Canvas() {
         backgroundSize: `${24 * v.zoom}px ${24 * v.zoom}px`,
         backgroundPosition: `${v.x}px ${v.y}px`,
       }}
+      onPointerDownCapture={onPointerDownCapture}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMoveLocal}
       onPointerLeave={onPointerLeave}
