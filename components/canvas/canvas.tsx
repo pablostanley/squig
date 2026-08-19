@@ -31,7 +31,7 @@ import { HANDLES, HANDLE_CURSORS, handleOffset, resizeBounds, scaleNodes, type H
 import { pickAt, pickInRect, pickSoftAt, type PickOpts } from "@/lib/canvas/hit-test"
 import { canvasOwnsKeyboard } from "@/lib/canvas/keyboard-owner"
 import { useClipboard } from "@/lib/canvas/use-clipboard"
-import { editTarget, hasEditableText } from "@/lib/canvas/edit-target"
+import { editTarget, hasEditableText, textControlAt } from "@/lib/canvas/edit-target"
 import { textBlockHeight } from "@/lib/sketch/text-layout"
 import { unionBounds, type Bounds } from "@/lib/selection"
 import { NodeSketch, SketchPrims, imagePlacement, mirrorBox } from "./sketch"
@@ -302,7 +302,19 @@ export function Canvas() {
   // where the words being edited actually sit — the editor stands there, and
   // the renderer leaves that one run out so they don't print on top of it
   const editingNode = editingId ? nodes[editingId] : null
-  const editing = useMemo(() => (editingNode ? editTarget(editingNode) : null), [editingNode])
+  /**
+   * Which of a component's labels the double-click aimed at, and on which
+   * layer. The press is the only thing that knows where the pointer landed,
+   * and the editor is built here from the store's editingId, so the aim waits
+   * in between. It carries the layer's id so a stale aim can't attach itself
+   * to the next edit — Return on a selected layer clears it, and every other
+   * way in never sets one, so both open on the first control as before.
+   */
+  const [aim, setAim] = useState<{ id: string; key: string } | null>(null)
+  const editing = useMemo(() => {
+    if (!editingNode) return null
+    return editTarget(editingNode, aim?.id === editingNode.id ? aim.key : undefined)
+  }, [editingNode, aim])
 
   /** marquee box in WORLD units — screen conversion happens at render time */
   const [marquee, setMarquee] = useState<Bounds | null>(null)
@@ -1518,7 +1530,17 @@ export function Canvas() {
       // a picture has no words to step into, so the same press steps into its
       // crop instead — the one edit a picture has
       if (n.type === "image") s.setCropping(hitId)
-      else if (hasEditableText(n)) s.setEditing(hitId)
+      else if (hasEditableText(n)) {
+        // the run under the pointer decides which label opens — see
+        // textControlAt, which answers null when the click landed on words no
+        // control backs, and then the first control opens as it always did
+        if (n.type === "component") {
+          const [wx, wy] = toWorld(e)
+          const key = textControlAt(n, wx - n.x, wy - n.y)
+          setAim(key ? { id: hitId, key } : null)
+        }
+        s.setEditing(hitId)
+      }
     },
     [st, pick, toWorld]
   )
@@ -1892,6 +1914,9 @@ export function Canvas() {
           }
           if (!hasEditableText(n)) break
           e.preventDefault()
+          // no pointer, no aim: Return opens the first label, whatever the
+          // last double-click on this layer happened to reach for
+          setAim(null)
           s.setEditing(n.id)
           break
         }
@@ -2155,7 +2180,11 @@ export function Canvas() {
       )}
 
       {/* inline text editing */}
-      {editingNode && editing && <TextEditOverlay key={editingNode.id} node={editingNode} target={editing} />}
+      {/* keyed by the prop as well as the layer: aiming at a different label
+          is a different edit, and the editor starts over on its words */}
+      {editingNode && editing && (
+        <TextEditOverlay key={`${editingNode.id}:${editing.propKey ?? ""}`} node={editingNode} target={editing} />
+      )}
 
       {/* context row */}
       <ContextRow selectedNodes={selectedNodes} viewport={v} busy={!!gestureKind || !!cropNode} />
