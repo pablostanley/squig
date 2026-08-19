@@ -22,6 +22,7 @@ import {
 import {
   INDEX_KEY,
   deleteFile as dropFile,
+  fileKey,
   knownLook,
   listFiles,
   loadPrefs,
@@ -31,6 +32,7 @@ import {
   savePrefs,
   type FileMeta,
 } from "./files"
+import { planTabSync } from "./tabs"
 
 // ---------------------------------------------------------------------------
 // Store — flat node map + z-order, selection, viewport, tool, history.
@@ -116,6 +118,12 @@ interface SquigState {
    *  It stays true until a save gets through, because the trouble does too — a
    *  flash that fades is the wrong shape for "your work isn't being kept". */
   drawerFull: boolean
+  /** another tab has written this document since this one last read it. The
+   *  canvas on screen is no longer the file on disk, so squig has stopped
+   *  writing rather than put this version over one it never saw. Like
+   *  drawerFull it is a condition, not a moment: it stands until this tab is
+   *  pointed at some other document. */
+  stale: boolean
 
   past: DocSnapshot[]
   future: DocSnapshot[]
@@ -458,6 +466,13 @@ function stepOrder(order: string[], ids: string[], dir: 1 | -1): string[] {
 let saveTimer: ReturnType<typeof setTimeout> | null = null
 /** true between an edit and the write that records it */
 let dirty = false
+/**
+ * The `updatedAt` of the bytes this tab last read or wrote for the document it
+ * has open — null for one that has never been on disk. It is the whole of what
+ * this tab knows about the file underneath it, and no write goes out that
+ * isn't checked against it. See lib/tabs.
+ */
+let seen: number | null = null
 /** an `edit` is running, so a nested one joins it instead of opening a step */
 let editing = false
 
@@ -471,6 +486,22 @@ function lookOf(s: Pick<SquigState, "theme" | "paper" | "font" | "grid">): Look 
 function wearLook(set: (partial: Partial<SquigState>) => void, look: Look) {
   set(look)
   applyLook(look)
+}
+
+/**
+ * This canvas and the drawer agree: `at` is when the bytes on disk were
+ * written, or null for a document that has never been written at all. Nothing
+ * is owed, and whatever another tab had done to the document this one was on
+ * before is no longer this one's problem.
+ *
+ * Every path that points the canvas at a document goes through here — opening,
+ * importing, starting a new one, hydrating — so the three facts that have to
+ * agree can't drift apart.
+ */
+function nowSeeing(at: number | null) {
+  seen = at
+  dirty = false
+  useSquig.setState({ stale: false })
 }
 
 /** Every edit calls this; the drawer only gets written once the hand rests. */
@@ -497,17 +528,34 @@ function flushSave(get: () => SquigState, force = false) {
   // the look goes to prefs too, but only as the default a new file will start
   // from — the copy that matters travels inside the document below
   savePrefs({ look: lookOf(s), contextRow: s.contextRow, activeId: s.docId })
+  // This tab has been told its document moved on without it. Not one more
+  // write goes out until it is pointed at another document — ⌘S included,
+  // since nobody pressing it is asking to throw away work they can't see.
+  if (s.stale) return
   if (!dirty && !force) return
   const known = s.files.some((f) => f.id === s.docId)
   if (!s.order.length && !known && !force) return
-  const { index, full } = saveFile({
-    id: s.docId,
-    name: s.fileName,
-    nodes: s.nodes,
-    order: s.order,
-    updatedAt: Date.now(),
-    look: lookOf(s),
-  })
+  const at = Date.now()
+  const { index, full, stale } = saveFile(
+    {
+      id: s.docId,
+      name: s.fileName,
+      nodes: s.nodes,
+      order: s.order,
+      updatedAt: at,
+      look: lookOf(s),
+    },
+    seen
+  )
+  // The drawer holds a version of this document this tab has never seen, and
+  // squig has just declined to write over it. Usually the `storage` event gets
+  // here first and this never fires; it is the backstop for the times it
+  // doesn't — an event missed while the tab slept at the back of a phone, or a
+  // write that landed inside this very debounce.
+  if (stale) {
+    stopWriting(get, "this drawing changed in another tab — export to keep your version")
+    return
+  }
   // Say it once, on the way into trouble — every autosave after this one would
   // be saying the same thing about the same drawing. The line under the file
   // name carries it from there, for as long as it lasts.
@@ -517,6 +565,91 @@ function flushSave(get: () => SquigState, force = false) {
   // edit, or the tab closing, tries again — which is how squig comes back on
   // its own once the user has made room
   dirty = full
+  // a refused write left the old bytes on disk, and those are still the ones
+  // this tab has seen
+  if (!full) seen = at
+}
+
+/**
+ * This canvas is not the document on disk any more, and squig has stopped
+ * writing it.
+ *
+ * It speaks in both shapes squig has, because there are two things to say. The
+ * flash is for the moment it happened: that is news, it is momentary, and the
+ * user is looking at the canvas rather than at the file name. The line under
+ * the file name is for the condition it leaves behind, which stands until this
+ * tab is pointed at another document — the same shape a full drawer uses, for
+ * the same reason.
+ *
+ * It is deliberately the same line, word for word. What that line reports is
+ * that the drawing on screen is the only copy of itself there is, and that is
+ * exactly as true whichever way squig got here.
+ */
+function stopWriting(get: () => SquigState, why: string) {
+  if (saveTimer) {
+    clearTimeout(saveTimer)
+    saveTimer = null
+  }
+  if (get().stale) return
+  useSquig.setState({ stale: true })
+  get().setNotice(why)
+}
+
+/**
+ * Take the version another tab just wrote. Safe only because this tab holds
+ * nothing the drawer doesn't already have — see hasUnsavedWork in lib/tabs,
+ * which is where that claim gets made carefully.
+ *
+ * The undo stack goes with it. Those checkpoints describe a document that is
+ * no longer on disk, and an undo through them would put the other tab's work
+ * back to a state it never passed through, silently — which is the very trade
+ * this whole guard exists to refuse. The viewport stays where it was: the user
+ * is looking at a place on the canvas, not at a version of it.
+ */
+function adoptDoc(get: () => SquigState) {
+  const doc = readFile(get().docId)
+  // it was there a moment ago and now won't read: that comes to the same thing
+  // as the document going away, so say so rather than guess
+  if (!doc) {
+    stopWriting(get, "this drawing was removed in another tab — export to keep your copy")
+    return
+  }
+  const clean = sanitize(doc.nodes, doc.order)
+  const s = get()
+  const held = new Set(s.selection)
+  useSquig.setState({
+    fileName: doc.name,
+    nodes: clean.nodes,
+    order: clean.order,
+    // whatever of the selection survived the other tab's edit, in document order
+    selection: selectable(clean.order.filter((id) => held.has(id)), clean.nodes),
+    croppingId: s.croppingId && clean.nodes[s.croppingId] ? s.croppingId : null,
+    past: [],
+    future: [],
+  })
+  if (doc.look) wearLook(useSquig.setState, doc.look)
+  nowSeeing(doc.updatedAt)
+  get().setNotice("another tab saved this drawing — this one caught up")
+}
+
+/**
+ * The `updatedAt` out of the document another tab just wrote, or null when the
+ * key no longer holds one we can read.
+ *
+ * Parsing a whole document to get at one number is more work than it looks — a
+ * drawing with pasted screenshots in it runs to megabytes — but this only ever
+ * runs when a second tab writes the document this one has open, which is the
+ * rare case by construction. An ordinary single-tab session never reaches it:
+ * a tab is never told about its own writes.
+ */
+function stampOf(raw: string | null): number | null {
+  if (!raw) return null
+  try {
+    const at = (JSON.parse(raw) as { updatedAt?: unknown }).updatedAt
+    return typeof at === "number" ? at : null
+  } catch {
+    return null
+  }
 }
 
 let watching = false
@@ -525,7 +658,10 @@ let watching = false
  * on the way to the background, which is all iOS ever gives you.
  *
  * The same listener keeps an eye on the drawer itself, so a file made in
- * another tab shows up in this one's recents without a reload.
+ * another tab shows up in this one's recents without a reload — and, since a
+ * second tab opens onto the same drawing this one has, on that drawing's own
+ * key. A `storage` event fires in every tab but the one that wrote, so this is
+ * the only way a tab ever hears that the file under it has changed.
  */
 function watchWindow(get: () => SquigState) {
   if (watching || typeof window === "undefined") return
@@ -537,7 +673,34 @@ function watchWindow(get: () => SquigState) {
     if (document.visibilityState === "hidden") save()
   })
   window.addEventListener("storage", (e) => {
-    if (e.key === INDEX_KEY) useSquig.setState({ files: listFiles() })
+    if (e.key === INDEX_KEY) {
+      useSquig.setState({ files: listFiles() })
+      return
+    }
+    const s = get()
+    // e.key is null when the whole origin was cleared; docKey never is, so
+    // that lands on "not ours" and this tab is left holding the only copy —
+    // which is the truth, and the save that follows puts it back
+    switch (
+      planTabSync({
+        key: e.key ?? "",
+        docKey: fileKey(s.docId),
+        stamp: stampOf(e.newValue),
+        seen,
+        work: { dirty, transforming: s.transforming, editing: s.editingId !== null },
+        stale: s.stale,
+      })
+    ) {
+      case "adopt":
+        adoptDoc(get)
+        break
+      case "conflict":
+        stopWriting(get, "this drawing changed in another tab — export to keep your version")
+        break
+      case "gone":
+        stopWriting(get, "this drawing was removed in another tab — export to keep your copy")
+        break
+    }
   })
 }
 
@@ -572,6 +735,7 @@ export const useSquig = create<SquigState>((set, get) => ({
   dupTrail: null,
   notice: null,
   drawerFull: false,
+  stale: false,
   past: [],
   future: [],
 
@@ -1041,7 +1205,7 @@ export const useSquig = create<SquigState>((set, get) => ({
     // last look this browser was set to
     wearLook(set, doc?.look ?? prefs.look)
     // what we just read is, by definition, what the drawer already holds
-    dirty = false
+    nowSeeing(doc?.updatedAt ?? null)
     watchWindow(get)
   },
 
@@ -1439,6 +1603,9 @@ export const useSquig = create<SquigState>((set, get) => ({
       past: [],
       future: [],
     })
+    // an id nobody has ever written: nothing on disk to be careful about, and
+    // whatever another tab did to the file we were on is behind us
+    nowSeeing(null)
     flushSave(get)
   },
 
@@ -1473,7 +1640,7 @@ export const useSquig = create<SquigState>((set, get) => ({
     // rectangle tells you nothing about where you've landed
     if (clean.order.length) fitBox(set, clean.order.map((nid) => clean.nodes[nid]), 1)
     // straight off the drawer, so there is nothing to write back yet
-    dirty = false
+    nowSeeing(doc.updatedAt)
     flushSave(get)
   },
 
@@ -1493,6 +1660,7 @@ export const useSquig = create<SquigState>((set, get) => ({
       past: [],
       future: [],
     })
+    nowSeeing(null)
     const next = files[0]?.id
     if (next) get().openFile(next)
     else get().newFile()
@@ -1535,6 +1703,9 @@ export const useSquig = create<SquigState>((set, get) => ({
         past: [],
         future: [],
       })
+      // a fresh id, so this lands as its own document however the last one was
+      // getting on with the rest of the browser
+      nowSeeing(null)
       // an import brings its author's ink and paper with it, when it has any
       if (doc.look) wearLook(set, knownLook(doc.look, lookOf(get())))
       // an imported file was drawn wherever its author left it — go there,

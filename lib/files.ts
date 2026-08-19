@@ -16,6 +16,7 @@
 // ---------------------------------------------------------------------------
 
 import type { SquigNode } from "./types"
+import { canWrite } from "./tabs"
 import { DEFAULT_FONT, DEFAULT_LOOK, DEFAULT_PAPER, DEFAULT_THEME, THEMES, type FontMode, type Look, type PaperShade, type ThemeName } from "./theme"
 
 export interface FileMeta {
@@ -46,7 +47,8 @@ export interface Prefs {
 export const INDEX_KEY = "squig:files:v1"
 const PREFS_KEY = "squig:prefs:v1"
 const LEGACY_KEY = "squig:doc:v1"
-const fileKey = (id: string) => `squig:file:${id}`
+/** exported so a tab can notice another one writing the document it has open */
+export const fileKey = (id: string) => `squig:file:${id}`
 
 /**
  * Past this many the drawer starts forgetting its oldest documents.
@@ -126,6 +128,9 @@ export interface SavePlan {
   forget: string[]
   /** the browser refused the write: what's on disk is whatever was there before */
   full: boolean
+  /** another tab has written this document since this one last read it, so
+   *  squig refused the write itself: what's on disk is the other tab's */
+  stale: boolean
 }
 
 /**
@@ -148,9 +153,9 @@ export interface SavePlan {
  * worse lie than a missing row.
  */
 export function planSave(index: FileMeta[], meta: FileMeta, stored: boolean): SavePlan {
-  if (!stored) return { index, forget: [], full: true }
+  if (!stored) return { index, forget: [], full: true, stale: false }
   const next = [meta, ...index.filter((f) => f.id !== meta.id)]
-  return { index: next.slice(0, MAX_FILES), forget: next.slice(MAX_FILES).map((f) => f.id), full: false }
+  return { index: next.slice(0, MAX_FILES), forget: next.slice(MAX_FILES).map((f) => f.id), full: false, stale: false }
 }
 
 /**
@@ -160,10 +165,18 @@ export function planSave(index: FileMeta[], meta: FileMeta, stored: boolean): Sa
  * that refuses the write leaves every other file exactly where it was — the
  * tail trim included, since a document that never landed has no business
  * pushing anything off the end.
+ *
+ * `seen` is the `updatedAt` of the bytes the caller last read or wrote for this
+ * document, and it is what stops a second tab from writing over a version it
+ * never saw. The index has to be read either way, so the check is a lookup and
+ * no more — see canWrite in lib/tabs. Pass null for a document that has never
+ * been on disk.
  */
-export function saveFile(doc: StoredDoc): SavePlan {
+export function saveFile(doc: StoredDoc, seen: number | null): SavePlan {
+  const index = listFiles()
+  if (!canWrite(index, doc.id, seen)) return { index, forget: [], full: false, stale: true }
   const meta: FileMeta = { id: doc.id, name: doc.name, updatedAt: doc.updatedAt }
-  const plan = planSave(listFiles(), meta, writeJSON(fileKey(doc.id), doc))
+  const plan = planSave(index, meta, writeJSON(fileKey(doc.id), doc))
   for (const id of plan.forget) drop(fileKey(id))
   // nothing moved, so nothing to write — and the index write would only be one
   // more thing for a full quota to refuse
@@ -246,7 +259,8 @@ export function migrateLegacyDoc(newId: () => string): { doc: StoredDoc; prefs: 
     updatedAt: Date.now(),
     look,
   }
-  saveFile(doc)
+  // a brand new id: there is nothing on disk under it to be careful about
+  saveFile(doc, null)
   const prefs: Prefs = {
     look,
     contextRow: old.contextRow === true,

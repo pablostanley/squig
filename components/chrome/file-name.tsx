@@ -11,7 +11,8 @@
 // each of those would be its own kind of noise.
 //
 // The small line under the name is where saving speaks: a receipt after ⌘S,
-// and — when the browser has no room left — a standing note that this drawing
+// and — when the browser has no room left, or another tab has taken this
+// document somewhere this one can't follow — a standing note that this drawing
 // isn't being kept. It sits here rather than in the corner flash because the
 // name is what the eye goes to when it wonders where the drawing lives.
 // ---------------------------------------------------------------------------
@@ -29,6 +30,7 @@ export function FileName() {
   const fileName = useSquig((s) => s.fileName)
   const renaming = useSquig((s) => s.renamingFile)
   const full = useSquig((s) => s.drawerFull)
+  const stale = useSquig((s) => s.stale)
   const st = useSquig.getState
   const [ducked, setDucked] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -73,12 +75,19 @@ export function FileName() {
   }, [])
 
   // One line under the name, two jobs. "saved" is a receipt and fades; the
-  // out-of-room note is a condition and stays until a write gets through, so
-  // it takes the line whenever both would speak. It's the only red squig
+  // not-being-kept note is a condition and stays until squig is writing again,
+  // so it takes the line whenever both would speak. It's the only red squig
   // leaves standing — muted would read as one more status and get skimmed
   // past, and what it's reporting is that the drawing on screen is the only
   // copy of itself there is.
-  const note = full ? "not saved — export to keep this one" : saved ? "saved to this browser" : ""
+  //
+  // Two conditions raise it and they share the words on purpose: a full
+  // browser and a document another tab has moved on without us are different
+  // stories, but the line is not the place for the story. The flash that
+  // arrived with each said which it was; this says the part that outlives it,
+  // which is the same part either way.
+  const stuck = full || stale
+  const note = stuck ? "not saved — export to keep this one" : saved ? "saved to this browser" : ""
 
   // renaming and the note both outrank the duck: neither should vanish because
   // the other hand started a drag
@@ -108,7 +117,7 @@ export function FileName() {
       <span
         aria-live="polite"
         className={`absolute top-full left-1/2 mt-1 -translate-x-1/2 text-[11px] whitespace-nowrap transition-opacity duration-200 ${
-          full ? "text-destructive" : "text-muted-foreground"
+          stuck ? "text-destructive" : "text-muted-foreground"
         }`}
         style={{ opacity: note ? 1 : 0 }}
       >
