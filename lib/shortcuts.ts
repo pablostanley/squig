@@ -101,7 +101,7 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
       { keys: ["shift+click"], label: "Add or drop a layer" },
       { keys: ["tab"], label: "Step to the next layer" },
       { keys: ["shift+tab"], label: "Step to the one before" },
-      { keys: ["mod+shift+l"], label: "Lock — the pointer walks past it" },
+      { keys: ["mod+shift+l"], label: "Lock a layer down" },
       { keys: ["right-click"], label: "Unlock a locked layer" },
       { keys: ["del"], label: "Delete" },
       { keys: ["esc"], label: "Deselect" },
@@ -162,7 +162,7 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
     rows: [
       { keys: ["double-click"], label: "Corner — true shape" },
       { keys: ["enter", "double-click"], label: "Crop a picture" },
-      { keys: ["drag"], label: "Slide the picture under the crop" },
+      { keys: ["drag"], label: "Slide the picture" },
       { keys: ["shift+drag"], label: "Crop to the same shape" },
       { keys: ["alt+drag"], label: "Crop both sides at once" },
       { keys: ["enter", "esc"], label: "Done cropping" },
