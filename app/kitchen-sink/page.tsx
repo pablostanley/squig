@@ -4,11 +4,16 @@
 // /kitchen-sink — every def rendered at its default size, and again squeezed,
 // so a bad layout shows up without dragging 100 things onto a canvas.
 // Dev aid, not part of the product surface.
+//
+// The grid waits for the browser before it draws anything — see `drawn` below.
 // ---------------------------------------------------------------------------
 
-import { useMemo, useState } from "react"
+import { useMemo, useState, useSyncExternalStore } from "react"
 import { ALL_DEFS, GROUPS, type ComponentDef, type Category } from "@/lib/library/registry"
 import { SketchPrims } from "@/components/canvas/sketch"
+
+/** Nothing to subscribe to — "which engine am I" only ever answers once. */
+const neverChanges = () => () => {}
 
 function Cell({ def, scale }: { def: ComponentDef; scale: number }) {
   const w = Math.round(def.size.w * scale)
@@ -48,6 +53,23 @@ function Cell({ def, scale }: { def: ComponentDef; scale: number }) {
 export default function KitchenSink() {
   const [scale, setScale] = useState(1)
   const [category, setCategory] = useState<Category>("components")
+  /**
+   * Hold the grid back until the browser is the one drawing it.
+   *
+   * rough.js roughens an ellipse by walking Math.cos/Math.sin around it, and
+   * those two are the rare functions the spec lets an engine approximate — the
+   * V8 in Node and the V8 in Chrome disagree in the last bit for a few percent
+   * of inputs. Nothing here is random: the seed is fixed, and either engine on
+   * its own is perfectly repeatable. But a path drawn on the server and the
+   * same path drawn in the browser can land 3e-15 apart, which React reads as
+   * a hydration mismatch and reports as ten unreadable, near-identical `d`
+   * strings. The pixels were never in question; the console noise was.
+   *
+   * The canvas never had this because `/` shows "warming up the pencils…"
+   * until the store hydrates, so no rough.js path is ever in the server HTML.
+   * This is the same trick, for the same reason.
+   */
+  const drawn = useSyncExternalStore(neverChanges, () => true, () => false)
 
   const sections = useMemo(() => {
     const defs = ALL_DEFS.filter((d) => d.category === category)
@@ -92,18 +114,19 @@ export default function KitchenSink() {
         </label>
       </div>
 
-      {sections.map((section) => (
-        <section key={section.group} className="mb-10">
-          <h2 className="mb-3 text-xs font-semibold tracking-wide text-neutral-400 uppercase">
-            {section.group} · {section.defs.length}
-          </h2>
-          <div className="flex flex-wrap items-start gap-6">
-            {section.defs.map((def) => (
-              <Cell key={def.kind} def={def} scale={scale} />
-            ))}
-          </div>
-        </section>
-      ))}
+      {drawn &&
+        sections.map((section) => (
+          <section key={section.group} className="mb-10">
+            <h2 className="mb-3 text-xs font-semibold tracking-wide text-neutral-400 uppercase">
+              {section.group} · {section.defs.length}
+            </h2>
+            <div className="flex flex-wrap items-start gap-6">
+              {section.defs.map((def) => (
+                <Cell key={def.kind} def={def} scale={scale} />
+              ))}
+            </div>
+          </section>
+        ))}
     </div>
   )
 }
