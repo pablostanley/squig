@@ -13,6 +13,7 @@
 import { useRef } from "react"
 import { useSquig } from "@/lib/store"
 import { exportDoc, importDoc } from "@/lib/file-io"
+import { saveImageWithNotice } from "@/lib/export-image"
 import { ArrowUpRightIcon, CaretDownIcon } from "@phosphor-icons/react"
 import {
   DropdownMenu,
@@ -72,6 +73,10 @@ export function TopCorner() {
             Export a copy
             <DropdownMenuShortcut>{kbd("mod+shift+s")}</DropdownMenuShortcut>
           </DropdownMenuItem>
+          {/* a picture rather than a document, and the same rule as ⌘⇧C: the
+              selection if there is one, otherwise everything */}
+          <DropdownMenuItem onClick={() => saveImageWithNotice("png")}>Export PNG</DropdownMenuItem>
+          <DropdownMenuItem onClick={() => saveImageWithNotice("svg")}>Export SVG</DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem
             onClick={() => {
