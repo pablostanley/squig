@@ -62,8 +62,18 @@ export function basePrims(node: SquigNode): Prim[] {
       return [{ t: "rect", x: 0, y: 0, w: node.w, h: node.h, r: 6, o }]
     }
     case "draw":
-      // freehand is already the user's own line — barely roughen it
-      return [{ t: "poly", pts: node.points, o: outline(node, 1.9, { roughness: 0.2 }) }]
+      // freehand is already the user's own line — barely roughen it.
+      //
+      // The copy is the cheap half of a bargain the store makes elsewhere: a
+      // checkpoint keeps references to live nodes rather than cloning them, so
+      // the array behind `points` is shared with every undo step that node
+      // appears in. Handing it out to rough.js and the SVG exporter as-is is
+      // safe today — both only read it — but "only reads it" is a promise made
+      // by a dependency we upgrade, and the day one of them sorts or reverses
+      // the points in place, it would rewrite history under itself with
+      // nothing to catch it. One array per stroke per render is the whole
+      // price of not having to trust that. scripts/test-history.ts says so.
+      return [{ t: "poly", pts: [...node.points], o: outline(node, 1.9, { roughness: 0.2 }) }]
     case "arrow": {
       const [[x1, y1], [x2, y2]] = node.points
       const o = outline(node, 1.6)

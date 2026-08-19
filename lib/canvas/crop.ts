@@ -30,7 +30,7 @@
 // ---------------------------------------------------------------------------
 
 import type { Bounds } from "../selection"
-import { cropOf, normalizeCrop, type ImageCrop, type ImageNode } from "../types"
+import { cropOf, normalizeCrop, type ImageCrop, type ImageNode, type SquigNode } from "../types"
 import { MIN_SIZE, mirrorBounds, type Handle } from "./transform"
 
 const EPS = 1e-6
@@ -179,6 +179,27 @@ export function panSheet(sheet: Bounds, win: Bounds, dx: number, dy: number): Bo
     x: clamp(sheet.x + dx, win.x + win.w - sheet.w, win.x),
     y: clamp(sheet.y + dy, win.y + win.h - sheet.h, win.y),
   }
+}
+
+/**
+ * The picture crop mode is on, or null — the mode's whole definition, in one
+ * function, so the canvas that draws it and the store that holds the flag are
+ * answering the same question.
+ *
+ * Crop mode runs on one picture and only while that picture is the entire
+ * selection: reaching for anything else — another node, a second one, the
+ * empty canvas — is how you leave. That rule is what the overlay is drawn
+ * from, and lib/store keeps `croppingId` honest against it after every write,
+ * so no path that changes the selection has to remember the mode exists.
+ */
+export function cropTarget(
+  nodes: Record<string, SquigNode>,
+  selection: readonly string[],
+  croppingId: string | null
+): ImageNode | null {
+  if (!croppingId || selection.length !== 1 || selection[0] !== croppingId) return null
+  const n = nodes[croppingId]
+  return n?.type === "image" ? n : null
 }
 
 /** Is any of this picture hidden? */

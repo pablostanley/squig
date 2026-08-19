@@ -1,16 +1,19 @@
 // ---------------------------------------------------------------------------
 // Crop maths — the window, the sheet, and the arithmetic between them.
 //
-//   node --experimental-strip-types scripts/test-crop.ts
+//   node --experimental-strip-types --import ./scripts/register-loader.mjs \
+//        scripts/test-crop.ts
 //
-// lib/canvas/crop imports only types and MIN_SIZE, so this runs standalone
-// with no bundler and no test framework.
+// The maths needs nothing but types and MIN_SIZE. The last section reaches for
+// the store, to ask when crop mode ends — hence the loader, and the stand-in
+// browser it sets up down there.
 // ---------------------------------------------------------------------------
 
 import {
   clampWindow,
   cropAnchor,
   cropPatch,
+  cropTarget,
   imageSheet,
   isCropped,
   panSheet,
@@ -20,7 +23,7 @@ import {
   windowToCrop,
 } from "../lib/canvas/crop.ts"
 import { resizeBounds, MIN_SIZE, type Handle } from "../lib/canvas/transform.ts"
-import { cropOf, normalizeCrop, type ImageCrop, type ImageNode } from "../lib/types.ts"
+import { cropOf, normalizeCrop, type ImageCrop, type ImageNode, type SquigNode } from "../lib/types.ts"
 import type { Bounds } from "../lib/selection.ts"
 
 let passed = 0
@@ -499,6 +502,113 @@ const inSheet = (b: Bounds, x: number, y: number) => x >= b.x && x <= b.x + b.w 
     boxIs(`${what}: unsquash reaches the same box`, trueShapePatch(turned)! as Bounds, plain as Bounds)
     check(`${what}: …off the same visible ratio`, close(visibleAspect(turned)!, visibleAspect(pic(squashed))!))
   }
+}
+
+// ---------------------------------------------------------------------------
+// The flag, not the maths: when does crop mode end?
+//
+// Everything above is arithmetic on two rectangles. This last part needs the
+// store, because the bug it exists for was never in the numbers. Crop mode is
+// derived — one picture, and that picture the whole selection — but deriving
+// it only ever *hid* the mode while the selection was elsewhere. The flag
+// stayed on the picture, so the mode came back on its own the moment the
+// selection landed there again: three Tabs, and the next drag re-framed a
+// picture the user was trying to move.
+//
+// So every path that changes the selection without going through setSelection
+// gets a line here. The store heals the flag in one place, after every write,
+// which is what makes the list below a check rather than a to-do list.
+// ---------------------------------------------------------------------------
+
+;(globalThis as { window?: unknown }).window = {
+  innerWidth: 1440,
+  innerHeight: 900,
+  addEventListener() {},
+  removeEventListener() {},
+}
+const held = new Map<string, string>()
+;(globalThis as { localStorage?: unknown }).localStorage = {
+  getItem: (k: string) => held.get(k) ?? null,
+  setItem: (k: string, v: string) => void held.set(k, v),
+  removeItem: (k: string) => void held.delete(k),
+}
+
+const { useSquig } = await import("../lib/store.ts")
+const s = () => useSquig.getState()
+const add = (n: Partial<SquigNode>) => s().addNode(n as unknown as Omit<SquigNode, "id" | "seed">, { checkpoint: false })
+
+/** Two pictures and a rectangle, with crop mode on the first picture. */
+function cropping(): string {
+  useSquig.setState({
+    nodes: {},
+    order: [],
+    selection: [],
+    clipboard: [],
+    past: [],
+    future: [],
+    dupTrail: null,
+    editingId: null,
+    croppingId: null,
+  })
+  const img = add({ ...pic(), id: undefined })
+  add({ ...pic(), id: undefined, x: 400 })
+  add({ type: "shape", shape: "rect", fill: "none", x: 700, y: 0, w: 100, h: 60 } as Partial<SquigNode>)
+  s().setCropping(img)
+  return img
+}
+
+/** The mode as the canvas asks about it. */
+const modeOn = () => !!cropTarget(s().nodes, s().selection, s().croppingId)
+
+{
+  const img = cropping()
+  check("double-clicking a picture puts crop mode on", modeOn() && s().selection.join() === img)
+
+  // the gesture itself: a crop writes to the picture on every pointermove, and
+  // none of that is a reason to leave
+  s().updateNodes({ [img]: { crop: { x: 0.1, y: 0.1, w: 0.5, h: 0.5 } } as Partial<SquigNode> })
+  check("dragging the crop window doesn't end crop mode", modeOn())
+}
+
+// Each of these takes the selection off the picture. What's checked is not
+// that the overlay is gone while the selection is away — deriving it did that
+// much — but that the flag itself is gone, so nothing can re-arm the mode by
+// landing on that picture again.
+const leaves: [string, (img: string) => void][] = [
+  ["Tab steps to the next layer", () => s().cycleSelection(1)],
+  ["⇧Tab steps back", () => s().cycleSelection(-1)],
+  ["⌘A takes everything", () => s().selectAll()],
+  ["invert swaps the selection", () => s().invertSelection()],
+  ["select-same-kind grows it", () => s().selectSameKind()],
+  ["⌘D leaves the copy selected", () => void s().duplicateSelected()],
+  ["⌘V leaves the paste selected", (img) => s().pasteNodes([s().nodes[img]], [800, 800])],
+  ["a click on another layer", () => s().setSelection([s().order[2]])],
+  ["a click on empty canvas", () => s().selectNone()],
+]
+
+for (const [what, run] of leaves) {
+  const img = cropping()
+  run(img)
+  check(`${what}: the crop flag is dropped`, s().croppingId === null, `croppingId ${s().croppingId}`)
+  // and then whatever lands the selection back on the picture — another Tab, a
+  // click, an undo. The mode must not come back on its own.
+  s().setSelection([img])
+  check(`${what}: …and selecting that picture again doesn't re-arm crop mode`, !modeOn())
+}
+
+{
+  // the one selection change that legitimately leaves the mode alone: the one
+  // that didn't actually move
+  const img = cropping()
+  s().setSelection([img])
+  check("a selection that never moved keeps crop mode", modeOn() && s().croppingId === img)
+}
+
+{
+  // and the picture going away takes the mode with it
+  const img = cropping()
+  s().removeNodes([img])
+  check("deleting the picture ends crop mode", s().croppingId === null)
 }
 
 // ---------------------------------------------------------------------------

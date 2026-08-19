@@ -37,6 +37,7 @@ const held = new Map<string, string>()
 }
 
 const { useSquig } = await import("../lib/store.ts")
+const { nodePrims } = await import("../lib/sketch/node-prims.ts")
 import type { ImageNode, SquigNode } from "../lib/types.ts"
 
 let passed = 0
@@ -312,6 +313,35 @@ const docJson = () => JSON.stringify({ nodes: s().nodes, order: s().order })
   for (let i = 0; i < 100; i++) s().redo()
   check("all the way forward again: pixels intact", img(a)?.src === srcA)
   check("all the way forward again: at the last x", img(a)?.x === 120)
+}
+
+// -- what the drawing hands out ---------------------------------------------
+
+{
+  // The other half of the sharing bargain. Nothing writes to a node that is in
+  // the document — but a node's own arrays leave the document all the time, as
+  // the prims the canvas draws and the exporter walks, and from there they
+  // reach rough.js. Every consumer only reads them today, and a shared
+  // reference is exactly as safe as that stays true: sort a freehand stroke's
+  // points in place, in a library upgrade nobody here would think to look at,
+  // and every checkpoint holding that node quietly changes shape with it. The
+  // stroke is the one array long enough to be worth sorting, so it is the one
+  // this checks.
+  reset()
+  const pts: [number, number][] = [[0, 0], [10, 4], [20, 1]]
+  const d = s().addNode({ type: "draw", points: pts, x: 0, y: 0, w: 20, h: 4 } as unknown as Omit<SquigNode, "id" | "seed">)
+  const stroke = (s().nodes[d] as unknown as { points: [number, number][] }).points
+  const prims = nodePrims(s().nodes[d])
+  const poly = prims.find((p) => p.t === "poly") as { pts: [number, number][] } | undefined
+  check("a freehand stroke draws as a poly", !!poly)
+  check("…whose points are not the document's own array", poly?.pts !== stroke)
+  // and the copy really is one: reordering it leaves the drawing alone
+  poly?.pts.reverse()
+  check(
+    "…so a consumer that reorders them can't reach the layer",
+    stroke.map((p) => p.join()).join(" ") === "0,0 10,4 20,1",
+    JSON.stringify(stroke)
+  )
 }
 
 // ---------------------------------------------------------------------------

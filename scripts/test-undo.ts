@@ -126,6 +126,65 @@ function docJson(): string {
 }
 
 {
+  // …and the very next edit of that same layer is a layer that's already
+  // there, however little has happened since. The top checkpoint goes on
+  // predating the node for as long as nothing else pushes one, so this used to
+  // fold into the placement too — a second run of words landing on top of the
+  // first, with the first never checkpointed at all. ⌘Z lifted the whole layer
+  // off the canvas, and redo couldn't reach the words in between either.
+  reset()
+  const id = placeDraft(200, 200)
+  s().commitText(id, { text: "hello", w: 46 } as Partial<SquigNode>)
+  s().setEditing(null)
+  const before = depth()
+
+  // double-click the same layer, select all, type over it, click away
+  s().setEditing(id)
+  s().commitText(id, { text: "goodbye", w: 70 } as Partial<SquigNode>)
+  s().setEditing(null)
+  check("typing over it again: a step of its own", depth() === before + 1, `past ${before} -> ${depth()}`)
+  check("typing over it again: the new words landed", (s().nodes[id] as TextNode).text === "goodbye")
+
+  s().undo()
+  check(
+    "typing over it again: ⌘Z hands back the words before, not an empty canvas",
+    (s().nodes[id] as TextNode)?.text === "hello",
+    s().nodes[id] ? JSON.stringify((s().nodes[id] as TextNode).text) : "the layer is gone"
+  )
+  s().redo()
+  check("typing over it again: ⇧⌘Z puts the new words back", (s().nodes[id] as TextNode)?.text === "goodbye")
+  // and the placement is still one step under it, exactly where it was
+  s().undo()
+  s().undo()
+  check("typing over it again: one more ⌘Z takes the layer off", !order().length)
+}
+
+{
+  // the same shape on a component: a label is never empty when the library
+  // drops it, so renaming one is an edit from the first letter — ⌘Z hands back
+  // the label it came with rather than deleting the layer
+  reset()
+  const id = s().addNode({
+    type: "component",
+    kind: "button",
+    props: { label: "Button" },
+    x: 0,
+    y: 0,
+    w: 100,
+    h: 36,
+  } as unknown as Omit<SquigNode, "id" | "seed">)
+  const before = depth()
+  s().setEditing(id)
+  s().commitText(id, { props: { label: "Save" } } as Partial<SquigNode>)
+  s().setEditing(null)
+  check("renaming a just-dropped button: one step", depth() === before + 1, `past ${before} -> ${depth()}`)
+  const labelOf = (nid: string) => (s().nodes[nid] as unknown as { props?: { label?: string } })?.props?.label
+  check("renaming a just-dropped button: the new label landed", labelOf(id) === "Save")
+  s().undo()
+  check("renaming a just-dropped button: ⌘Z brings the old label back", labelOf(id) === "Button", `label ${labelOf(id)}`)
+}
+
+{
   // emptying words that were already there is a real edit and keeps its step
   reset()
   const id = s().addNode({ type: "text", text: "hello", fontSize: 18, x: 0, y: 0, w: 60, h: 23.4 } as Omit<SquigNode, "id" | "seed">)

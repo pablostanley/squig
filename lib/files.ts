@@ -103,8 +103,9 @@ export function listFiles(): FileMeta[] {
   return parsed.filter(isMeta).sort(byRecent)
 }
 
-function writeIndex(list: FileMeta[]) {
-  writeJSON(INDEX_KEY, list)
+/** Same contract as writeJSON: false when the browser refused it. */
+function writeIndex(list: FileMeta[]): boolean {
+  return writeJSON(INDEX_KEY, list)
 }
 
 export function readFile(id: string): StoredDoc | null {
@@ -177,10 +178,26 @@ export function saveFile(doc: StoredDoc, seen: number | null): SavePlan {
   if (!canWrite(index, doc.id, seen)) return { index, forget: [], full: false, stale: true }
   const meta: FileMeta = { id: doc.id, name: doc.name, updatedAt: doc.updatedAt }
   const plan = planSave(index, meta, writeJSON(fileKey(doc.id), doc))
+  // nothing landed, so there is nothing to write down — and the index write
+  // would only be one more thing for a full quota to refuse
+  if (plan.full) return plan
+  // The index can be refused on its own. It is small, but it *grows* — a
+  // document's first save adds an entry, a rename lengthens one — so the write
+  // that fills the last of the quota can be this one rather than the document.
+  // Then the bytes are on disk and the drawer still describes the version
+  // before them, which is a save that only half happened, and calling it a
+  // success is the expensive half of the lie: the caller would move its `seen`
+  // stamp forward onto a version the index has never heard of, and from the
+  // next save on canWrite would read that disagreement as another tab writing
+  // this document and refuse every write for the rest of the session — over a
+  // quota, in the one tab there is. So this counts as full, on the same policy
+  // planSave argues for above: a failed save changes nothing at all, and the
+  // drawing stays owed until there is room for it.
+  if (!writeIndex(plan.index)) return { index, forget: [], full: true, stale: false }
+  // Only now: the tail is trimmed against an index that says so. Dropping
+  // first would leave the refused case listing documents whose bytes are
+  // already gone — rows in the drawer that open onto nothing.
   for (const id of plan.forget) drop(fileKey(id))
-  // nothing moved, so nothing to write — and the index write would only be one
-  // more thing for a full quota to refuse
-  if (!plan.full) writeIndex(plan.index)
   return plan
 }
 

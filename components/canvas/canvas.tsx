@@ -21,7 +21,7 @@ import { useSquig } from "@/lib/store"
 import type { ArrowNode, ImageNode, SquigNode, TextNode } from "@/lib/types"
 import { screenToWorld } from "@/lib/types"
 import { arrowEnds, bindOf, bindPair, bindTargetAt, endsPatch, withBind } from "@/lib/canvas/arrow-binding"
-import { clampWindow, cropAnchor, cropPatch, imageSheet, panSheet } from "@/lib/canvas/crop"
+import { clampWindow, cropAnchor, cropPatch, cropTarget, imageSheet, panSheet } from "@/lib/canvas/crop"
 import { autoSizeTextBox, setTextWidth } from "@/lib/canvas/text-reflow"
 import { computeSnap, computeResizeSnap, makeSnapRect, type GuideLine, type SnapRect } from "@/lib/canvas/snap-engine"
 import { pinchViewport, type PinchStart, type Pt } from "@/lib/canvas/pinch"
@@ -230,26 +230,6 @@ const inRect = (b: Bounds, x: number, y: number) => x >= b.x && x <= b.x + b.w &
 
 /** Every pointer a gesture is riding on. Only a pinch has more than one. */
 const gesturePointers = (g: Gesture): number[] => (g.kind === "pinch" ? [g.pointerId, g.idB] : [g.pointerId])
-
-/**
- * The picture the crop mode is on, or null.
- *
- * Crop mode runs on one picture and only while that picture is the entire
- * selection, so reaching for anything else is what ends it. Deriving that here
- * rather than trusting the flag alone means no code path that changes the
- * selection — ⌘A, Tab, invert, select-same-kind, a marquee — has to remember
- * to turn the mode off, and none of them can leave a crop window floating over
- * a set of nodes it doesn't belong to.
- */
-function croppingImage(
-  nodes: Record<string, SquigNode>,
-  selection: string[],
-  croppingId: string | null
-): ImageNode | null {
-  if (!croppingId || selection.length !== 1 || selection[0] !== croppingId) return null
-  const n = nodes[croppingId]
-  return n?.type === "image" ? n : null
-}
 
 const canAutoPan = (g: Gesture | null) =>
   !!g &&
@@ -1275,7 +1255,7 @@ export function Canvas() {
       e.stopPropagation()
       e.preventDefault()
       const s = st()
-      const n = croppingImage(s.nodes, s.selection, s.croppingId)
+      const n = cropTarget(s.nodes, s.selection, s.croppingId)
       if (!n) return
       modsRef.current = readMods(e)
       const [wx, wy] = toWorld(e)
@@ -1397,7 +1377,7 @@ export function Canvas() {
       // targets (startCrop), a press anywhere over the picture slides it, and
       // a press off the picture is how you leave.
       if (s.croppingId) {
-        const n = croppingImage(s.nodes, s.selection, s.croppingId)
+        const n = cropTarget(s.nodes, s.selection, s.croppingId)
         if (n && inRect(imageSheet(n), wx, wy)) {
           beginGesture(
             {
@@ -1929,7 +1909,7 @@ export function Canvas() {
           else if (s.linkOpen) s.setLinkOpen(false)
           else if (s.editingId) s.setEditing(null)
           // leaving keeps the crop, the way leaving an edit keeps the words
-          else if (croppingImage(s.nodes, s.selection, s.croppingId)) s.setCropping(null)
+          else if (cropTarget(s.nodes, s.selection, s.croppingId)) s.setCropping(null)
           else if (s.contextMenu) s.setContextMenu(null)
           else if (s.placing) s.setPlacing(null)
           else if (s.panel) s.setPanel(null)
@@ -1950,7 +1930,7 @@ export function Canvas() {
           // Only on a lone node: with several selected there's no "the" text.
           if (e.shiftKey) break
           // in crop mode Return is the commit, so it steps back out again
-          if (croppingImage(s.nodes, s.selection, s.croppingId)) {
+          if (cropTarget(s.nodes, s.selection, s.croppingId)) {
             e.preventDefault()
             s.setCropping(null)
             break
@@ -2081,7 +2061,7 @@ export function Canvas() {
   // the picture being cropped comes out of the document order and is redrawn
   // on top, under its own dimmed ghost — the mode is a spotlight, and a node
   // that happened to be stacked above it shouldn't sit in the middle of it
-  const cropNode = croppingImage(nodes, selection, croppingId)
+  const cropNode = cropTarget(nodes, selection, croppingId)
   const hoverNode = hover && !selection.includes(hover.id) && !cropNode ? nodes[hover.id] : null
   const bindNode = bindHint ? nodes[bindHint] : null
   /**

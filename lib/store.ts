@@ -6,7 +6,7 @@ import type { ComponentNode, ImageNode, SquigNode, TextAlign, TextNode, Tool, Vi
 import { normalizeFill, screenToWorld, unionBox } from "./types"
 import { validNode } from "./clipboard-payload"
 import { remapBinds, settleBinds } from "./canvas/arrow-binding"
-import { isCropped, trueShapePatch, uncropPatch } from "./canvas/crop"
+import { cropTarget, isCropped, trueShapePatch, uncropPatch } from "./canvas/crop"
 import {
   clampGestureZoom,
   fitViewport,
@@ -418,17 +418,37 @@ function sanitize(
 }
 
 /**
- * Was this node put on the canvas by the checkpoint currently on top?
+ * Is this the untouched draft the checkpoint on top just placed?
  *
  * The text editor opens on two nodes wearing identical clothes: a draft the
  * click before last just placed, and a layer that has been sitting there since
  * before lunch. The undo stack can tell them apart on its own — a checkpoint
  * that predates the node *is* the click that placed it — which saves passing a
  * flag down through the view and back, and saves it being wrong.
+ *
+ * That question alone isn't enough, though, and it took a second edit to show
+ * why. The top checkpoint keeps predating the node for as long as nothing else
+ * pushes one, so a layer typed into, dismissed and then opened again still
+ * looked freshly placed — and the second run of words folded into the
+ * placement exactly like the first, right on top of the first. ⌘Z then lifted
+ * the whole layer off the canvas, and the words in between had never been
+ * checkpointed at all, so redo couldn't reach them either. Two keystrokes
+ * apart, a version of the drawing that no longer existed anywhere.
+ *
+ * So the node has to still be *as it was placed* as well: an empty run, which
+ * is the only thing the text tool ever puts down and the only thing that can
+ * truthfully be called part of the click that placed it. The first words are
+ * that click finishing; every set after them is an edit of a layer that is
+ * already there, and pays for its own step. A component's label is never empty
+ * when it lands — the library drops it wearing its own default and opens no
+ * editor — so renaming one is an edit from the first letter, which is what a
+ * person renaming a button expects ⌘Z to hand back.
  */
-function placedByTop(past: DocSnapshot[], id: string): boolean {
+function freshDraft(past: DocSnapshot[], nodes: Record<string, SquigNode>, id: string): boolean {
   const top = past[past.length - 1]
-  return !!top && !top.nodes[id]
+  if (!top || top.nodes[id]) return false
+  const cur = nodes[id]
+  return cur?.type === "text" && cur.text === ""
 }
 
 const freshSeed = () => Math.floor(Math.random() * 2 ** 31)
@@ -797,7 +817,7 @@ export const useSquig = create<SquigState>((set, get) => ({
   setCropping: (id) => {
     // only a picture has a crop window to step into, and only one at a time —
     // the mode owns the whole selection while it's on, which is also how it
-    // ends: see croppingImage in components/canvas/canvas
+    // ends: see cropTarget in lib/canvas/crop
     if (!id) {
       set({ croppingId: null })
       return
@@ -871,9 +891,10 @@ export const useSquig = create<SquigState>((set, get) => ({
       if (next.length === s.selection.length && next.every((id, i) => s.selection[i] === id)) return s
       // the crop window belongs to one picture and to nothing else: reaching
       // for anything at all — another node, a second one, empty canvas — is
-      // how you leave, and leaving keeps the crop you'd dragged so far
-      const cropping = s.croppingId && next.length === 1 && next[0] === s.croppingId ? s.croppingId : null
-      return { selection: next, croppingId: cropping }
+      // how you leave, and leaving keeps the crop you'd dragged so far. This
+      // path doesn't have to say so; see the note at the foot of this file,
+      // which says it for every path.
+      return { selection: next }
     })
   },
   setCommandOpen: (open) =>
@@ -1070,22 +1091,26 @@ export const useSquig = create<SquigState>((set, get) => ({
    * Emptying words that were already there is a real edit, and keeps its step.
    */
   dismissDraft: (id) => {
-    if (placedByTop(get().past, id)) get().revertToCheckpoint()
+    const { past, nodes } = get()
+    if (freshDraft(past, nodes, id)) get().revertToCheckpoint()
     else get().removeNodes([id])
   },
 
   /**
    * The text editor closing with words in it.
    *
-   * Placing a draft and typing into it is one act, so the words land on the
-   * checkpoint the click already took — ⌘Z then lifts the whole text layer off
-   * the canvas instead of stopping halfway, on the same empty run dismissDraft
-   * exists to keep out of the history. Editing a layer that was already there
-   * is a step of its own and goes through edit(), which is also what makes
-   * closing the editor on words you didn't really change cost nothing.
+   * Placing a draft and typing into it is one act, so the first words land on
+   * the checkpoint the click already took — ⌘Z then lifts the whole text layer
+   * off the canvas instead of stopping halfway, on the same empty run
+   * dismissDraft exists to keep out of the history. Editing a layer that was
+   * already there — including the one you just typed into, the moment the
+   * editor opens on it a second time — is a step of its own and goes through
+   * edit(), which is also what makes closing the editor on words you didn't
+   * really change cost nothing. See freshDraft for where that line is drawn.
    */
   commitText: (id, patch) => {
-    if (placedByTop(get().past, id)) get().updateNode(id, patch)
+    const { past, nodes } = get()
+    if (freshDraft(past, nodes, id)) get().updateNode(id, patch)
     else get().edit(() => get().updateNode(id, patch))
   },
 
@@ -1796,3 +1821,34 @@ export const useSquig = create<SquigState>((set, get) => ({
     }
   },
 }))
+
+/**
+ * The crop flag, kept honest.
+ *
+ * Crop mode is on for exactly as long as one picture is the whole selection —
+ * cropTarget in lib/canvas/crop is that rule, and the canvas draws the overlay
+ * straight from it rather than from `croppingId` alone. Deriving it that way
+ * means no path that changes the selection can leave a crop window floating
+ * over a set of nodes it doesn't belong to.
+ *
+ * What deriving it does *not* do is end the mode, whatever the comment on the
+ * canvas's own copy of this rule used to claim. `croppingId` went on pointing
+ * at the picture the whole time the selection was elsewhere, so every path that
+ * writes `selection` through a raw set rather than setSelection — Tab, ⌘A,
+ * invert, select-same-kind, ⌘D, ⌘V, a library drop — left the mode armed and
+ * merely hidden. Land the selection back on that one picture, by any means at
+ * all, and the overlay came back from a keystroke; the next drag inside it
+ * re-framed the picture instead of moving it. The pointer paths were fine only
+ * because pressing on the canvas happens to call setCropping(null) first.
+ *
+ * The answer is not a list of the eight callers, which is the same mistake
+ * written out longer — the ninth gets added next month. So the flag heals
+ * itself: every write to the store lands, and then this asks the rule whether
+ * the mode it points at is still the mode we're in. It runs on a subscription
+ * rather than inside a component, because state must never be cleared during
+ * render, and it costs one identity check on `croppingId` in the ordinary case
+ * where nothing is being cropped at all.
+ */
+useSquig.subscribe((s) => {
+  if (s.croppingId && !cropTarget(s.nodes, s.selection, s.croppingId)) useSquig.setState({ croppingId: null })
+})
