@@ -3,7 +3,8 @@
 import { create } from "zustand"
 import { nanoid } from "nanoid"
 import type { ComponentNode, ImageNode, SquigNode, TextAlign, TextNode, Tool, Viewport, ShapeKind } from "./types"
-import { normalizeCrop, normalizeFill, screenToWorld, unionBox } from "./types"
+import { normalizeBind, normalizeCrop, normalizeFill, screenToWorld, unionBox } from "./types"
+import { remapBinds, settleBinds } from "./canvas/arrow-binding"
 import { isCropped, trueShapePatch, uncropPatch } from "./canvas/crop"
 import { lockedIds, selectable } from "./selection"
 import { repeatStep, type DupTrail } from "./canvas/duplicate"
@@ -272,6 +273,9 @@ function sanitize(
       // the picture at infinity and take the file with it
       node.crop = normalizeCrop(node.crop)
     }
+    // only the shape of a binding can be judged one node at a time; whether
+    // the ids name anything is settled below, once the document is whole
+    if (node.type === "arrow") node.bind = normalizeBind(node.bind)
     clean[id] = node
   }
   const seen = new Set<string>()
@@ -281,7 +285,10 @@ function sanitize(
     return true
   })
   for (const id of Object.keys(clean)) if (!seen.has(id)) ord.push(id)
-  return { nodes: clean, order: ord }
+  // a stranger's document can bind an arrow to a node that was never in it, or
+  // to one the loop above just threw out. Those ends let go here, and the ones
+  // that survive get routed to wherever their boxes actually are.
+  return { nodes: settleBinds(clean), order: ord }
 }
 
 const freshSeed = () => Math.floor(Math.random() * 2 ** 31)
@@ -291,19 +298,24 @@ const freshSeed = () => Math.floor(Math.random() * 2 ** 31)
  *
  * Group ids are remapped consistently across the batch, so copying a group
  * gives you a second, independent group rather than two halves of the first.
+ * Arrow bindings ride the same idea: copy two boxes and the arrow between them
+ * and you get a second connected pair, copy the arrow on its own and it comes
+ * away loose rather than still tethered to the originals.
  *
- * Copies come out loose. Nothing in this document can be locked and copied at
- * once — the selection can't hold a locked layer — but a paste from another
- * canvas can arrive that way, and a copy you asked for and then can't touch,
- * sitting sixteen pixels off the one you already couldn't touch, is a trap
- * rather than a courtesy. The lock says "leave *that* one alone", and this
- * isn't that one.
+ * Copies come out loose in the other sense too. Nothing in this document can be
+ * locked and copied at once — the selection can't hold a locked layer — but a
+ * paste from another canvas can arrive that way, and a copy you asked for and
+ * then can't touch, sitting sixteen pixels off the one you already couldn't
+ * touch, is a trap rather than a courtesy. The lock says "leave *that* one
+ * alone", and this isn't that one.
  */
 function cloneNodes(list: SquigNode[], dx: number, dy: number): SquigNode[] {
   const gmap = new Map<string, string>()
-  return list.map((n) => {
+  const idMap = new Map<string, string>()
+  const clones = list.map((n) => {
     const c = structuredClone(n)
     c.id = nanoid(8)
+    idMap.set(n.id, c.id)
     c.x = n.x + dx
     c.y = n.y + dy
     c.seed = freshSeed()
@@ -317,6 +329,8 @@ function cloneNodes(list: SquigNode[], dx: number, dy: number): SquigNode[] {
     }
     return c
   })
+  remapBinds(clones, idMap)
+  return clones
 }
 
 /** Frame a set of nodes in the window, with a margin so nothing kisses an edge. */
@@ -617,7 +631,11 @@ export const useSquig = create<SquigState>((set, get) => ({
     set((s) => {
       const selection = opts.select !== false ? [id] : s.selection
       stampSelAfter(s.past, selection)
-      return { nodes: { ...s.nodes, [id]: { ...node, id, seed } as SquigNode }, order: [...s.order, id], selection }
+      return {
+        nodes: settleBinds({ ...s.nodes, [id]: { ...node, id, seed } as SquigNode }),
+        order: [...s.order, id],
+        selection,
+      }
     })
     scheduleSave(get)
     return id
@@ -634,7 +652,7 @@ export const useSquig = create<SquigState>((set, get) => ({
       }
       const selection = opts.select !== false ? ids : s.selection
       stampSelAfter(s.past, selection)
-      return { nodes: map, order: [...s.order, ...ids], selection }
+      return { nodes: settleBinds(map), order: [...s.order, ...ids], selection }
     })
     scheduleSave(get)
   },
@@ -645,7 +663,7 @@ export const useSquig = create<SquigState>((set, get) => ({
       const cur = s.nodes[id]
       if (!cur) return s
       stampSelAfter(s.past, s.selection)
-      return { nodes: { ...s.nodes, [id]: { ...cur, ...patch } as SquigNode } }
+      return { nodes: settleBinds({ ...s.nodes, [id]: { ...cur, ...patch } as SquigNode }) }
     })
     scheduleSave(get)
   },
@@ -659,7 +677,10 @@ export const useSquig = create<SquigState>((set, get) => ({
         if (cur) map[id] = { ...cur, ...patch } as SquigNode
       }
       stampSelAfter(s.past, s.selection)
-      return { nodes: map }
+      // every bound arrow catches up here, which is what lets a box drag, a
+      // nudge, an align and a resize all pull their connectors along without
+      // any of them having to know that bindings exist
+      return { nodes: settleBinds(map) }
     })
     scheduleSave(get)
   },
@@ -672,7 +693,9 @@ export const useSquig = create<SquigState>((set, get) => ({
       for (const id of ids) delete map[id]
       stampSelAfter(s.past, s.selection.filter((i) => !ids.includes(i)))
       return {
-        nodes: map,
+        // an arrow aimed at something that just went away lets go of it and
+        // stays exactly where it was last drawn — see settleBinds
+        nodes: settleBinds(map),
         order: s.order.filter((i) => !ids.includes(i)),
         selection: s.selection.filter((i) => !ids.includes(i)),
         // editing a node that just went away would wedge the canvas
@@ -736,7 +759,7 @@ export const useSquig = create<SquigState>((set, get) => ({
     get().checkpoint()
     const clones = cloneNodes(src, step.dx, step.dy)
     set((s) => ({
-      nodes: { ...s.nodes, ...Object.fromEntries(clones.map((c) => [c.id, c])) },
+      nodes: settleBinds({ ...s.nodes, ...Object.fromEntries(clones.map((c) => [c.id, c])) }),
       order: [...s.order, ...clones.map((c) => c.id)],
       selection: clones.map((c) => c.id),
       // where these copies came from, so the next ⌘D can measure the same way
@@ -959,7 +982,8 @@ export const useSquig = create<SquigState>((set, get) => ({
         ord = [...ord.slice(0, at), ...pieces.map((p) => p.id), ...ord.slice(at + 1)]
         delete map[c.id]
       }
-      return { nodes: map, order: ord, selection: picked }
+      // a detached instance is gone as a node, so anything aimed at it lets go
+      return { nodes: settleBinds(map), order: ord, selection: picked }
     })
     scheduleSave(get)
   },
@@ -1035,7 +1059,7 @@ export const useSquig = create<SquigState>((set, get) => ({
     get().checkpoint()
     const clones = cloneNodes([...list], dx, dy)
     set((s) => ({
-      nodes: { ...s.nodes, ...Object.fromEntries(clones.map((c) => [c.id, c])) },
+      nodes: settleBinds({ ...s.nodes, ...Object.fromEntries(clones.map((c) => [c.id, c])) }),
       order: [...s.order, ...clones.map((c) => c.id)],
       selection: clones.map((c) => c.id),
     }))
@@ -1090,19 +1114,26 @@ export const useSquig = create<SquigState>((set, get) => ({
   cloneSelectionInPlace: () => {
     const { selection, nodes, order } = get()
     const clones: SquigNode[] = []
+    const idMap = new Map<string, string>()
     // document order, so the copies stack the way the originals did
     for (const id of order) {
       if (!selection.includes(id)) continue
       const n = nodes[id]
       if (!n) continue
-      clones.push({ ...structuredClone(n), id: nanoid(8), seed: Math.floor(Math.random() * 2 ** 31) })
+      const clone = { ...structuredClone(n), id: nanoid(8), seed: freshSeed() }
+      idMap.set(n.id, clone.id)
+      clones.push(clone)
     }
     if (!clones.length) return []
+    // an ⌥-drag of two boxes and their arrow takes a connected copy with it,
+    // not a copy still stuck to what it was dragged off — same remap cloneNodes
+    // does for a ⌘D, which this deliberately isn't a second version of
+    remapBinds(clones, idMap)
     const ids = clones.map((c) => c.id)
     set((s) => {
       stampSelAfter(s.past, ids)
       return {
-        nodes: { ...s.nodes, ...Object.fromEntries(clones.map((c) => [c.id, c])) },
+        nodes: settleBinds({ ...s.nodes, ...Object.fromEntries(clones.map((c) => [c.id, c])) }),
         order: [...s.order, ...ids],
         selection: ids,
       }

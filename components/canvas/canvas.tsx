@@ -18,8 +18,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import { useSquig } from "@/lib/store"
-import type { ImageNode, SquigNode, TextNode } from "@/lib/types"
+import type { ArrowNode, ImageNode, SquigNode, TextNode } from "@/lib/types"
 import { screenToWorld } from "@/lib/types"
+import { arrowEnds, bindOf, bindPair, bindTargetAt, endsPatch, withBind } from "@/lib/canvas/arrow-binding"
 import { clampWindow, cropAnchor, cropPatch, imageSheet, panSheet } from "@/lib/canvas/crop"
 import { autoSizeTextBox, setTextWidth } from "@/lib/canvas/text-reflow"
 import { computeSnap, computeResizeSnap, makeSnapRect, type GuideLine, type SnapRect } from "@/lib/canvas/snap-engine"
@@ -127,6 +128,31 @@ type Gesture =
       exceeded: boolean
       id: string | null
       what: "shape" | "arrow"
+      /** the node the press landed on, if any — an arrow started on a box is
+       *  attached to it from its very first frame */
+      tailBind: string | null
+      /** and the one under the pointer right now, which the head takes on release */
+      headBind: string | null
+    }
+  | {
+      /**
+       * One end of a lone arrow, in hand. Arrows are the one node whose box
+       * isn't something you set — the two ends are — so this replaces the
+       * eight resize handles rather than joining them.
+       */
+      kind: "endpoint"
+      wx: number
+      wy: number
+      sx: number
+      sy: number
+      pointerId: number
+      exceeded: boolean
+      id: string
+      /** 0 is the tail, 1 the head */
+      end: 0 | 1
+      /** the arrow at gesture start — every frame recomputes from it */
+      orig: ArrowNode
+      dirty: boolean
     }
   | {
       kind: "resize"
@@ -183,7 +209,13 @@ function croppingImage(
 }
 
 const canAutoPan = (g: Gesture | null) =>
-  !!g && (g.kind === "marquee" || g.kind === "move" || g.kind === "resize" || g.kind === "create")
+  !!g &&
+  (g.kind === "marquee" ||
+    g.kind === "move" ||
+    g.kind === "resize" ||
+    g.kind === "create" ||
+    // the box you want to attach to is often the one just off the edge
+    g.kind === "endpoint")
 
 export function Canvas() {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -237,6 +269,8 @@ export function Canvas() {
   /** soft: the pointer is over a hollow shape's middle — a click would select
    *  it but a drag would marquee, so the outline shows without a move cursor */
   const [hover, setHover] = useState<{ id: string; soft: boolean; locked: boolean } | null>(null)
+  /** the node an arrow end would attach to if it were let go right now */
+  const [bindHint, setBindHint] = useState<string | null>(null)
   const [altHeld, setAltHeld] = useState(false)
   const [gestureKind, setGestureKind] = useState<Gesture["kind"] | null>(null)
 
@@ -484,6 +518,32 @@ export function Canvas() {
         return
       }
 
+      if (g.kind === "endpoint") {
+        if (!g.dirty) {
+          if (!g.exceeded) return
+          s.checkpoint()
+          g.dirty = true
+        }
+        const bind = bindOf(g.orig)
+        const other = g.end === 0 ? bind[1] : bind[0]
+        // whatever the far end is already holding is off the table: a straight
+        // line from a box back to itself has nowhere to go, and squig has no
+        // curve to draw instead
+        const target = bindTargetAt(s.nodes, s.order, wx, wy, v.zoom, [g.id, other])
+        setBindHint(target)
+
+        // The end in hand goes exactly where the pointer is. If that's over a
+        // box, the store routes it to the box's edge on the way through — so
+        // what you're looking at mid-drag is already the arrow you'd get by
+        // letting go, rather than a preview of one.
+        const ends = arrowEnds(g.orig)
+        ends[g.end] = [wx, wy]
+        s.updateNodes({
+          [g.id]: { ...endsPatch(ends[0], ends[1]), bind: withBind(bind, g.end, target) } as Partial<SquigNode>,
+        })
+        return
+      }
+
       if (g.kind === "resize") {
         if (!g.dirty) {
           if (!g.exceeded) return
@@ -583,6 +643,12 @@ export function Canvas() {
           w = side
           h = side
         }
+        // aim as you draw: the box under the pointer lights up and takes the
+        // head the moment you let go. The tail was decided on pointer down.
+        if (g.what === "arrow" && g.exceeded) {
+          g.headBind = bindTargetAt(s.nodes, s.order, wx, wy, v.zoom, [g.id, g.tailBind])
+          setBindHint(g.headBind)
+        }
         if (!g.id) {
           if (!g.exceeded) return
           if (g.what === "shape") {
@@ -606,6 +672,7 @@ export function Canvas() {
                   [0, 0],
                   [Math.max(w, 8), Math.max(h, 8)],
                 ],
+                bind: bindPair(g.tailBind, g.headBind),
               } as Omit<SquigNode, "id" | "seed">,
               { select: false }
             )
@@ -618,7 +685,14 @@ export function Canvas() {
             [g.wx - x, g.wy - y],
             [wx - x, wy - y],
           ]
-          s.updateNode(g.id, { x, y, w: Math.max(w, 2), h: Math.max(h, 2), points: pts } as Partial<SquigNode>)
+          s.updateNode(g.id, {
+            x,
+            y,
+            w: Math.max(w, 2),
+            h: Math.max(h, 2),
+            points: pts,
+            bind: bindPair(g.tailBind, g.headBind),
+          } as Partial<SquigNode>)
         } else {
           s.updateNode(g.id, { x, y, w: Math.max(w, 2), h: Math.max(h, 2) })
         }
@@ -701,6 +775,7 @@ export function Canvas() {
     setGuides([])
     setLivePoints(null)
     setMarquee(null)
+    setBindHint(null)
   }, [st])
 
   /** Pointer up, or anything else that means "keep what they did". */
@@ -761,15 +836,20 @@ export function Canvas() {
                     [0, 0],
                     [w, h],
                   ],
+                  bind: bindPair(g.tailBind, g.headBind),
                 } as Omit<SquigNode, "id" | "seed">,
                 { select: false }
               )
       } else {
         const n = st().nodes[id]
+        // a bound arrow's box is a consequence of where its boxes sit, not
+        // something the drag set, so a small one is the honest answer rather
+        // than a gesture that fizzled
+        const bound = n?.type === "arrow" && !!n.bind
         // BOTH dimensions, not either: a horizontal arrow is 2 units tall by
         // construction and a divider rect is deliberately thin. Testing `||`
         // would quietly replace every one of them with a fat diagonal.
-        if (n && n.w < 10 && n.h < 10) {
+        if (n && !bound && n.w < 10 && n.h < 10) {
           const [w, h] = [140, 90]
           if (n.type === "arrow") {
             // keep the direction they dragged, however small
@@ -839,7 +919,7 @@ export function Canvas() {
 
     if (g.kind === "marquee") {
       s.setSelection(g.base)
-    } else if ((g.kind === "move" || g.kind === "resize" || g.kind === "crop") && g.dirty) {
+    } else if ((g.kind === "move" || g.kind === "resize" || g.kind === "crop" || g.kind === "endpoint") && g.dirty) {
       // Escape undoes this drag, not the whole crop — you stay in the mode
       s.revertToCheckpoint()
     } else if (g.kind === "create") {
@@ -999,6 +1079,42 @@ export function Canvas() {
     [st, beginGesture, toWorld, resetTextWidth]
   )
 
+  /**
+   * A press on one of a lone arrow's two end dots.
+   *
+   * Dragging an end onto a box attaches it; dragging it back out into empty
+   * space lets go. There's no third state and no menu — the gesture is the
+   * whole interface, the way it is for a resize handle.
+   */
+  const startEndpoint = useCallback(
+    (end: 0 | 1, e: React.PointerEvent) => {
+      e.stopPropagation()
+      e.preventDefault()
+      const s = st()
+      const n = s.selection.length === 1 ? s.nodes[s.selection[0]] : null
+      if (n?.type !== "arrow") return
+      modsRef.current = readMods(e)
+      const [wx, wy] = toWorld(e)
+      beginGesture(
+        {
+          kind: "endpoint",
+          wx,
+          wy,
+          sx: e.clientX,
+          sy: e.clientY,
+          pointerId: e.pointerId,
+          exceeded: false,
+          id: n.id,
+          end,
+          orig: structuredClone(n),
+          dirty: false,
+        },
+        e
+      )
+    },
+    [st, beginGesture, toWorld]
+  )
+
   /** A press on one of the eight crop handles. */
   const startCrop = useCallback(
     (handle: Handle, e: React.PointerEvent) => {
@@ -1101,7 +1217,23 @@ export function Canvas() {
         return
       }
       if (tool === "shape" || tool === "arrow") {
-        beginGesture({ kind: "create", ...common, wx, wy, id: null, what: tool === "shape" ? "shape" : "arrow" }, e)
+        // an arrow that starts on top of a box starts attached to it, so the
+        // common case — draw from this thing to that thing — needs no second
+        // step at all
+        const tailBind = tool === "arrow" ? bindTargetAt(s.nodes, s.order, wx, wy, s.viewport.zoom) : null
+        beginGesture(
+          {
+            kind: "create",
+            ...common,
+            wx,
+            wy,
+            id: null,
+            what: tool === "shape" ? "shape" : "arrow",
+            tailBind,
+            headBind: null,
+          },
+          e
+        )
         return
       }
       if (tool === "text") {
@@ -1683,6 +1815,7 @@ export function Canvas() {
   // that happened to be stacked above it shouldn't sit in the middle of it
   const cropNode = croppingImage(nodes, selection, croppingId)
   const hoverNode = hover && !selection.includes(hover.id) && !cropNode ? nodes[hover.id] : null
+  const bindNode = bindHint ? nodes[bindHint] : null
 
   // a soft hover keeps the default cursor: a click there selects, but a drag
   // marquees, and a move cursor would promise a drag this press won't do
@@ -1694,7 +1827,7 @@ export function Canvas() {
         ? (altHeld ? "copy" : "move")
         // a crop drag captures the pointer, so the cursor comes from here once
         // it leaves the handle it started on
-        : gestureKind === "crop"
+        : gestureKind === "crop" || gestureKind === "endpoint"
           ? "move"
           : cropNode
             ? "default"
@@ -1782,6 +1915,22 @@ export function Canvas() {
         />
       )}
 
+      {/* what the arrow end in hand would attach to — the same hint the hover
+          draws, turned up, because this one is a promise about what happens
+          when you let go rather than a note about what's under the cursor */}
+      {bindNode && (
+        <div
+          className="pointer-events-none absolute rounded-sm"
+          style={{
+            left: bindNode.x * v.zoom + v.x,
+            top: bindNode.y * v.zoom + v.y,
+            width: bindNode.w * v.zoom,
+            height: bindNode.h * v.zoom,
+            border: "2px solid color-mix(in srgb, var(--sq-select) 75%, transparent)",
+          }}
+        />
+      )}
+
       {/* selection rings + handles (screen space) — the crop window replaces
           them outright while it's up: two boxes with two meanings, one of them
           stale, is the worst of both */}
@@ -1792,6 +1941,7 @@ export function Canvas() {
           selectedNodes={selectedNodes}
           viewport={v}
           onStartResize={startResize}
+          onStartEndpoint={startEndpoint}
           editing={!!editingId && selection.includes(editingId)}
           gestureKind={gestureKind}
         />
@@ -2022,16 +2172,79 @@ function handleHitBox(hd: Handle, w: number, h: number, padX: number, padY: numb
   return { left: hx + dx, top: hy + dy, width, height, dotLeft: -dx - r, dotTop: -dy - r }
 }
 
+/**
+ * The two ends of a lone arrow, as dots you can pick up.
+ *
+ * Round, where the eight box handles are square — that's the whole
+ * distinction, and it's an honest one: those sit on the corners and edges of a
+ * rectangle, these are points. Same size, same white-on-blue, so they still
+ * read as "the bit you have hold of".
+ *
+ * An end that's attached to a box prints solid instead of hollow. It's the
+ * only place the attachment shows once a drag is over, and it's the difference
+ * between an arrow that will follow the box and one that only looks like it
+ * will — worth a dot's worth of ink.
+ */
+function ArrowEnds({
+  node,
+  viewport,
+  onStart,
+  show,
+}: {
+  node: ArrowNode
+  viewport: { x: number; y: number; zoom: number }
+  onStart: (end: 0 | 1, e: React.PointerEvent) => void
+  /** false while some other gesture is running: the dots follow along, but
+   *  they don't take presses that belong to the drag already in progress */
+  show: boolean
+}) {
+  const v = viewport
+  const bind = bindOf(node)
+  const reach = HANDLE_DOT / 2 + GRAB_OUT
+  return (
+    <>
+      {arrowEnds(node).map(([wx, wy], i) => (
+        <div
+          key={i}
+          className={`absolute ${show ? "pointer-events-auto" : "pointer-events-none"}`}
+          style={{
+            left: wx * v.zoom + v.x - reach,
+            top: wy * v.zoom + v.y - reach,
+            width: reach * 2,
+            height: reach * 2,
+            cursor: "move",
+          }}
+          onPointerDown={show ? (e) => onStart(i as 0 | 1, e) : undefined}
+        >
+          <div
+            className="pointer-events-none absolute rounded-full"
+            style={{
+              left: GRAB_OUT,
+              top: GRAB_OUT,
+              width: HANDLE_DOT,
+              height: HANDLE_DOT,
+              background: bind[i] ? "var(--sq-select)" : "#fff",
+              border: "2px solid var(--sq-select)",
+            }}
+          />
+        </div>
+      ))}
+    </>
+  )
+}
+
 function SelectionOverlay({
   selectedNodes,
   viewport,
   onStartResize,
+  onStartEndpoint,
   editing,
   gestureKind,
 }: {
   selectedNodes: SquigNode[]
   viewport: { x: number; y: number; zoom: number }
   onStartResize: (h: Handle, e: React.PointerEvent) => void
+  onStartEndpoint: (end: 0 | 1, e: React.PointerEvent) => void
   editing: boolean
   gestureKind: Gesture["kind"] | null
 }) {
@@ -2041,6 +2254,25 @@ function SelectionOverlay({
   // while the caret is still blinking somewhere else is selected and has every
   // right to say so
   if (!b || editing) return null
+
+  // A lone arrow gets its two ends instead of the usual box and eight handles.
+  // Its box isn't a thing anyone sets — the ends are, and scaling the box is
+  // just a clumsier way of moving them both — so drawing a rectangle round it
+  // would offer a grip that means nothing, and a fully attached arrow doesn't
+  // even own its own box any more.
+  const soloArrow =
+    selectedNodes.length === 1 && selectedNodes[0].type === "arrow" ? (selectedNodes[0] as ArrowNode) : null
+  if (soloArrow && gestureKind !== "marquee") {
+    return (
+      <ArrowEnds
+        node={soloArrow}
+        viewport={viewport}
+        onStart={onStartEndpoint}
+        // they stay up through their own drag, the way the resize handles do
+        show={!gestureKind || gestureKind === "endpoint"}
+      />
+    )
+  }
 
   const v = viewport
   const left = b.x * v.zoom + v.x
