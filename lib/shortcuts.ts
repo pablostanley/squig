@@ -98,10 +98,27 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
       { keys: ["mod+v"], label: "Paste at cursor" },
       { keys: ["mod+shift+v"], label: "Paste in place" },
       { keys: ["mod+a"], label: "Select all" },
+      { keys: ["shift+click"], label: "Add or drop a layer" },
+      { keys: ["tab"], label: "Step to the next layer" },
+      { keys: ["shift+tab"], label: "Step to the one before" },
       { keys: ["mod+shift+l"], label: "Lock — the pointer walks past it" },
       { keys: ["right-click"], label: "Unlock a locked layer" },
       { keys: ["del"], label: "Delete" },
       { keys: ["esc"], label: "Deselect" },
+    ],
+  },
+  {
+    // Every one of these is a key you hold down with the pointer already
+    // moving, so they gather better than they scatter: a user asking "what
+    // does shift do while I drag?" has one place to look.
+    title: "While you drag",
+    rows: [
+      { keys: ["shift+drag"], label: "Keep the move to one axis" },
+      { keys: ["alt+drag"], label: "Drag off a copy" },
+      { keys: ["mod+drag"], label: "Ignore the snapping" },
+      { keys: ["shift+drag"], label: "Resize in proportion" },
+      { keys: ["alt+drag"], label: "Resize from the middle" },
+      { keys: ["shift+drag"], label: "Draw a square or a circle" },
     ],
   },
   {
@@ -135,11 +152,15 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
       { keys: ["mod+u"], label: "Underline" },
       { keys: ["mod+k"], label: "Link selected text" },
       { keys: ["enter", "double-click"], label: "Edit text" },
+      { keys: ["drag"], label: "Side handle sets the width" },
+      { keys: ["drag"], label: "Corner scales the type" },
+      { keys: ["double-click"], label: "Side handle, hug again" },
     ],
   },
   {
     title: "Pictures",
     rows: [
+      { keys: ["double-click"], label: "Corner — true shape" },
       { keys: ["enter", "double-click"], label: "Crop a picture" },
       { keys: ["drag"], label: "Slide the picture under the crop" },
       { keys: ["shift+drag"], label: "Crop to the same shape" },
@@ -152,6 +173,7 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
     rows: [
       { keys: ["mod+plus"], label: "Zoom in" },
       { keys: ["mod+-"], label: "Zoom out" },
+      { keys: ["mod+scroll"], label: "Zoom at the pointer" },
       { keys: ["shift+0"], label: "Zoom to 100%" },
       { keys: ["shift+1"], label: "Zoom to fit" },
       { keys: ["shift+2"], label: "Zoom to selection" },

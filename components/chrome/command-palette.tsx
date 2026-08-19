@@ -39,6 +39,7 @@ import {
   TrashIcon,
   StackIcon,
   StackSimpleIcon,
+  SquaresFourIcon,
   CornersOutIcon,
   CornersInIcon,
   FileIcon,
@@ -164,6 +165,9 @@ function Palette() {
         run: () => st().detachSelected(),
       },
       { id: "selectall", label: "Select all", hint: kbd("mod+a"), section: "Edit", icon: StackIcon, run: () => st().selectAll() },
+      // "select every button on this screen so I can restyle them in one go" —
+      // no key is free for it and the rail has no room, so the box is its home
+      { id: "same-kind", label: "Select all of the same kind", section: "Edit", keywords: "same similar matching type every buttons restyle", icon: SquaresFourIcon, disabled: !hasSel, run: () => st().selectSameKind() },
       { id: "lock", label: "Lock", hint: kbd("mod+shift+l"), section: "Edit", keywords: "freeze pin hold still background protect", icon: LockSimpleIcon, disabled: !hasSel, run: () => st().lockSelected() },
       // the one command that has to be here: with nothing selected and nothing
       // clickable, ⌘K is the only door left into a canvas you've locked down
