@@ -38,13 +38,18 @@ import { NodeSketch, SketchPrims, imagePlacement, mirrorBox } from "./sketch"
 import { getDef, renderComponent } from "@/lib/library/registry"
 import { exportDoc } from "@/lib/file-io"
 import { copyAsPngWithNotice } from "@/lib/export-image"
+import { clampGestureZoom, zoomFloor, MAX_ZOOM, MIN_ZOOM } from "@/lib/canvas/navigate"
 import { ContextRow } from "./context-row"
 import { EmptyCanvas } from "./empty-canvas"
 import { TextEditOverlay } from "./text-edit-overlay"
 
-const MIN_ZOOM = 0.1
-const MAX_ZOOM = 4
-const ZOOM_RANGE = { min: MIN_ZOOM, max: MAX_ZOOM }
+/**
+ * A gesture's zoom floor is not a constant: ⇧1 is allowed below MIN_ZOOM to
+ * show a board that big, and once you're down there the next scroll up has to
+ * pick up from where you are rather than snapping back to 10% — see
+ * lib/canvas/navigate.
+ */
+const zoomRange = (zoom: number) => ({ min: zoomFloor(zoom), max: MAX_ZOOM })
 const SNAP_THRESHOLD = 6
 /** screen px of travel before a press stops being a click */
 const DRAG_THRESHOLD = 3
@@ -399,7 +404,7 @@ export function Canvas() {
         const r = el.getBoundingClientRect()
         const [sx, sy] = [e.clientX - r.left, e.clientY - r.top]
         const factor = Math.exp(-e.deltaY * 0.01)
-        const zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, v.zoom * factor))
+        const zoom = clampGestureZoom(v.zoom, v.zoom * factor)
         const scale = zoom / v.zoom
         st().setViewport({ zoom, x: sx - (sx - v.x) * scale, y: sy - (sy - v.y) * scale })
       } else {
@@ -1040,7 +1045,7 @@ export function Canvas() {
         const pt = toLocal(e)
         if (e.pointerId === g.pointerId) g.a = pt
         else g.b = pt
-        st().setViewport(pinchViewport(g.start, g.a, g.b, ZOOM_RANGE))
+        st().setViewport(pinchViewport(g.start, g.a, g.b, zoomRange(g.start.viewport.zoom)))
         return
       }
 
@@ -2047,7 +2052,9 @@ export function Canvas() {
       onContextMenu={onContextMenu}
     >
       <svg className="pointer-events-none absolute inset-0 h-full w-full" style={{ overflow: "visible" }}>
-        <g transform={`translate(${v.x} ${v.y}) scale(${v.zoom})`}>
+        {/* past the gesture floor the pen would print thinner than a pixel and
+            the whole board would fade out — see the rule in app/globals.css */}
+        <g data-squig-far={v.zoom < MIN_ZOOM ? "" : undefined} transform={`translate(${v.x} ${v.y}) scale(${v.zoom})`}>
           {order.map((id) => {
             const n = nodes[id]
             if (!n || id === cropNode?.id) return null
