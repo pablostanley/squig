@@ -3,8 +3,10 @@
 import { create } from "zustand"
 import { nanoid } from "nanoid"
 import type { ComponentNode, ImageNode, SquigNode, TextAlign, TextNode, Tool, Viewport, ShapeKind } from "./types"
-import { normalizeCrop, normalizeFill, screenToWorld, unionBox } from "./types"
-import { isCropped, uncropPatch } from "./canvas/crop"
+import { normalizeBind, normalizeCrop, normalizeFill, screenToWorld, unionBox } from "./types"
+import { remapBinds, settleBinds } from "./canvas/arrow-binding"
+import { isCropped, trueShapePatch, uncropPatch } from "./canvas/crop"
+import { lockedIds, selectable } from "./selection"
 import { repeatStep, type DupTrail } from "./canvas/duplicate"
 import { getDef } from "./library/registry"
 import { breakApart } from "./library/break-apart"
@@ -109,6 +111,10 @@ interface SquigState {
   /** a one-line flash in the corner; the id makes a repeat of the same words
    *  count as a new message */
   notice: { id: number; text: string } | null
+  /** the browser has no room left: this drawing is on screen and nowhere else.
+   *  It stays true until a save gets through, because the trouble does too — a
+   *  flash that fades is the wrong shape for "your work isn't being kept". */
+  drawerFull: boolean
 
   past: DocSnapshot[]
   future: DocSnapshot[]
@@ -123,6 +129,8 @@ interface SquigState {
   setCropping: (id: string | null) => void
   /** give a picture back every pixel it's hiding */
   resetCrop: (ids?: string[]) => void
+  /** put a squashed picture back on the ratio its pixels actually have */
+  restoreAspect: (ids?: string[]) => void
   setContextRow: (on: boolean) => void
   setTheme: (t: ThemeName) => void
   setFont: (f: FontMode) => void
@@ -161,6 +169,12 @@ interface SquigState {
   selectSameKind: () => void
   /** step selection through z-order — Tab / Shift+Tab */
   cycleSelection: (dir: 1 | -1) => void
+  /** hold the selection down and let go of it — see the note in lib/selection */
+  lockSelected: () => void
+  /** let named layers loose again — what the right-click menu runs */
+  unlockNodes: (ids: string[]) => void
+  /** the escape hatch that needs no aiming: everything loose at once */
+  unlockAll: () => void
   deleteSelected: () => void
   /** clone the selection and select the clones; returns the new ids */
   duplicateSelected: (offset?: number) => string[]
@@ -259,6 +273,9 @@ function sanitize(
       // the picture at infinity and take the file with it
       node.crop = normalizeCrop(node.crop)
     }
+    // only the shape of a binding can be judged one node at a time; whether
+    // the ids name anything is settled below, once the document is whole
+    if (node.type === "arrow") node.bind = normalizeBind(node.bind)
     clean[id] = node
   }
   const seen = new Set<string>()
@@ -268,7 +285,10 @@ function sanitize(
     return true
   })
   for (const id of Object.keys(clean)) if (!seen.has(id)) ord.push(id)
-  return { nodes: clean, order: ord }
+  // a stranger's document can bind an arrow to a node that was never in it, or
+  // to one the loop above just threw out. Those ends let go here, and the ones
+  // that survive get routed to wherever their boxes actually are.
+  return { nodes: settleBinds(clean), order: ord }
 }
 
 const freshSeed = () => Math.floor(Math.random() * 2 ** 31)
@@ -278,15 +298,28 @@ const freshSeed = () => Math.floor(Math.random() * 2 ** 31)
  *
  * Group ids are remapped consistently across the batch, so copying a group
  * gives you a second, independent group rather than two halves of the first.
+ * Arrow bindings ride the same idea: copy two boxes and the arrow between them
+ * and you get a second connected pair, copy the arrow on its own and it comes
+ * away loose rather than still tethered to the originals.
+ *
+ * Copies come out loose in the other sense too. Nothing in this document can be
+ * locked and copied at once — the selection can't hold a locked layer — but a
+ * paste from another canvas can arrive that way, and a copy you asked for and
+ * then can't touch, sitting sixteen pixels off the one you already couldn't
+ * touch, is a trap rather than a courtesy. The lock says "leave *that* one
+ * alone", and this isn't that one.
  */
 function cloneNodes(list: SquigNode[], dx: number, dy: number): SquigNode[] {
   const gmap = new Map<string, string>()
-  return list.map((n) => {
+  const idMap = new Map<string, string>()
+  const clones = list.map((n) => {
     const c = structuredClone(n)
     c.id = nanoid(8)
+    idMap.set(n.id, c.id)
     c.x = n.x + dx
     c.y = n.y + dy
     c.seed = freshSeed()
+    c.locked = undefined
     if (c.groupIds?.length) {
       c.groupIds = c.groupIds.map((g) => {
         const mapped = gmap.get(g) ?? nanoid(8)
@@ -296,6 +329,8 @@ function cloneNodes(list: SquigNode[], dx: number, dy: number): SquigNode[] {
     }
     return c
   })
+  remapBinds(clones, idMap)
+  return clones
 }
 
 /** Frame a set of nodes in the window, with a margin so nothing kisses an edge. */
@@ -375,7 +410,7 @@ function flushSave(get: () => SquigState, force = false) {
   if (!dirty && !force) return
   const known = s.files.some((f) => f.id === s.docId)
   if (!s.order.length && !known && !force) return
-  const files = saveFile({
+  const { index, full } = saveFile({
     id: s.docId,
     name: s.fileName,
     nodes: s.nodes,
@@ -383,8 +418,15 @@ function flushSave(get: () => SquigState, force = false) {
     updatedAt: Date.now(),
     look: lookOf(s),
   })
-  useSquig.setState({ files })
-  dirty = false
+  // Say it once, on the way into trouble — every autosave after this one would
+  // be saying the same thing about the same drawing. The line under the file
+  // name carries it from there, for as long as it lasts.
+  if (full && !s.drawerFull) s.setNotice("no room left in this browser — export this one to keep it")
+  useSquig.setState({ files: index, drawerFull: full })
+  // a refused write leaves the drawing unsaved, so it stays owed: the next
+  // edit, or the tab closing, tries again — which is how squig comes back on
+  // its own once the user has made room
+  dirty = full
 }
 
 let watching = false
@@ -439,6 +481,7 @@ export const useSquig = create<SquigState>((set, get) => ({
   clipboard: [],
   dupTrail: null,
   notice: null,
+  drawerFull: false,
   past: [],
   future: [],
 
@@ -463,7 +506,10 @@ export const useSquig = create<SquigState>((set, get) => ({
       set({ croppingId: null })
       return
     }
-    if (get().nodes[id]?.type !== "image") return
+    const n = get().nodes[id]
+    // this one writes the selection itself, so it also keeps the locked layers
+    // out of it — a held-down picture has no crop to step into
+    if (n?.type !== "image" || n.locked) return
     set({ croppingId: id, editingId: null, selection: [id] })
   },
 
@@ -477,6 +523,22 @@ export const useSquig = create<SquigState>((set, get) => ({
       Object.fromEntries(targets.map((n) => [n.id, uncropPatch(n) as Partial<SquigNode>])),
       { checkpoint: true }
     )
+  },
+
+  restoreAspect: (ids) => {
+    const s = get()
+    const patches: Record<string, Partial<SquigNode>> = {}
+    for (const id of ids ?? s.selection) {
+      const n = s.nodes[id]
+      if (n?.type !== "image") continue
+      // a picture already on its ratio hands back null, and so drops out of
+      // the batch — a selection of twelve where one is squashed moves that one
+      const p = trueShapePatch(n)
+      if (p) patches[id] = p as Partial<SquigNode>
+    }
+    // nothing was out of shape: no checkpoint, no undo step that undoes nothing
+    if (!Object.keys(patches).length) return
+    s.updateNodes(patches, { checkpoint: true })
   },
 
   setContextRow: (on) => {
@@ -506,7 +568,7 @@ export const useSquig = create<SquigState>((set, get) => ({
   // behaves the same whether it was built by marquee, shift-click or ⌘A
   setSelection: (ids) => {
     set((s) => {
-      const want = new Set(ids)
+      const want = new Set(selectable(ids, s.nodes))
       const next = s.order.filter((id) => want.has(id))
       // bail when nothing actually changed, so a marquee crossing nothing new
       // doesn't re-render the canvas on every pointermove
@@ -555,7 +617,7 @@ export const useSquig = create<SquigState>((set, get) => ({
     set({
       nodes: prev.nodes,
       order: prev.order,
-      selection: prev.selection.filter((id) => prev.nodes[id]),
+      selection: selectable(prev.selection, prev.nodes),
       past: past.slice(0, -1),
       future: prev.displacedFuture ?? get().future,
     })
@@ -569,7 +631,11 @@ export const useSquig = create<SquigState>((set, get) => ({
     set((s) => {
       const selection = opts.select !== false ? [id] : s.selection
       stampSelAfter(s.past, selection)
-      return { nodes: { ...s.nodes, [id]: { ...node, id, seed } as SquigNode }, order: [...s.order, id], selection }
+      return {
+        nodes: settleBinds({ ...s.nodes, [id]: { ...node, id, seed } as SquigNode }),
+        order: [...s.order, id],
+        selection,
+      }
     })
     scheduleSave(get)
     return id
@@ -586,7 +652,7 @@ export const useSquig = create<SquigState>((set, get) => ({
       }
       const selection = opts.select !== false ? ids : s.selection
       stampSelAfter(s.past, selection)
-      return { nodes: map, order: [...s.order, ...ids], selection }
+      return { nodes: settleBinds(map), order: [...s.order, ...ids], selection }
     })
     scheduleSave(get)
   },
@@ -597,7 +663,7 @@ export const useSquig = create<SquigState>((set, get) => ({
       const cur = s.nodes[id]
       if (!cur) return s
       stampSelAfter(s.past, s.selection)
-      return { nodes: { ...s.nodes, [id]: { ...cur, ...patch } as SquigNode } }
+      return { nodes: settleBinds({ ...s.nodes, [id]: { ...cur, ...patch } as SquigNode }) }
     })
     scheduleSave(get)
   },
@@ -611,7 +677,10 @@ export const useSquig = create<SquigState>((set, get) => ({
         if (cur) map[id] = { ...cur, ...patch } as SquigNode
       }
       stampSelAfter(s.past, s.selection)
-      return { nodes: map }
+      // every bound arrow catches up here, which is what lets a box drag, a
+      // nudge, an align and a resize all pull their connectors along without
+      // any of them having to know that bindings exist
+      return { nodes: settleBinds(map) }
     })
     scheduleSave(get)
   },
@@ -624,7 +693,9 @@ export const useSquig = create<SquigState>((set, get) => ({
       for (const id of ids) delete map[id]
       stampSelAfter(s.past, s.selection.filter((i) => !ids.includes(i)))
       return {
-        nodes: map,
+        // an arrow aimed at something that just went away lets go of it and
+        // stays exactly where it was last drawn — see settleBinds
+        nodes: settleBinds(map),
         order: s.order.filter((i) => !ids.includes(i)),
         selection: s.selection.filter((i) => !ids.includes(i)),
         // editing a node that just went away would wedge the canvas
@@ -637,6 +708,46 @@ export const useSquig = create<SquigState>((set, get) => ({
 
   deleteSelected: () => get().removeNodes(get().selection),
 
+  // -- locking ---------------------------------------------------------------
+
+  /**
+   * Locking lets go of what it locked.
+   *
+   * It has to: the invariant the rest of the app leans on is that a locked
+   * layer is never selected, and leaving the ring up around something that no
+   * longer answers to a drag would be the most confusing possible way to say
+   * "done". The flash names the way back in, because the layer is about to
+   * stop being clickable and that is a thing worth being told once.
+   */
+  lockSelected: () => {
+    const { selection, nodes } = get()
+    const ids = selection.filter((id) => nodes[id])
+    if (!ids.length) return
+    get().checkpoint()
+    get().updateNodes(Object.fromEntries(ids.map((id) => [id, { locked: true } as Partial<SquigNode>])))
+    // updateNodes stamped the checkpoint with the selection as it was a
+    // moment ago; letting go is part of the edit, so redo has to land here too
+    set((s) => {
+      stampSelAfter(s.past, [])
+      return { selection: [], croppingId: null }
+    })
+    get().setNotice(
+      ids.length > 1 ? "locked — right-click one to let that one go" : "locked — right-click it to let it go"
+    )
+  },
+
+  unlockNodes: (ids) => {
+    const { nodes } = get()
+    const locked = ids.filter((id) => nodes[id]?.locked)
+    if (!locked.length) return
+    get().checkpoint()
+    get().updateNodes(Object.fromEntries(locked.map((id) => [id, { locked: undefined } as Partial<SquigNode>])))
+    // handing them back selected is the point — you unlocked them to touch them
+    get().setSelection(locked)
+  },
+
+  unlockAll: () => get().unlockNodes(lockedIds(get().nodes, get().order)),
+
   duplicateSelected: (offset = 16) => {
     const { selection, nodes, order, dupTrail } = get()
     const src = order.filter((id) => selection.includes(id)).map((id) => nodes[id])
@@ -648,7 +759,7 @@ export const useSquig = create<SquigState>((set, get) => ({
     get().checkpoint()
     const clones = cloneNodes(src, step.dx, step.dy)
     set((s) => ({
-      nodes: { ...s.nodes, ...Object.fromEntries(clones.map((c) => [c.id, c])) },
+      nodes: settleBinds({ ...s.nodes, ...Object.fromEntries(clones.map((c) => [c.id, c])) }),
       order: [...s.order, ...clones.map((c) => c.id)],
       selection: clones.map((c) => c.id),
       // where these copies came from, so the next ⌘D can measure the same way
@@ -701,7 +812,9 @@ export const useSquig = create<SquigState>((set, get) => ({
         future: [...s.future, forward],
         nodes: prev.nodes,
         order: prev.order,
-        selection: prev.selection.filter((id) => prev.nodes[id]),
+        // history is restored wholesale, so it restores the rule too: whatever
+        // the selection was then, it can't hand back something locked now
+        selection: selectable(prev.selection, prev.nodes),
         editingId: null,
         // unlike the text editor, the crop overlay is a pure read of the node,
         // so ⌘Z can walk back through a crop without leaving the mode
@@ -722,7 +835,7 @@ export const useSquig = create<SquigState>((set, get) => ({
         past: [...s.past, { ...snapshot(s), selAfter: restored }],
         nodes: next.nodes,
         order: next.order,
-        selection: next.order.filter((id) => restored.includes(id)),
+        selection: selectable(next.order.filter((id) => restored.includes(id)), next.nodes),
         editingId: null,
         croppingId: s.croppingId && next.nodes[s.croppingId] ? s.croppingId : null,
       }
@@ -764,6 +877,16 @@ export const useSquig = create<SquigState>((set, get) => ({
 
   // -- groups ---------------------------------------------------------------
 
+  /**
+   * The lock is on the layer, not on the group.
+   *
+   * `groupIds` is a stamp on a flat document, not a tree, so there is no group
+   * object to lock — which settles the question rather neatly: locking one
+   * member locks that member, and the group carries on with the rest. Drag it
+   * and everything loose comes along while the locked one stays put, which is
+   * the whole point of having locked it. Locking a *group* is just locking
+   * every member, because clicking any of them selects all of them anyway.
+   */
   expandSelection: (ids) => {
     const { nodes, order } = get()
     const gids = new Set<string>()
@@ -771,13 +894,13 @@ export const useSquig = create<SquigState>((set, get) => ({
       const g = nodes[id]?.groupIds?.[0]
       if (g) gids.add(g)
     }
-    if (!gids.size) return ids
+    if (!gids.size) return selectable(ids, nodes)
     const out = new Set(ids)
     for (const id of order) {
       const g = nodes[id]?.groupIds?.[0]
       if (g && gids.has(g)) out.add(id)
     }
-    return order.filter((id) => out.has(id))
+    return selectable(order.filter((id) => out.has(id)), nodes)
   },
 
   groupSelected: () => {
@@ -826,7 +949,10 @@ export const useSquig = create<SquigState>((set, get) => ({
         map[id] = { ...n, groupIds: rest.length ? rest : undefined } as SquigNode
         freed.push(id)
       }
-      return { nodes: map, selection: freed }
+      // a locked member comes out of the group with the rest — the group is
+      // what's being dissolved, and leaving one node stamped with a group that
+      // no longer exists would be worse — but it doesn't come out selected
+      return { nodes: map, selection: selectable(freed, map) }
     })
     scheduleSave(get)
   },
@@ -856,7 +982,8 @@ export const useSquig = create<SquigState>((set, get) => ({
         ord = [...ord.slice(0, at), ...pieces.map((p) => p.id), ...ord.slice(at + 1)]
         delete map[c.id]
       }
-      return { nodes: map, order: ord, selection: picked }
+      // a detached instance is gone as a node, so anything aimed at it lets go
+      return { nodes: settleBinds(map), order: ord, selection: picked }
     })
     scheduleSave(get)
   },
@@ -932,7 +1059,7 @@ export const useSquig = create<SquigState>((set, get) => ({
     get().checkpoint()
     const clones = cloneNodes([...list], dx, dy)
     set((s) => ({
-      nodes: { ...s.nodes, ...Object.fromEntries(clones.map((c) => [c.id, c])) },
+      nodes: settleBinds({ ...s.nodes, ...Object.fromEntries(clones.map((c) => [c.id, c])) }),
       order: [...s.order, ...clones.map((c) => c.id)],
       selection: clones.map((c) => c.id),
     }))
@@ -987,19 +1114,26 @@ export const useSquig = create<SquigState>((set, get) => ({
   cloneSelectionInPlace: () => {
     const { selection, nodes, order } = get()
     const clones: SquigNode[] = []
+    const idMap = new Map<string, string>()
     // document order, so the copies stack the way the originals did
     for (const id of order) {
       if (!selection.includes(id)) continue
       const n = nodes[id]
       if (!n) continue
-      clones.push({ ...structuredClone(n), id: nanoid(8), seed: Math.floor(Math.random() * 2 ** 31) })
+      const clone = { ...structuredClone(n), id: nanoid(8), seed: freshSeed() }
+      idMap.set(n.id, clone.id)
+      clones.push(clone)
     }
     if (!clones.length) return []
+    // an ⌥-drag of two boxes and their arrow takes a connected copy with it,
+    // not a copy still stuck to what it was dragged off — same remap cloneNodes
+    // does for a ⌘D, which this deliberately isn't a second version of
+    remapBinds(clones, idMap)
     const ids = clones.map((c) => c.id)
     set((s) => {
       stampSelAfter(s.past, ids)
       return {
-        nodes: { ...s.nodes, ...Object.fromEntries(clones.map((c) => [c.id, c])) },
+        nodes: settleBinds({ ...s.nodes, ...Object.fromEntries(clones.map((c) => [c.id, c])) }),
         order: [...s.order, ...ids],
         selection: ids,
       }
@@ -1034,11 +1168,14 @@ export const useSquig = create<SquigState>((set, get) => ({
     get().updateNodes(patches)
   },
 
-  selectAll: () => set((s) => ({ selection: [...s.order] })),
+  // every one of these builds a selection straight out of `order` rather than
+  // going through setSelection, so each has to remember the locked layers on
+  // its own. "All" means all the ones you can have.
+  selectAll: () => set((s) => ({ selection: selectable(s.order, s.nodes) })),
   selectNone: () => set({ selection: [], croppingId: null }),
 
   invertSelection: () => {
-    set((s) => ({ selection: s.order.filter((id) => !s.selection.includes(id)) }))
+    set((s) => ({ selection: selectable(s.order.filter((id) => !s.selection.includes(id)), s.nodes) }))
   },
 
   selectSameKind: () => {
@@ -1051,27 +1188,35 @@ export const useSquig = create<SquigState>((set, get) => ({
     const shapes = new Set(sel.filter((n) => n.type === "shape").map((n) => (n as { shape: string }).shape))
     const types = new Set(sel.filter((n) => n.type !== "component" && n.type !== "shape").map((n) => n.type))
     set({
-      selection: order.filter((id) => {
-        const n = nodes[id]
-        if (!n) return false
-        if (n.type === "component") return kinds.has(n.kind)
-        if (n.type === "shape") return shapes.has(n.shape)
-        return types.has(n.type)
-      }),
+      selection: selectable(
+        order.filter((id) => {
+          const n = nodes[id]
+          if (!n) return false
+          if (n.type === "component") return kinds.has(n.kind)
+          if (n.type === "shape") return shapes.has(n.shape)
+          return types.has(n.type)
+        }),
+        nodes
+      ),
     })
   },
 
   cycleSelection: (dir) => {
-    const { order, selection } = get()
-    if (!order.length) return
+    const { order, selection, nodes } = get()
+    // Tab walks the layers you can actually have, so a locked one is simply
+    // not a stop on the tour — and a board of nothing but locked layers has
+    // nowhere to go, which is the empty list below rather than a wrap-around
+    // that lands on one anyway
+    const ring = selectable(order, nodes)
+    if (!ring.length) return
     if (!selection.length) {
-      set({ selection: [dir === 1 ? order[0] : order[order.length - 1]] })
+      set({ selection: [dir === 1 ? ring[0] : ring[ring.length - 1]] })
       return
     }
     // step from the frontmost member so repeated Tabs march in one direction
     const anchor = selection[selection.length - 1]
-    const i = order.indexOf(anchor)
-    const next = order[(((i === -1 ? 0 : i) + dir) % order.length + order.length) % order.length]
+    const i = ring.indexOf(anchor)
+    const next = ring[(((i === -1 ? 0 : i) + dir) % ring.length + ring.length) % ring.length]
     set({ selection: [next] })
   },
 

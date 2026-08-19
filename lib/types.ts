@@ -73,6 +73,17 @@ export interface BaseNode {
   /** Mirrored along its own box — see mirrorPrims, which flips layout not glyphs */
   flipX?: boolean
   flipY?: boolean
+  /**
+   * Held down: the layer still prints and still exports, but the pointer walks
+   * straight past it. This is for the background rectangle and the screenshot
+   * everything else is drawn on top of — the things you keep grabbing by
+   * accident. Absent means loose, like every other flag here.
+   *
+   * The rule the rest of the app is built on: a locked layer is never in the
+   * selection. Getting one back is the right button's job, or Unlock all —
+   * see lib/selection for the filter and components/chrome/context-menu.
+   */
+  locked?: boolean
 }
 
 export interface ComponentNode extends BaseNode {
@@ -127,11 +138,44 @@ export interface TextNode extends BaseNode {
   link?: string
 }
 
+/**
+ * What an arrow's two ends are stuck to — [start, end], null for a free end.
+ *
+ * A binding is a node id and nothing else: no anchor, no side, no offset. The
+ * end is routed to whichever part of the box faces the other end, worked out
+ * fresh every time either box moves. That's the whole reason to prefer it over
+ * a pinned anchor point — an anchor is a promise about a layout, and the one
+ * thing a wireframe does all day is stop being that layout.
+ */
+export type ArrowBind = [string | null, string | null]
+
 export interface ArrowNode extends BaseNode, Outlined {
   type: "arrow"
   /** [start, end] relative to node origin — components of w/h so they scale on resize */
   points: [[number, number], [number, number]]
   head: boolean
+  /**
+   * Absent on a free-floating arrow, which is how most of them start and how
+   * every arrow written before this existed stayed. When it is here, `points`
+   * and the box are a *consequence* of it — see lib/canvas/arrow-binding.
+   */
+  bind?: ArrowBind
+}
+
+/**
+ * A binding we're willing to trust, or undefined for "no bindings at all".
+ *
+ * Documents arrive from localStorage, from a file, and off the clipboard, so
+ * the shape has to be checked rather than assumed. Ids that name nothing are
+ * a separate problem and get dropped later, once there's a document to check
+ * them against — see settleBinds.
+ */
+export function normalizeBind(v: unknown): ArrowBind | undefined {
+  if (!Array.isArray(v) || v.length !== 2) return undefined
+  const end = (e: unknown) => (typeof e === "string" && e ? e : null)
+  const a = end(v[0])
+  const b = end(v[1])
+  return a || b ? [a, b] : undefined
 }
 
 /**

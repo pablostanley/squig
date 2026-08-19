@@ -161,6 +161,38 @@ export function selectionSummary(nodes: readonly SquigNode[], maxKinds = 3): str
   return shown.join(", ")
 }
 
+// -- locked layers -----------------------------------------------------------
+
+/**
+ * Every way squig has of saying no to a locked layer comes down to two
+ * functions, and both of them are here rather than in the store so the whole
+ * rule can be tested without a browser.
+ *
+ * The rule itself is one sentence: **a locked layer is never in the
+ * selection.** Guarding delete, nudge, align, flip, drag and resize one at a
+ * time would mean guarding a dozen places and forgetting the thirteenth; the
+ * selection is the only door all of them come through, so it's the only door
+ * worth locking. Hit testing skips locked layers too, which is what stops the
+ * selection being offered one in the first place — see lib/canvas/hit-test.
+ */
+export function isLocked(n: SquigNode | undefined | null): boolean {
+  return !!n?.locked
+}
+
+/**
+ * The ids of these that may actually be selected — the filter every path that
+ * builds a selection ends with. Missing ids drop out too, which callers wanted
+ * anyway.
+ */
+export function selectable(ids: readonly string[], nodes: Record<string, SquigNode>): string[] {
+  return ids.filter((id) => nodes[id] && !nodes[id].locked)
+}
+
+/** Every locked layer in the document, in document order. */
+export function lockedIds(nodes: Record<string, SquigNode>, order: readonly string[]): string[] {
+  return order.filter((id) => nodes[id]?.locked)
+}
+
 // -- geometry ----------------------------------------------------------------
 
 export interface Bounds {

@@ -19,6 +19,8 @@
 
 # production
 /build
+/dist
+/*.xdc
 
 # misc
 .DS_Store

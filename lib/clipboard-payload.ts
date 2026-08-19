@@ -16,7 +16,7 @@
 // ---------------------------------------------------------------------------
 
 import type { SquigNode, TextNode } from "./types"
-import { normalizeCrop } from "./types"
+import { normalizeBind, normalizeCrop } from "./types"
 
 const PAYLOAD_VERSION = 1
 /** the attribute the HTML carrier hides the payload in */
@@ -124,6 +124,10 @@ export function validNode(v: unknown): SquigNode | null {
       break
     case "arrow":
       if (!validPoints(n.points) || n.points.length !== 2) return null
+      // two ids, or nothing. Whether they name anything is a question about
+      // the whole paste rather than this node, and gets answered where the
+      // ids are remapped onto the copies — see cloneNodes in lib/store
+      n.bind = normalizeBind(n.bind)
       break
     case "text":
       if (!str(n.text) || !num(n.fontSize)) return null

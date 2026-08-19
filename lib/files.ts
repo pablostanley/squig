@@ -8,6 +8,11 @@
 //
 // No cloud, no accounts. Clearing site data still clears everything, which is
 // why Export stays one keystroke away.
+//
+// The room here is small and shared: a browser hands the whole origin a few
+// megabytes, and pictures ride along as data URLs, so a few pasted screenshots
+// can fill it on their own. When it fills, squig stops writing and says so. It
+// never makes room by throwing out a drawing the user didn't choose to lose.
 // ---------------------------------------------------------------------------
 
 import type { SquigNode } from "./types"
@@ -43,8 +48,17 @@ const PREFS_KEY = "squig:prefs:v1"
 const LEGACY_KEY = "squig:doc:v1"
 const fileKey = (id: string) => `squig:file:${id}`
 
-/** Past this many the drawer starts forgetting its oldest documents. */
-const MAX_FILES = 40
+/**
+ * Past this many the drawer starts forgetting its oldest documents.
+ *
+ * This is the one place squig lets go of something on its own, and it stays
+ * silent about it on purpose: it only ever reaches the document you last
+ * touched forty drawings ago, it fires during an autosave nobody is watching,
+ * and there is nothing to do about it once it has — a flash reading "your
+ * fortieth-oldest drawing is gone" is alarm without an action. The quota
+ * warning below is the opposite on all three counts, which is why it speaks.
+ */
+export const MAX_FILES = 40
 
 function readJSON(key: string): unknown {
   try {
@@ -104,31 +118,57 @@ export function readFile(id: string): StoredDoc | null {
   }
 }
 
+/** What a save changed, and whether the drawing actually landed. */
+export interface SavePlan {
+  /** the index as it should now read */
+  index: FileMeta[]
+  /** documents to forget — only ever the drawer's own tail, never a casualty */
+  forget: string[]
+  /** the browser refused the write: what's on disk is whatever was there before */
+  full: boolean
+}
+
 /**
- * Write a document and return the new index. If the browser is out of room we
- * forget the oldest documents — never the one in hand — and try again.
+ * What a save should do to the drawer, given what it holds, the document in
+ * hand, and whether the browser accepted it. Pure, so the rules can be read
+ * and tested without a localStorage in the room — see scripts/test-files.ts.
+ *
+ * squig used to answer a refused write by deleting the user's other documents,
+ * oldest first, until the one in hand fit. That is the worst trade a drawing
+ * program can make: it destroyed work nobody asked it to destroy, silently and
+ * with no undo, to save work that might not have been worth more. So a failed
+ * write now changes nothing at all — not the tail, not the index, not one
+ * other document. The drawing stays on screen and squig says so out loud.
+ *
+ * Leaving the index untouched is also the honest answer for the document
+ * itself. If it has been saved before, its old bytes are still on disk and its
+ * old entry still describes them — dropping the entry would orphan a document
+ * that genuinely exists. If it has never been saved, there is nothing to point
+ * an entry at, and a drawer row that opens onto an empty canvas would be a
+ * worse lie than a missing row.
  */
-export function saveFile(doc: StoredDoc): FileMeta[] {
+export function planSave(index: FileMeta[], meta: FileMeta, stored: boolean): SavePlan {
+  if (!stored) return { index, forget: [], full: true }
+  const next = [meta, ...index.filter((f) => f.id !== meta.id)]
+  return { index: next.slice(0, MAX_FILES), forget: next.slice(MAX_FILES).map((f) => f.id), full: false }
+}
+
+/**
+ * Write a document and report how the drawer stands afterwards.
+ *
+ * The document goes down first and the bookkeeping follows, so that a browser
+ * that refuses the write leaves every other file exactly where it was — the
+ * tail trim included, since a document that never landed has no business
+ * pushing anything off the end.
+ */
+export function saveFile(doc: StoredDoc): SavePlan {
   const meta: FileMeta = { id: doc.id, name: doc.name, updatedAt: doc.updatedAt }
-  let index = [meta, ...listFiles().filter((f) => f.id !== doc.id)]
-
-  // trim the tail first, so the common case never hits the quota at all
-  for (const old of index.slice(MAX_FILES)) drop(fileKey(old.id))
-  index = index.slice(0, MAX_FILES)
-
-  let stored = writeJSON(fileKey(doc.id), doc)
-  while (!stored) {
-    const oldest = [...index].reverse().find((f) => f.id !== doc.id)
-    if (!oldest) break
-    drop(fileKey(oldest.id))
-    index = index.filter((f) => f.id !== oldest.id)
-    stored = writeJSON(fileKey(doc.id), doc)
-  }
-
-  // a document we couldn't store has no business being listed
-  if (!stored) index = index.filter((f) => f.id !== doc.id)
-  writeIndex(index)
-  return index
+  const plan = planSave(listFiles(), meta, writeJSON(fileKey(doc.id), doc))
+  for (const id of plan.forget) drop(fileKey(id))
+  // nothing moved, so nothing to write — and the index write would only be one
+  // more thing for a full quota to refuse
+  if (!plan.full) writeIndex(plan.index)
+  return plan
 }
 
 export function deleteFile(id: string): FileMeta[] {
