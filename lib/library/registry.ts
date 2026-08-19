@@ -13,6 +13,7 @@ import { MORE_DEFS } from "./defs-more"
 import { EXTRA_DEFS } from "./defs-extra"
 import { MARKETING_DEFS } from "./defs-blocks-marketing"
 import { APP_DEFS } from "./defs-blocks-app"
+import { MOBILE_DEFS } from "./defs-mobile"
 
 export type ControlType = "select" | "toggle" | "text" | "number" | "icon"
 
@@ -58,6 +59,7 @@ const SOURCES: ComponentDef[][] = [
   MARKETING_DEFS,
   APP_DEFS,
   TEMPLATE_DEFS,
+  MOBILE_DEFS,
 ]
 
 /** First definition of a `kind` wins, so a duplicate slug can't shadow a core one. */

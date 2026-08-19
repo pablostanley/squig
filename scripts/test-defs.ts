@@ -188,6 +188,23 @@ for (const def of ALL_DEFS) {
   check(`${def.kind} keeps text out of the quick row`, quickText.length === 0, quickText.join(", "))
 }
 
+// -- phone screens ----------------------------------------------------------
+// The whole point of the `mobile-*` family is that a phone wireframe starts at
+// phone width. One that drifts wider is back to being resized by hand before
+// the first idea lands, and one that loses its text controls is back to labels
+// nobody can rename.
+
+/** A shade over the widest phone anyone wireframes, so a def can't quietly grow into a tablet. */
+const PHONE_MAX_W = 430
+
+const phones = ALL_DEFS.filter((d) => d.kind.startsWith("mobile-"))
+check("there are phone screens at all", phones.length > 0)
+for (const def of phones) {
+  check(`${def.kind} drops at phone width`, def.size.w <= PHONE_MAX_W, `${def.size.w}px wide`)
+  const texts = def.controls.filter((c) => c.type === "text").map((c) => c.key)
+  check(`${def.kind} has words you can change`, texts.length > 0, "no text control")
+}
+
 // ---------------------------------------------------------------------------
 
 if (failures.length) {
