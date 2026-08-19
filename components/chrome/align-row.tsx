@@ -25,10 +25,10 @@ type Edge = "left" | "hcenter" | "right" | "top" | "vcenter" | "bottom"
 
 const ALIGN: { edge: Edge; label: string; icon: PhosphorIcon }[] = [
   { edge: "left", label: "Align left", icon: AlignLeftSimpleIcon },
-  { edge: "hcenter", label: "Align horizontal centres", icon: AlignCenterVerticalSimpleIcon },
+  { edge: "hcenter", label: "Align horizontal centres", icon: AlignCenterHorizontalSimpleIcon },
   { edge: "right", label: "Align right", icon: AlignRightSimpleIcon },
   { edge: "top", label: "Align top", icon: AlignTopSimpleIcon },
-  { edge: "vcenter", label: "Align vertical centres", icon: AlignCenterHorizontalSimpleIcon },
+  { edge: "vcenter", label: "Align vertical centres", icon: AlignCenterVerticalSimpleIcon },
   { edge: "bottom", label: "Align bottom", icon: AlignBottomSimpleIcon },
 ]
 

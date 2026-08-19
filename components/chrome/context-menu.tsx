@@ -143,10 +143,10 @@ export function CanvasContextMenu() {
         ? ([
             { separator: true },
             { label: "Align left", icon: AlignLeftSimpleIcon, run: () => st().alignSelected("left") },
-            { label: "Align centres", icon: AlignCenterVerticalSimpleIcon, run: () => st().alignSelected("hcenter") },
+            { label: "Align centres", icon: AlignCenterHorizontalSimpleIcon, run: () => st().alignSelected("hcenter") },
             { label: "Align right", icon: AlignRightSimpleIcon, run: () => st().alignSelected("right") },
             { label: "Align top", icon: AlignTopSimpleIcon, run: () => st().alignSelected("top") },
-            { label: "Align middles", icon: AlignCenterHorizontalSimpleIcon, run: () => st().alignSelected("vcenter") },
+            { label: "Align middles", icon: AlignCenterVerticalSimpleIcon, run: () => st().alignSelected("vcenter") },
             { label: "Align bottom", icon: AlignBottomSimpleIcon, run: () => st().alignSelected("bottom") },
           ] as Entry[])
         : []),
