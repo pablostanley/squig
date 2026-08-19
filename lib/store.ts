@@ -255,8 +255,45 @@ const SAVE_DEBOUNCE_MS = 400
 // the zoom floors, the fit padding and the arithmetic they feed live in
 // lib/canvas/navigate, where they can be tested without a window
 
+/**
+ * The document as it stands right now, for the undo stack.
+ *
+ * This hands back the very same `nodes` map and `order` array the store is
+ * holding rather than copies of them, and the whole thing rests on one rule
+ * the store already keeps everywhere: **a node that is in the document is
+ * never written to again**. Every mutation here rebuilds instead —
+ * `{ ...s.nodes, [id]: { ...cur, ...patch } }` — settleBinds copies on write,
+ * and every `order:` in this file is a fresh array. So the instant anything
+ * changes, the objects this entry is pointing at stop being reachable from the
+ * live document and belong to history alone. undo and revertToCheckpoint have
+ * always assigned a checkpoint's map straight back into state, which is the
+ * same bargain read the other way round; this is only the outbound half.
+ *
+ * It used to be `structuredClone`, and nothing about that was visible until
+ * you pasted a screenshot in. An ImageNode carries its pixels inline as a data
+ * URL — up to 400,000 characters each, by lib/clipboard's own budget — so six
+ * pictures on a board meant every checkpoint deep-copied nearly two megabytes
+ * of base64 synchronously, before the first frame of a drag, and a full
+ * hundred-step history retained a hundred copies of pictures that hadn't
+ * changed since the day they were pasted. Sharing costs nothing per checkpoint
+ * and retains exactly one copy of each version anything still refers to. What
+ * makes it safe for pictures specifically is that the pixels are immutable
+ * once decoded: cropping is a window in normalised coordinates, and nothing in
+ * squig ever rewrites a `src`.
+ *
+ * Nothing about what gets written to disk or to the clipboard moves — those
+ * both serialize `nodes` as it stands, `src` inline, and a document is still
+ * one self-contained thing.
+ *
+ * `selection` is copied because it's a handful of ids and because the entry
+ * gets a second array stamped onto it afterwards; see stampSelAfter.
+ *
+ * If you ever do need to write a field onto a live node, this is what breaks —
+ * quietly, by rewriting history under itself. scripts/test-history.ts is there
+ * to say so out loud.
+ */
 function snapshot(s: Pick<SquigState, "nodes" | "order" | "selection">): DocSnapshot {
-  return structuredClone({ nodes: s.nodes, order: s.order, selection: s.selection })
+  return { nodes: s.nodes, order: s.order, selection: [...s.selection] }
 }
 
 /**
@@ -1387,7 +1424,13 @@ export const useSquig = create<SquigState>((set, get) => ({
     const { selection, nodes, order } = get()
     const sel = order.filter((id) => selection.includes(id)).map((id) => nodes[id])
     if (!sel.length) return
-    set({ clipboard: structuredClone(sel) })
+    // the nodes as they are, not copies of them — same reason as `snapshot`.
+    // Moving the original after a ⌘C builds a new node and leaves this list
+    // holding the version that was copied, which is what a copy means; and a
+    // paste clones on the way back out regardless, see cloneNodes. Copying
+    // here instead would keep a second set of pixels alive for the session for
+    // no one's benefit.
+    set({ clipboard: sel })
   },
 
   cutSelected: () => {
