@@ -2,8 +2,9 @@
 
 import { create } from "zustand"
 import { nanoid } from "nanoid"
-import type { ComponentNode, SquigNode, TextAlign, TextNode, Tool, Viewport, ShapeKind } from "./types"
-import { normalizeFill, screenToWorld, unionBox } from "./types"
+import type { ComponentNode, ImageNode, SquigNode, TextAlign, TextNode, Tool, Viewport, ShapeKind } from "./types"
+import { normalizeCrop, normalizeFill, screenToWorld, unionBox } from "./types"
+import { isCropped, uncropPatch } from "./canvas/crop"
 import { repeatStep, type DupTrail } from "./canvas/duplicate"
 import { getDef } from "./library/registry"
 import { breakApart } from "./library/break-apart"
@@ -73,6 +74,8 @@ interface SquigState {
    *  rather than on the next click */
   placingDrag: boolean
   editingId: string | null
+  /** the picture whose crop window is being dragged — see lib/canvas/crop */
+  croppingId: string | null
   contextRow: boolean
   /* --- the look, kept flat so a control can subscribe to just its own knob.
      It belongs to the open document: every setter writes it back to the file,
@@ -116,6 +119,10 @@ interface SquigState {
   setPanel: (p: PanelKind) => void
   setPlacing: (kind: string | null, opts?: { drag?: boolean }) => void
   setEditing: (id: string | null) => void
+  /** step into (or out of) a picture's crop window */
+  setCropping: (id: string | null) => void
+  /** give a picture back every pixel it's hiding */
+  resetCrop: (ids?: string[]) => void
   setContextRow: (on: boolean) => void
   setTheme: (t: ThemeName) => void
   setFont: (f: FontMode) => void
@@ -246,7 +253,12 @@ function sanitize(
     if (node.type === "shape") node.fill = normalizeFill(node.fill)
     // an imported file is a stranger's document: a picture in it carries its
     // own pixels or it doesn't render at all — never a URL we'd go and fetch
-    if (node.type === "image" && !/^data:image\//i.test(node.src ?? "")) continue
+    if (node.type === "image") {
+      if (!/^data:image\//i.test(node.src ?? "")) continue
+      // a crop is four numbers that divide the box; one bad one would render
+      // the picture at infinity and take the file with it
+      node.crop = normalizeCrop(node.crop)
+    }
     clean[id] = node
   }
   const seen = new Set<string>()
@@ -412,6 +424,7 @@ export const useSquig = create<SquigState>((set, get) => ({
   placing: null,
   placingDrag: false,
   editingId: null,
+  croppingId: null,
   contextRow: false,
   ...DEFAULT_LOOK,
   hydrated: false,
@@ -433,11 +446,39 @@ export const useSquig = create<SquigState>((set, get) => ({
     set({ fileName: n })
     scheduleSave(get)
   },
-  setTool: (t) => set({ tool: t, placing: null, placingDrag: false, panel: null }),
+  setTool: (t) => set({ tool: t, placing: null, placingDrag: false, panel: null, croppingId: null }),
   setShapeKind: (s) => set({ shapeKind: s }),
   setPanel: (p) => set((st) => ({ panel: st.panel === p ? null : p, placing: null, placingDrag: false })),
-  setPlacing: (kind, opts) => set({ placing: kind, placingDrag: kind !== null && opts?.drag === true }),
-  setEditing: (id) => set({ editingId: id }),
+  // reaching for something to place is a new intent, and the crop window would
+  // otherwise swallow the click that drops it
+  setPlacing: (kind, opts) =>
+    set({ placing: kind, placingDrag: kind !== null && opts?.drag === true, ...(kind ? { croppingId: null } : {}) }),
+  setEditing: (id) => set({ editingId: id, croppingId: id ? null : get().croppingId }),
+
+  setCropping: (id) => {
+    // only a picture has a crop window to step into, and only one at a time —
+    // the mode owns the whole selection while it's on, which is also how it
+    // ends: see croppingImage in components/canvas/canvas
+    if (!id) {
+      set({ croppingId: null })
+      return
+    }
+    if (get().nodes[id]?.type !== "image") return
+    set({ croppingId: id, editingId: null, selection: [id] })
+  },
+
+  resetCrop: (ids) => {
+    const s = get()
+    const targets = (ids ?? s.selection)
+      .map((id) => s.nodes[id])
+      .filter((n): n is ImageNode => n?.type === "image" && isCropped(n))
+    if (!targets.length) return
+    s.updateNodes(
+      Object.fromEntries(targets.map((n) => [n.id, uncropPatch(n) as Partial<SquigNode>])),
+      { checkpoint: true }
+    )
+  },
+
   setContextRow: (on) => {
     set({ contextRow: on })
     scheduleSave(get)
@@ -470,7 +511,11 @@ export const useSquig = create<SquigState>((set, get) => ({
       // bail when nothing actually changed, so a marquee crossing nothing new
       // doesn't re-render the canvas on every pointermove
       if (next.length === s.selection.length && next.every((id, i) => s.selection[i] === id)) return s
-      return { selection: next }
+      // the crop window belongs to one picture and to nothing else: reaching
+      // for anything at all — another node, a second one, empty canvas — is
+      // how you leave, and leaving keeps the crop you'd dragged so far
+      const cropping = s.croppingId && next.length === 1 && next[0] === s.croppingId ? s.croppingId : null
+      return { selection: next, croppingId: cropping }
     })
   },
   setCommandOpen: (open) =>
@@ -584,6 +629,7 @@ export const useSquig = create<SquigState>((set, get) => ({
         selection: s.selection.filter((i) => !ids.includes(i)),
         // editing a node that just went away would wedge the canvas
         editingId: s.editingId && ids.includes(s.editingId) ? null : s.editingId,
+        croppingId: s.croppingId && ids.includes(s.croppingId) ? null : s.croppingId,
       }
     })
     scheduleSave(get)
@@ -657,6 +703,9 @@ export const useSquig = create<SquigState>((set, get) => ({
         order: prev.order,
         selection: prev.selection.filter((id) => prev.nodes[id]),
         editingId: null,
+        // unlike the text editor, the crop overlay is a pure read of the node,
+        // so ⌘Z can walk back through a crop without leaving the mode
+        croppingId: s.croppingId && prev.nodes[s.croppingId] ? s.croppingId : null,
       }
     })
     scheduleSave(get)
@@ -675,6 +724,7 @@ export const useSquig = create<SquigState>((set, get) => ({
         order: next.order,
         selection: next.order.filter((id) => restored.includes(id)),
         editingId: null,
+        croppingId: s.croppingId && next.nodes[s.croppingId] ? s.croppingId : null,
       }
     })
     scheduleSave(get)
@@ -708,7 +758,7 @@ export const useSquig = create<SquigState>((set, get) => ({
 
   clearCanvas: () => {
     get().checkpoint()
-    set({ nodes: {}, order: [], selection: [], editingId: null })
+    set({ nodes: {}, order: [], selection: [], editingId: null, croppingId: null })
     scheduleSave(get)
   },
 
@@ -985,7 +1035,7 @@ export const useSquig = create<SquigState>((set, get) => ({
   },
 
   selectAll: () => set((s) => ({ selection: [...s.order] })),
-  selectNone: () => set({ selection: [] }),
+  selectNone: () => set({ selection: [], croppingId: null }),
 
   invertSelection: () => {
     set((s) => ({ selection: s.order.filter((id) => !s.selection.includes(id)) }))
@@ -1058,6 +1108,7 @@ export const useSquig = create<SquigState>((set, get) => ({
       nodes: {},
       order: [],
       selection: [],
+      croppingId: null,
       viewport: { x: 0, y: 0, zoom: 1 },
       renamingFile: false,
       linkOpen: false,
@@ -1083,6 +1134,7 @@ export const useSquig = create<SquigState>((set, get) => ({
       nodes: clean.nodes,
       order: clean.order,
       selection: [],
+      croppingId: null,
       viewport: { x: 0, y: 0, zoom: 1 },
       renamingFile: false,
       linkOpen: false,
@@ -1113,6 +1165,7 @@ export const useSquig = create<SquigState>((set, get) => ({
       nodes: {},
       order: [],
       selection: [],
+      croppingId: null,
       past: [],
       future: [],
     })
@@ -1146,6 +1199,7 @@ export const useSquig = create<SquigState>((set, get) => ({
         nodes: clean.nodes,
         order: clean.order,
         selection: [],
+        croppingId: null,
         renamingFile: false,
         linkOpen: false,
         past: [],

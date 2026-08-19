@@ -153,6 +153,61 @@ export interface ImageNode extends BaseNode {
   naturalH: number
   /** the file it came from, when the clipboard said */
   name?: string
+  /**
+   * Which part of the picture the box shows. Absent means all of it, which is
+   * how every picture arrives and how most of them stay.
+   */
+  crop?: ImageCrop
+}
+
+/**
+ * A crop window in the picture's own coordinates — 0..1 on both axes, never
+ * pixels. Normalised is what lets the crop survive everything that happens to
+ * the box afterwards: a resize, a scaled selection, a source re-encoded at a
+ * different size. The box shows this rectangle of the picture stretched to
+ * fill it, which is the same deal an uncropped picture has always had.
+ *
+ * Nothing is thrown away. The pixels outside the window are still in the
+ * document, so re-cropping can hand any of them back.
+ */
+export interface ImageCrop {
+  x: number
+  y: number
+  w: number
+  h: number
+}
+
+/** The whole picture — what a node with no `crop` is showing. */
+export const FULL_CROP: ImageCrop = { x: 0, y: 0, w: 1, h: 1 }
+
+/** Smallest slice of a picture a crop may narrow to, per axis. */
+const MIN_CROP = 0.005
+
+/**
+ * A crop we're willing to render, or undefined for "no crop at all".
+ *
+ * One NaN through here lands in the document, gets autosaved, and takes the
+ * picture with it on every reload — the same reason `sanitize` exists in the
+ * store. A window that says "all of it" comes back undefined rather than
+ * {0,0,1,1}: the absent field is the canonical spelling of an uncropped
+ * picture, and two spellings of one state is a bug waiting for a `===`.
+ */
+export function normalizeCrop(v: unknown): ImageCrop | undefined {
+  if (!v || typeof v !== "object") return undefined
+  const c = v as ImageCrop
+  const fin = (n: unknown): n is number => typeof n === "number" && Number.isFinite(n)
+  if (!fin(c.x) || !fin(c.y) || !fin(c.w) || !fin(c.h)) return undefined
+  const w = Math.min(1, Math.max(MIN_CROP, c.w))
+  const h = Math.min(1, Math.max(MIN_CROP, c.h))
+  const x = Math.min(1 - w, Math.max(0, c.x))
+  const y = Math.min(1 - h, Math.max(0, c.y))
+  if (x === 0 && y === 0 && w === 1 && h === 1) return undefined
+  return { x, y, w, h }
+}
+
+/** The window a picture is showing, with the absent-means-all case spelled out. */
+export function cropOf(n: ImageNode): ImageCrop {
+  return n.crop ?? FULL_CROP
 }
 
 export type SquigNode = ComponentNode | ShapeNode | DrawNode | TextNode | ArrowNode | ImageNode

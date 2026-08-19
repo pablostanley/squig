@@ -18,7 +18,7 @@
 // Miss either one and the PNG comes back black-on-nothing in Times New Roman.
 // ---------------------------------------------------------------------------
 
-import { mirrorBox, mirrorGlyphs, primsToPaths } from "@/components/canvas/sketch"
+import { imagePlacement, mirrorBox, mirrorGlyphs, primsToPaths } from "@/components/canvas/sketch"
 import { iconPathsReady, loadIconWeight, normalizeIconWeight } from "./sketch/icon-catalog"
 import { INK, resolveIconName } from "./sketch/kit"
 import { nodePrims } from "./sketch/node-prims"
@@ -87,9 +87,15 @@ function nodeMarkup(node: SquigNode, resolve: (paint: string) => string, font: s
   // rasterised — an external src would do neither.
   if (node.type === "image") {
     const mirror = mirrorBox(node.w, node.h, node.flipX, node.flipY)
+    const p = imagePlacement(node)
+    // the nested <svg> is the crop, exactly as the canvas draws it — a viewport
+    // the size of the box, trimming a picture laid out larger than it
     out.push(
-      `<image href="${esc(node.src)}" x="0" y="0" width="${node.w}" height="${node.h}"` +
-        ` preserveAspectRatio="none"${mirror ? ` transform="${esc(mirror)}"` : ""}/>`
+      `<svg x="0" y="0" width="${node.w}" height="${node.h}" overflow="hidden">` +
+        `<g${mirror ? ` transform="${esc(mirror)}"` : ""}>` +
+        `<image href="${esc(node.src)}" x="${p.x}" y="${p.y}" width="${p.w}" height="${p.h}"` +
+        ` preserveAspectRatio="none"/>` +
+        `</g></svg>`
     )
   }
 

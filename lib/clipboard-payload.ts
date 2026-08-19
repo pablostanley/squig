@@ -16,6 +16,7 @@
 // ---------------------------------------------------------------------------
 
 import type { SquigNode, TextNode } from "./types"
+import { normalizeCrop } from "./types"
 
 const PAYLOAD_VERSION = 1
 /** the attribute the HTML carrier hides the payload in */
@@ -131,6 +132,8 @@ export function validNode(v: unknown): SquigNode | null {
       // the only scheme this app ever writes, and the only one it will read:
       // a pasted document has no business pointing the canvas at a URL
       if (!str(n.src) || !/^data:image\//i.test(n.src)) return null
+      // four numbers that divide the box — one NaN renders at infinity
+      n.crop = normalizeCrop(n.crop)
       break
   }
 

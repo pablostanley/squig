@@ -9,6 +9,7 @@ import { copySelection, pasteFromSystem } from "@/lib/clipboard"
 import { useSquig } from "@/lib/store"
 import { screenToWorld } from "@/lib/types"
 import { hasEditableText } from "@/lib/canvas/edit-target"
+import { isCropped } from "@/lib/canvas/crop"
 import { kbd } from "@/lib/shortcuts"
 import { copyAsPngWithNotice } from "@/lib/export-image"
 import {
@@ -31,6 +32,7 @@ import {
   ClipboardTextIcon,
   CopyIcon,
   CopySimpleIcon,
+  CropIcon,
   EyeSlashIcon,
   FlipHorizontalIcon,
   FlipVerticalIcon,
@@ -130,6 +132,14 @@ export function CanvasContextMenu() {
         : []),
       ...(one && hasEditableText(one)
         ? [{ label: "Edit text", hint: kbd("enter"), icon: TextTIcon, run: () => st().setEditing(one.id) } as Entry]
+        : []),
+      ...(one?.type === "image"
+        ? ([
+            { label: "Crop image", hint: kbd("enter"), icon: CropIcon, run: () => st().setCropping(one.id) },
+            ...(isCropped(one)
+              ? [{ label: "Reset crop", icon: ArrowCounterClockwiseIcon, run: () => st().resetCrop([one.id]) }]
+              : []),
+          ] as Entry[])
         : []),
       { separator: true },
       { label: "Bring to front", hint: kbd("far+]"), icon: ArrowLineUpIcon, run: () => st().bringToFront(targets) },

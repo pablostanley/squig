@@ -136,6 +136,16 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
     ],
   },
   {
+    title: "Pictures",
+    rows: [
+      { keys: ["enter", "double-click"], label: "Crop a picture" },
+      { keys: ["drag"], label: "Slide the picture under the crop" },
+      { keys: ["shift+drag"], label: "Crop to the same shape" },
+      { keys: ["alt+drag"], label: "Crop both sides at once" },
+      { keys: ["enter", "esc"], label: "Done cropping" },
+    ],
+  },
+  {
     title: "View",
     rows: [
       { keys: ["mod+plus"], label: "Zoom in" },

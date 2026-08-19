@@ -16,7 +16,7 @@ import type { RoughGenerator } from "roughjs/bin/generator"
 import { HAND, INK, SHADE, type InkColor, type Prim, type PrimOpts } from "@/lib/sketch/kit"
 import { useIconCatalogVersion } from "@/lib/sketch/use-icon-catalog"
 import { nodePrims } from "@/lib/sketch/node-prims"
-import type { SquigNode } from "@/lib/types"
+import { cropOf, type ImageNode, type SquigNode } from "@/lib/types"
 
 const gen: RoughGenerator = rough.generator()
 
@@ -348,24 +348,60 @@ export const NodeSketch = memo(function NodeSketch({
 
   return (
     <>
-      {node.type === "image" && (
-        <image
-          href={node.src}
-          x={0}
-          y={0}
-          width={node.w}
-          height={node.h}
-          // the box is the truth about how big this is — a resize that squashes
-          // it should squash the picture, the way dragging any other node does
-          preserveAspectRatio="none"
-          // a flip is a property of the node, so the pixels turn with the frame
-          transform={mirrorBox(node.w, node.h, node.flipX, node.flipY)}
-        />
-      )}
+      {node.type === "image" && <ImagePixels node={node} />}
       <SketchPrims prims={prims} seed={node.seed} hiddenText={hiddenText} />
     </>
   )
 })
+
+/**
+ * The picture itself, cropped to its box.
+ *
+ * A nested `<svg>` is the clip: it opens a viewport of exactly the node's box
+ * and hides everything the inner `<image>` puts outside it, with no `clipPath`
+ * and so no document-unique id to mint, collide, or forget to update when a
+ * node is duplicated. The picture is laid out larger than the box and slid
+ * under it — see `imagePlacement`.
+ */
+function ImagePixels({ node }: { node: ImageNode }) {
+  const p = imagePlacement(node)
+  return (
+    <svg x={0} y={0} width={node.w} height={node.h} overflow="hidden">
+      {/* a flip is a property of the node, so the pixels turn with the frame —
+          about the box, which means what you see mirrors, not what's hidden */}
+      <g transform={mirrorBox(node.w, node.h, node.flipX, node.flipY)}>
+        <image
+          href={node.src}
+          x={p.x}
+          y={p.y}
+          width={p.w}
+          height={p.h}
+          // the box is the truth about how big this is — a resize that squashes
+          // it should squash the picture, the way dragging any other node does
+          preserveAspectRatio="none"
+        />
+      </g>
+    </svg>
+  )
+}
+
+/**
+ * Where the whole picture goes, in the node's own coordinates, so that the
+ * cropped part of it lands exactly on the box.
+ *
+ * With no crop that's (0, 0, w, h) — the picture fills its box, which is what
+ * every picture did before crops existed. With one it's bigger and offset up
+ * and left, and the nested `<svg>` above trims the overhang.
+ *
+ * Exported because the PNG export has to place the same pixels the same way,
+ * into a file rather than onto the canvas.
+ */
+export function imagePlacement(node: ImageNode): { x: number; y: number; w: number; h: number } {
+  const c = cropOf(node)
+  const w = node.w / c.w
+  const h = node.h / c.h
+  return { x: -c.x * w, y: -c.y * h, w, h }
+}
 
 /**
  * Mirror a picture about its own box — the same flip mirrorPrims gives the

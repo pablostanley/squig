@@ -18,8 +18,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import { useSquig } from "@/lib/store"
-import type { SquigNode, TextNode } from "@/lib/types"
+import type { ImageNode, SquigNode, TextNode } from "@/lib/types"
 import { screenToWorld } from "@/lib/types"
+import { clampWindow, cropAnchor, cropPatch, imageSheet, panSheet } from "@/lib/canvas/crop"
 import { autoSizeTextBox, setTextWidth } from "@/lib/canvas/text-reflow"
 import { computeSnap, computeResizeSnap, makeSnapRect, type GuideLine, type SnapRect } from "@/lib/canvas/snap-engine"
 import { useSpacebarPan } from "@/lib/canvas/use-spacebar-pan"
@@ -30,7 +31,7 @@ import { useClipboard } from "@/lib/canvas/use-clipboard"
 import { editTarget, hasEditableText } from "@/lib/canvas/edit-target"
 import { textBlockHeight } from "@/lib/sketch/text-layout"
 import { unionBounds, type Bounds } from "@/lib/selection"
-import { NodeSketch, SketchPrims } from "./sketch"
+import { NodeSketch, SketchPrims, imagePlacement, mirrorBox } from "./sketch"
 import { getDef, renderComponent } from "@/lib/library/registry"
 import { exportDoc } from "@/lib/file-io"
 import { copyAsPngWithNotice } from "@/lib/export-image"
@@ -140,6 +141,45 @@ type Gesture =
       origBounds: Bounds
       dirty: boolean
     }
+  | {
+      kind: "crop"
+      /** a handle moves the window; "pan" slides the picture under it */
+      handle: Handle | "pan"
+      wx: number
+      wy: number
+      sx: number
+      sy: number
+      pointerId: number
+      exceeded: boolean
+      id: string
+      /** the box at gesture start */
+      origWin: Bounds
+      /** where the whole picture lay at gesture start — see lib/canvas/crop */
+      origSheet: Bounds
+      dirty: boolean
+    }
+
+const inRect = (b: Bounds, x: number, y: number) => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h
+
+/**
+ * The picture the crop mode is on, or null.
+ *
+ * Crop mode runs on one picture and only while that picture is the entire
+ * selection, so reaching for anything else is what ends it. Deriving that here
+ * rather than trusting the flag alone means no code path that changes the
+ * selection — ⌘A, Tab, invert, select-same-kind, a marquee — has to remember
+ * to turn the mode off, and none of them can leave a crop window floating over
+ * a set of nodes it doesn't belong to.
+ */
+function croppingImage(
+  nodes: Record<string, SquigNode>,
+  selection: string[],
+  croppingId: string | null
+): ImageNode | null {
+  if (!croppingId || selection.length !== 1 || selection[0] !== croppingId) return null
+  const n = nodes[croppingId]
+  return n?.type === "image" ? n : null
+}
 
 const canAutoPan = (g: Gesture | null) =>
   !!g && (g.kind === "marquee" || g.kind === "move" || g.kind === "resize" || g.kind === "create")
@@ -181,6 +221,7 @@ export function Canvas() {
   const placing = useSquig((s) => s.placing)
   const placingDrag = useSquig((s) => s.placingDrag)
   const editingId = useSquig((s) => s.editingId)
+  const croppingId = useSquig((s) => s.croppingId)
 
   // where the words being edited actually sit — the editor stands there, and
   // the renderer leaves that one run out so they don't print on top of it
@@ -492,6 +533,34 @@ export function Canvas() {
         return
       }
 
+      if (g.kind === "crop") {
+        if (!g.dirty) {
+          if (!g.exceeded) return
+          s.checkpoint()
+          g.dirty = true
+        }
+        const dx = wx - g.wx
+        const dy = wy - g.wy
+
+        // Sliding the picture: the window is pinned and the sheet moves under
+        // it, stopping when the picture's own edge would come inside the box.
+        if (g.handle === "pan") {
+          s.updateNodes({ [g.id]: cropPatch(g.origWin, panSheet(g.origSheet, g.origWin, dx, dy)) as Partial<SquigNode> })
+          return
+        }
+
+        // Dragging a handle: the sheet is pinned and the window moves over it,
+        // so the pixels you're keeping hold still at the size they already are
+        // — the mat slides, the photo doesn't. No snapping to other nodes here:
+        // the only edges that mean anything are the picture's own, and those
+        // are the clamp.
+        const aspect = mods.shift
+        const raw = resizeBounds(g.origWin, g.handle, dx, dy, { aspect, fromCenter: mods.alt })
+        const win = clampWindow(raw, g.origSheet, aspect ? cropAnchor(g.handle, g.origWin, mods.alt) : undefined)
+        s.updateNodes({ [g.id]: cropPatch(win, g.origSheet) as Partial<SquigNode> })
+        return
+      }
+
       if (g.kind === "draw") {
         g.points.push([wx, wy])
         setLivePoints([...g.points])
@@ -766,7 +835,8 @@ export function Canvas() {
 
     if (g.kind === "marquee") {
       s.setSelection(g.base)
-    } else if ((g.kind === "move" || g.kind === "resize") && g.dirty) {
+    } else if ((g.kind === "move" || g.kind === "resize" || g.kind === "crop") && g.dirty) {
+      // Escape undoes this drag, not the whole crop — you stay in the mode
       s.revertToCheckpoint()
     } else if (g.kind === "create") {
       if (g.id) s.revertToCheckpoint()
@@ -916,6 +986,37 @@ export function Canvas() {
     [st, beginGesture, toWorld, resetTextWidth]
   )
 
+  /** A press on one of the eight crop handles. */
+  const startCrop = useCallback(
+    (handle: Handle, e: React.PointerEvent) => {
+      e.stopPropagation()
+      e.preventDefault()
+      const s = st()
+      const n = croppingImage(s.nodes, s.selection, s.croppingId)
+      if (!n) return
+      modsRef.current = readMods(e)
+      const [wx, wy] = toWorld(e)
+      beginGesture(
+        {
+          kind: "crop",
+          handle,
+          wx,
+          wy,
+          sx: e.clientX,
+          sy: e.clientY,
+          pointerId: e.pointerId,
+          exceeded: false,
+          id: n.id,
+          origWin: { x: n.x, y: n.y, w: n.w, h: n.h },
+          origSheet: imageSheet(n),
+          dirty: false,
+        },
+        e
+      )
+    },
+    [st, beginGesture, toWorld]
+  )
+
   const onPointerDown = useCallback(
     (e: React.PointerEvent) => {
       // secondary buttons and stray extra touches never start a gesture
@@ -944,6 +1045,34 @@ export function Canvas() {
         return
       }
       if (e.button !== 0) return
+
+      // -- crop mode --------------------------------------------------------
+      // While it's on it owns the canvas: the eight handles are their own
+      // targets (startCrop), a press anywhere over the picture slides it, and
+      // a press off the picture is how you leave.
+      if (s.croppingId) {
+        const n = croppingImage(s.nodes, s.selection, s.croppingId)
+        if (n && inRect(imageSheet(n), wx, wy)) {
+          beginGesture(
+            {
+              kind: "crop",
+              ...common,
+              wx,
+              wy,
+              id: n.id,
+              handle: "pan",
+              origWin: { x: n.x, y: n.y, w: n.w, h: n.h },
+              origSheet: imageSheet(n),
+              dirty: false,
+            },
+            e
+          )
+          return
+        }
+        // the same bargain the text editor strikes: the click that dismisses
+        // the mode also lands where it was aimed, instead of costing two
+        s.setCropping(null)
+      }
 
       // placing a component from the library
       if (s.placing) {
@@ -1080,7 +1209,10 @@ export function Canvas() {
       }
       // double-clicking inside a multi-selection narrows to what you clicked
       if (s.selection.length !== 1 || s.selection[0] !== hitId) s.setSelection([hitId])
-      if (hasEditableText(n)) s.setEditing(hitId)
+      // a picture has no words to step into, so the same press steps into its
+      // crop instead — the one edit a picture has
+      if (n.type === "image") s.setCropping(hitId)
+      else if (hasEditableText(n)) s.setEditing(hitId)
     },
     [st, pick, toWorld]
   )
@@ -1402,6 +1534,8 @@ export function Canvas() {
           if (s.shortcutsOpen) s.setShortcutsOpen(false)
           else if (s.linkOpen) s.setLinkOpen(false)
           else if (s.editingId) s.setEditing(null)
+          // leaving keeps the crop, the way leaving an edit keeps the words
+          else if (croppingImage(s.nodes, s.selection, s.croppingId)) s.setCropping(null)
           else if (s.contextMenu) s.setContextMenu(null)
           else if (s.placing) s.setPlacing(null)
           else if (s.panel) s.setPanel(null)
@@ -1415,9 +1549,22 @@ export function Canvas() {
           // Return steps into the words of whatever is selected — the same
           // edit a double-click opens, without having to aim at the glyphs.
           // Only on a lone node: with several selected there's no "the" text.
-          if (e.shiftKey || s.selection.length !== 1) break
+          if (e.shiftKey) break
+          // in crop mode Return is the commit, so it steps back out again
+          if (croppingImage(s.nodes, s.selection, s.croppingId)) {
+            e.preventDefault()
+            s.setCropping(null)
+            break
+          }
+          if (s.selection.length !== 1) break
           const n = s.nodes[s.selection[0]]
-          if (!n || !hasEditableText(n)) break
+          if (!n) break
+          if (n.type === "image") {
+            e.preventDefault()
+            s.setCropping(n.id)
+            break
+          }
+          if (!hasEditableText(n)) break
           e.preventDefault()
           s.setEditing(n.id)
           break
@@ -1498,7 +1645,11 @@ export function Canvas() {
     [selection, nodes]
   )
   const placingDef = placing ? getDef(placing) : null
-  const hoverNode = hover && !selection.includes(hover.id) ? nodes[hover.id] : null
+  // the picture being cropped comes out of the document order and is redrawn
+  // on top, under its own dimmed ghost — the mode is a spotlight, and a node
+  // that happened to be stacked above it shouldn't sit in the middle of it
+  const cropNode = croppingImage(nodes, selection, croppingId)
+  const hoverNode = hover && !selection.includes(hover.id) && !cropNode ? nodes[hover.id] : null
 
   // a soft hover keeps the default cursor: a click there selects, but a drag
   // marquees, and a move cursor would promise a drag this press won't do
@@ -1508,9 +1659,15 @@ export function Canvas() {
       ? "crosshair"
       : gestureKind === "move"
         ? (altHeld ? "copy" : "move")
-        : hover && !hover.soft && tool === "select"
-          ? (altHeld ? "copy" : "move")
-          : "default"
+        // a crop drag captures the pointer, so the cursor comes from here once
+        // it leaves the handle it started on
+        : gestureKind === "crop"
+          ? "move"
+          : cropNode
+            ? "default"
+            : hover && !hover.soft && tool === "select"
+              ? (altHeld ? "copy" : "move")
+              : "default"
 
   return (
     <div
@@ -1534,13 +1691,14 @@ export function Canvas() {
         <g transform={`translate(${v.x} ${v.y}) scale(${v.zoom})`}>
           {order.map((id) => {
             const n = nodes[id]
-            if (!n) return null
+            if (!n || id === cropNode?.id) return null
             return (
               <g key={id} transform={`translate(${n.x} ${n.y})`}>
                 <NodeSketch node={n} hiddenText={id === editingId ? editing?.hidden : undefined} />
               </g>
             )
           })}
+          {cropNode && <CropStage node={cropNode} />}
           {livePoints && livePoints.length > 1 && (
             <polyline
               points={livePoints.map((p) => p.join(",")).join(" ")}
@@ -1579,14 +1737,20 @@ export function Canvas() {
         />
       )}
 
-      {/* selection rings + handles (screen space) */}
-      <SelectionOverlay
-        selectedNodes={selectedNodes}
-        viewport={v}
-        onStartResize={startResize}
-        editing={!!editingId}
-        gestureKind={gestureKind}
-      />
+      {/* selection rings + handles (screen space) — the crop window replaces
+          them outright while it's up: two boxes with two meanings, one of them
+          stale, is the worst of both */}
+      {cropNode ? (
+        <CropOverlay node={cropNode} viewport={v} onStartCrop={startCrop} />
+      ) : (
+        <SelectionOverlay
+          selectedNodes={selectedNodes}
+          viewport={v}
+          onStartResize={startResize}
+          editing={!!editingId}
+          gestureKind={gestureKind}
+        />
+      )}
 
       {/* smart guides */}
       {guides.length > 0 && (
@@ -1620,11 +1784,137 @@ export function Canvas() {
       {editingNode && editing && <TextEditOverlay key={editingNode.id} node={editingNode} target={editing} />}
 
       {/* context row */}
-      <ContextRow selectedNodes={selectedNodes} viewport={v} busy={!!gestureKind} />
+      <ContextRow selectedNodes={selectedNodes} viewport={v} busy={!!gestureKind || !!cropNode} />
 
       {/* empty-canvas nudge */}
       {order.length === 0 && !placing && <EmptyCanvas />}
     </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+
+/** How much of the picture still shows where the crop has cut it away. */
+const GHOST_OPACITY = 0.28
+
+/**
+ * A picture in crop mode: the whole of it, faint, with the part that survives
+ * the crop printed over the top at full strength.
+ *
+ * The ghost is the node's own render minus the clip — same placement, same
+ * mirror, one `<svg>` fewer — so the two can't drift apart no matter what the
+ * crop or the flips are doing.
+ */
+function CropStage({ node }: { node: ImageNode }) {
+  const p = imagePlacement(node)
+  return (
+    <g transform={`translate(${node.x} ${node.y})`}>
+      <g transform={mirrorBox(node.w, node.h, node.flipX, node.flipY)} opacity={GHOST_OPACITY}>
+        <image href={node.src} x={p.x} y={p.y} width={p.w} height={p.h} preserveAspectRatio="none" />
+      </g>
+      <NodeSketch node={node} />
+    </g>
+  )
+}
+
+/**
+ * The crop window — eight handles on the box, over a picture that keeps going
+ * past them.
+ *
+ * It stands in for the selection ring while the mode is on, so it draws the
+ * same white dot on the same blue, at the same sizes: this is still "the thing
+ * you have hold of", just a different thing. The rest of the picture gets a
+ * dashed outline, which is the only honest way to say how much room a drag
+ * still has left.
+ */
+function CropOverlay({
+  node,
+  viewport,
+  onStartCrop,
+}: {
+  node: ImageNode
+  viewport: { x: number; y: number; zoom: number }
+  onStartCrop: (h: Handle, e: React.PointerEvent) => void
+}) {
+  const v = viewport
+  const sheet = imageSheet(node)
+  const left = node.x * v.zoom + v.x
+  const top = node.y * v.zoom + v.y
+  const w = node.w * v.zoom
+  const h = node.h * v.zoom
+
+  const showWide = w >= HANDLE_ROOM
+  const showTall = h >= HANDLE_ROOM
+  const visible = (hd: Handle) => (hd === "n" || hd === "s" ? showWide : hd === "e" || hd === "w" ? showTall : true)
+  const padX = grabPad(w, showWide)
+  const padY = grabPad(h, showTall)
+
+  return (
+    <>
+      {/* the whole picture: how far a drag can still go, and the surface that
+          slides under the window — it takes the press and lets it bubble to
+          the canvas, which is where the pan gesture actually starts */}
+      <div
+        className="pointer-events-auto absolute"
+        style={{
+          left: sheet.x * v.zoom + v.x,
+          top: sheet.y * v.zoom + v.y,
+          width: sheet.w * v.zoom,
+          height: sheet.h * v.zoom,
+          border: "1px dashed color-mix(in srgb, var(--sq-select) 45%, transparent)",
+          cursor: "move",
+        }}
+      />
+
+      <div className="pointer-events-none absolute" style={{ left, top, width: w, height: h }}>
+        <div className="absolute inset-0" style={{ border: "2px solid var(--sq-select)" }} />
+        {/* thirds — the one guide a crop is actually composed against */}
+        {showWide && showTall && (
+          <>
+            {[1, 2].map((i) => (
+              <div
+                key={`v${i}`}
+                className="absolute top-0 bottom-0"
+                style={{ left: `${(i * 100) / 3}%`, borderLeft: "1px solid color-mix(in srgb, var(--sq-select) 30%, transparent)" }}
+              />
+            ))}
+            {[1, 2].map((i) => (
+              <div
+                key={`h${i}`}
+                className="absolute right-0 left-0"
+                style={{ top: `${(i * 100) / 3}%`, borderTop: "1px solid color-mix(in srgb, var(--sq-select) 30%, transparent)" }}
+              />
+            ))}
+          </>
+        )}
+        {/* corners last, for the same reason SelectionOverlay does it */}
+        {HANDLES.filter(visible)
+          .slice()
+          .sort((a, b) => a.length - b.length)
+          .map((hd) => {
+            const box = handleHitBox(hd, w, h, padX, padY)
+            return (
+              <div
+                key={hd}
+                className="pointer-events-auto absolute"
+                style={{ left: box.left, top: box.top, width: box.width, height: box.height, cursor: HANDLE_CURSORS[hd] }}
+                onPointerDown={(e) => onStartCrop(hd, e)}
+              >
+                <div
+                  className="pointer-events-none absolute rounded-[3px] bg-white"
+                  style={{
+                    left: box.dotLeft,
+                    top: box.dotTop,
+                    width: HANDLE_DOT,
+                    height: HANDLE_DOT,
+                    border: "2px solid var(--sq-select)",
+                  }}
+                />
+              </div>
+            )
+          })}
+      </div>
+    </>
   )
 }
 

@@ -15,8 +15,9 @@
 // ---------------------------------------------------------------------------
 
 import { useSquig } from "@/lib/store"
-import type { ArrowNode, ComponentNode, FillTone, InkTone, ShapeNode, SquigNode, StrokeWeight, TextNode } from "@/lib/types"
+import type { ArrowNode, ComponentNode, FillTone, ImageNode, InkTone, ShapeNode, SquigNode, StrokeWeight, TextNode } from "@/lib/types"
 import { normalizeFill, normalizeInk } from "@/lib/types"
+import { isCropped } from "@/lib/canvas/crop"
 import { getDef } from "@/lib/library/registry"
 import { selectionSummary, shared, sharedControls, sharedNumber, unionBounds } from "@/lib/selection"
 import { scaleNodes, MIN_SIZE } from "@/lib/canvas/transform"
@@ -31,7 +32,9 @@ import { Switch } from "@/components/ui/switch"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import {
+  ArrowCounterClockwiseIcon,
   ArrowsOutIcon,
+  CropIcon,
   FlipHorizontalIcon,
   FlipVerticalIcon,
   LinkBreakIcon,
@@ -312,6 +315,7 @@ function SelectionEditor({ selected }: { selected: SquigNode[] }) {
   const shapes = selected.filter((n): n is ShapeNode => n.type === "shape")
   const arrows = selected.filter((n): n is ArrowNode => n.type === "arrow")
   const texts = selected.filter((n): n is TextNode => n.type === "text")
+  const images = selected.filter((n): n is ImageNode => n.type === "image")
   // components draw their own strokes from authored prims — a pen weight set
   // here would have nothing to apply to without rewriting the whole library
   const outlined = selected.filter((n) => n.type === "shape" || n.type === "draw" || n.type === "arrow")
@@ -453,6 +457,38 @@ function SelectionEditor({ selected }: { selected: SquigNode[] }) {
               }
             />
           </Row>
+        </PanelSection>
+      )}
+
+      {/* --- contextual: picture ---------------------------------------- */}
+      {images.length > 0 && (
+        <PanelSection id="picture" title="Picture" count={partial(images.length)}>
+          {/* Crop is a mode, not a value, so the panel's job is only to say it
+              exists and let you back out of it — the window itself is dragged
+              on the canvas. Stepping in needs one picture; giving the pixels
+              back works on however many are selected. */}
+          <StackRow label="Crop">
+            <div className="flex gap-1.5">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={images.length !== 1 || images.length !== selected.length}
+                className="h-ctl flex-1 rounded-chrome-sm text-label"
+                onClick={() => st().setCropping(images[0].id)}
+              >
+                <CropIcon className="size-3" /> Crop
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={!images.some(isCropped)}
+                className="h-ctl flex-1 rounded-chrome-sm text-label"
+                onClick={() => st().resetCrop(images.map((n) => n.id))}
+              >
+                <ArrowCounterClockwiseIcon className="size-3" /> Reset
+              </Button>
+            </div>
+          </StackRow>
         </PanelSection>
       )}
 

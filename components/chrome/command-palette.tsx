@@ -18,7 +18,10 @@ import { exportDoc, importDoc } from "@/lib/file-io"
 import { copyAsPngWithNotice } from "@/lib/export-image"
 import { relativeTime } from "@/lib/files"
 import { kbd } from "@/lib/shortcuts"
+import { isCropped } from "@/lib/canvas/crop"
 import {
+  ArrowCounterClockwiseIcon,
+  CropIcon,
   MagnifyingGlassIcon,
   CursorIcon,
   SquareIcon,
@@ -120,6 +123,12 @@ function Palette() {
   const hasComponent = selection.some((id) => nodes[id]?.type === "component")
   const hasText = selection.some((id) => nodes[id]?.type === "text")
   const hasGroup = selection.some((id) => nodes[id]?.groupIds?.length)
+  // cropping is a mode you step into, so it needs exactly one picture to step into
+  const loneImage = selection.length === 1 && nodes[selection[0]]?.type === "image" ? selection[0] : null
+  const hasCrop = selection.some((id) => {
+    const n = nodes[id]
+    return n?.type === "image" && isCropped(n)
+  })
 
   const actions = useMemo<Action[]>(
     () => [
@@ -155,6 +164,8 @@ function Palette() {
       { id: "back", label: "Send to back", hint: kbd("far+["), section: "Arrange", icon: StackIcon, disabled: !hasSel, run: () => st().sendToBack(st().selection) },
       { id: "flip-h", label: "Flip horizontal", hint: kbd("shift+h"), section: "Arrange", keywords: "mirror reverse", icon: FlipHorizontalIcon, disabled: !hasSel, run: () => st().flipSelected("x") },
       { id: "flip-v", label: "Flip vertical", hint: kbd("shift+v"), section: "Arrange", keywords: "mirror reverse", icon: FlipVerticalIcon, disabled: !hasSel, run: () => st().flipSelected("y") },
+      { id: "crop", label: "Crop image", hint: kbd("enter"), section: "Arrange", keywords: "photo picture trim frame mask", icon: CropIcon, disabled: !loneImage, run: () => loneImage && st().setCropping(loneImage) },
+      { id: "uncrop", label: "Reset crop", section: "Arrange", keywords: "photo picture uncrop restore full", icon: ArrowCounterClockwiseIcon, disabled: !hasCrop, run: () => st().resetCrop() },
       { id: "align-l", label: "Align left", section: "Arrange", icon: CornersOutIcon, disabled: selection.length < 2, run: () => st().alignSelected("left") },
       { id: "align-hc", label: "Align centres horizontally", section: "Arrange", icon: CornersOutIcon, disabled: selection.length < 2, run: () => st().alignSelected("hcenter") },
       { id: "align-r", label: "Align right", section: "Arrange", icon: CornersOutIcon, disabled: selection.length < 2, run: () => st().alignSelected("right") },
@@ -195,7 +206,7 @@ function Palette() {
           run: () => st().openFile(f.id),
         })),
     ],
-    [st, hasSel, hasComponent, hasText, hasGroup, selection.length, files, docId]
+    [st, hasSel, hasComponent, hasText, hasGroup, loneImage, hasCrop, selection.length, files, docId]
   )
 
   const rows = useMemo<Row[]>(() => {
