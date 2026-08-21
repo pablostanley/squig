@@ -7,9 +7,17 @@
 // ---------------------------------------------------------------------------
 
 import { HAND, mirrorPrims, type Prim, type PrimOpts } from "./kit"
-import { textAnchorX, textBaseline } from "./text-layout"
+import { textAnchorX, textBaseline, textBoxPadding, textContentWidth } from "./text-layout"
 import { wrapText } from "@/lib/canvas/text-metrics"
-import { normalizeFill, normalizeInk, type FillTone, type Outlined, type SquigNode, type StrokeWeight } from "@/lib/types"
+import {
+  normalizeFill,
+  normalizeInk,
+  normalizeStroke,
+  type FillTone,
+  type Outlined,
+  type SquigNode,
+  type StrokeWeight,
+} from "@/lib/types"
 import { renderComponent } from "@/lib/library/registry"
 
 /**
@@ -43,7 +51,7 @@ const FRAME_GAP = 2.5
 function outline(node: Outlined, baseWidth: number, o?: PrimOpts): PrimOpts {
   return {
     ...o,
-    strokeWidth: baseWidth * PEN_SCALE[node.stroke ?? "regular"],
+    strokeWidth: baseWidth * PEN_SCALE[normalizeStroke(node.stroke)],
     // pressure and tone are two different knobs: how hard the pen presses, and
     // which of the three inks it was dipped in
     tone: normalizeInk(node.ink),
@@ -106,16 +114,19 @@ export function basePrims(node: SquigNode): Prim[] {
       return [{ t: "rect", x: -g, y: -g, w: node.w + g * 2, h: node.h + g * 2, r: 2, o: { stroke: "muted" } }]
     }
     case "text": {
-      const anchor = textAnchorX(node.align, node.w)
+      const boxed = !!node.boxed
+      const pad = textBoxPadding(node.fontSize, boxed)
+      const measure = textContentWidth(node.w, node.fontSize, boxed)
+      const anchor = pad.x + textAnchorX(node.align, measure)
       // an auto-sized layer's lines are its hard returns; a fixed-width layer
       // re-breaks them to the measure the side handles set
       const lines = node.fixedW
-        ? wrapText(node.text, node.w, { size: node.fontSize, bold: node.bold, italic: node.italic })
+        ? wrapText(node.text, measure, { size: node.fontSize, bold: node.bold, italic: node.italic })
         : node.text.split("\n")
-      return lines.map((lineText, i): Prim => ({
+      const words = lines.map((lineText, i): Prim => ({
         t: "text",
         x: anchor,
-        y: textBaseline(i, node.fontSize),
+        y: textBaseline(i, node.fontSize, boxed),
         text: lineText,
         size: node.fontSize,
         align: node.align,
@@ -125,6 +136,23 @@ export function basePrims(node: SquigNode): Prim[] {
         // a link is a link because it's underlined — no blue in a wireframe
         underline: node.underline || !!node.link,
       }))
+      if (!boxed) return words
+
+      const frame: Prim = {
+        t: "rect",
+        x: 0,
+        y: 0,
+        w: node.w,
+        h: node.h,
+        r: 6,
+        o: {
+          ...(FILL_OPTS[normalizeFill(node.boxFill)] ?? {}),
+          strokeWidth: node.boxBorder === false ? 0 : HAND.strokeWidth * PEN_SCALE[normalizeStroke(node.boxStroke)],
+          tone: normalizeInk(node.boxInk),
+          dashed: node.boxDashed,
+        },
+      }
+      return [frame, ...words]
     }
   }
 }

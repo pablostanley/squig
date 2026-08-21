@@ -9,8 +9,9 @@
 // ---------------------------------------------------------------------------
 
 import { wrapText, measureTextWidth } from "../lib/canvas/text-metrics.ts"
-import { fitTextBox, setTextWidth, autoSizeTextBox, minTextWidth } from "../lib/canvas/text-reflow.ts"
-import { textBlockHeight } from "../lib/sketch/text-layout.ts"
+import { fitTextBox, setTextWidth, autoSizeTextBox, minTextWidth, setTextBoxed } from "../lib/canvas/text-reflow.ts"
+import { textBlockHeight, textBoxPadding, textContentWidth } from "../lib/sketch/text-layout.ts"
+import { nodePrims } from "../lib/sketch/node-prims.ts"
 import { scaleNodes } from "../lib/canvas/transform.ts"
 import { unionBox, type TextNode } from "../lib/types.ts"
 
@@ -108,6 +109,58 @@ check("empty text still has a line", wrapText("", 100, STYLE).length === 1)
   check("centred fit stays centred", close(n.x + n.w / 2, fit.x! + fit.w! / 2))
 }
 
+{
+  // Box adds padding around the run rather than moving the run into a
+  // rectangle somewhere else. The first and last positions are world-space.
+  const n = text({ x: 40, y: 30, align: "center" })
+  const before = nodePrims(n).find((p) => p.t === "text")!
+  const boxed = { ...n, ...setTextBoxed(n, true) }
+  const after = nodePrims(boxed).find((p) => p.t === "text")!
+  check("boxing keeps the text anchor still", close(n.x + before.x, boxed.x + after.x))
+  check("boxing keeps the text baseline still", close(n.y + before.y, boxed.y + after.y))
+  check("boxing starts on opaque paper", boxed.boxed === true && boxed.boxFill === "paper")
+
+  const unboxed = { ...boxed, ...setTextBoxed(boxed, false) }
+  check(
+    "unboxing restores the original bounds",
+    close(unboxed.x, n.x) && close(unboxed.y, n.y) && close(unboxed.w, n.w) && close(unboxed.h, n.h)
+  )
+}
+
+{
+  const pad = textBoxPadding(10)
+  const n = text({ boxed: true, w: 100 + pad.x * 2, h: textBlockHeight(1, 10, true) })
+  const fit = fitTextBox(n, "hello world")
+  check(
+    "boxed auto fit hugs words plus padding",
+    close(fit.w!, measureTextWidth("hello world", STYLE) + 2 + pad.x * 2)
+  )
+  check("boxed auto fit includes vertical padding", close(fit.h!, textBlockHeight(1, 10, true)))
+}
+
+{
+  // 44 outer pixels leave the same 30px measure as the unboxed wrapping test.
+  const n = text({ boxed: true, fixedW: true, w: 44, h: textBlockHeight(2, 10, true) })
+  const fit = fitTextBox(n, "hello world")
+  check("boxed fixed width subtracts its padding", close(textContentWidth(n.w, n.fontSize, true), 30))
+  check("boxed fixed fit follows the inner wrap", close(fit.h!, textBlockHeight(2, 10, true)))
+
+  const prims = nodePrims(n)
+  const frame = prims[0]
+  const words = prims.find((p) => p.t === "text")!
+  check("boxed text renders one frame inside its node", frame.t === "rect" && frame.w === n.w && frame.h === n.h)
+  check("boxed words start after the inner padding", close(words.x, textBoxPadding(10).x))
+}
+
+{
+  const n = text({ boxed: true, boxBorder: false, boxFill: "light", h: textBlockHeight(1, 10, true) })
+  const frame = nodePrims(n)[0]
+  check(
+    "a background-only box has no visible border",
+    frame.t === "rect" && frame.o?.strokeWidth === 0 && frame.o?.fill === "shade"
+  )
+}
+
 // -- setTextWidth / autoSizeTextBox ----------------------------------------
 
 {
@@ -122,6 +175,12 @@ check("empty text still has a line", wrapText("", 100, STYLE).length === 1)
   const patch = setTextWidth(n, 1)
   check("width clamps at one em", patch.w === Math.max(24, 40), String(patch.w))
   check("minTextWidth agrees", minTextWidth(n) === 40)
+}
+
+{
+  const n = text({ boxed: true, fontSize: 40 })
+  const pad = textBoxPadding(40)
+  check("boxed minimum width includes both insets", minTextWidth(n) === 40 + pad.x * 2)
 }
 
 {
@@ -150,6 +209,14 @@ check("empty text still has a line", wrapText("", 100, STYLE).length === 1)
   const patch = scaleNodes([n], from, { x: 0, y: 0, w: 100, h: n.h })[n.id] as Partial<TextNode>
   check("off-ratio scale keeps the type", close(patch.fontSize!, 10))
   check("off-ratio scale reflows to one line", close(patch.h!, textBlockHeight(1, 10)), String(patch.h))
+}
+
+{
+  // Off-ratio scaling also wraps against the inside of a boxed text element.
+  const n = text({ boxed: true, fixedW: true, w: 44, h: textBlockHeight(2, 10, true) })
+  const from = { x: 0, y: 0, w: n.w, h: n.h }
+  const patch = scaleNodes([n], from, { x: 0, y: 0, w: 114, h: n.h })[n.id] as Partial<TextNode>
+  check("boxed off-ratio scale reflows on its inner width", close(patch.h!, textBlockHeight(1, 10, true)))
 }
 
 // unionBox import keeps this file honest about types.ts still exporting it —

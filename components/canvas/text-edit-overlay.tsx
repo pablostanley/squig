@@ -10,7 +10,8 @@
 //
 // A double-click opens this, and so does Return on a selected layer.
 // Enter (or ⌘Enter on a multi-line text node), Escape and clicking away all
-// commit — leaving the editor never throws typed words away.
+// commit — leaving the editor never throws typed words away. A text node's own
+// optional box stays behind the editor because it is part of the node itself.
 // ---------------------------------------------------------------------------
 
 import { useEffect, useMemo, useRef, useState } from "react"
@@ -20,7 +21,7 @@ import type { ComponentNode, SquigNode, TextNode } from "@/lib/types"
 import type { EditTarget } from "@/lib/canvas/edit-target"
 import { fontMetrics, measureLinesWidth, wrapText } from "@/lib/canvas/text-metrics"
 import { fitTextBox } from "@/lib/canvas/text-reflow"
-import { TEXT_LINE_HEIGHT, anchorFactor } from "@/lib/sketch/text-layout"
+import { TEXT_LINE_HEIGHT, anchorFactor, textBoxPadding, textContentWidth } from "@/lib/sketch/text-layout"
 
 /**
  * How far past the words the editor still answers to the pointer, in screen
@@ -118,7 +119,11 @@ export function TextEditOverlay({ node, target }: { node: SquigNode; target: Edi
   // a fixed-width text layer edits inside its own box: the textarea holds the
   // box's width so the browser wraps the draft at the same measure the
   // renderer will, and only the height follows the typing
-  const fixed = isText && !!(node as TextNode).fixedW
+  const textNode = isText ? (node as TextNode) : null
+  const fixed = !!textNode?.fixedW
+  const boxed = !!textNode?.boxed
+  const contentWidth = textNode ? textContentWidth(textNode.w, textNode.fontSize, boxed) : node.w
+  const contentInsetX = textNode ? textBoxPadding(textNode.fontSize, boxed).x : 0
 
   const box = useMemo(() => {
     const size = target.fontSize * v.zoom
@@ -128,17 +133,19 @@ export function TextEditOverlay({ node, target }: { node: SquigNode; target: Edi
 
     // an empty run still needs somewhere to show its placeholder
     const lineCount = fixed
-      ? wrapText(value, node.w * v.zoom, style).length
+      ? wrapText(value, contentWidth * v.zoom, style).length
       : value.split("\n").length
     const run = fixed
-      ? node.w * v.zoom
+      ? contentWidth * v.zoom
       : measureLinesWidth(value ? value.split("\n") : [placeholder], style)
     const padY = size * 0.35
     const anchorX = (node.x + target.x) * v.zoom + v.x
     const baselineY = (node.y + target.baseline) * v.zoom + v.y
 
     return {
-      left: fixed ? node.x * v.zoom + v.x - CARET_PAD : anchorX - CARET_PAD - anchorFactor(target.align) * run,
+      left: fixed
+        ? (node.x + contentInsetX) * v.zoom + v.x - CARET_PAD
+        : anchorX - CARET_PAD - anchorFactor(target.align) * run,
       top: baselineY - ((lineHeight - (ascent + descent)) / 2 + ascent) - padY,
       width: run + CARET_PAD * 2,
       height: lineCount * lineHeight + padY * 2,
@@ -146,7 +153,7 @@ export function TextEditOverlay({ node, target }: { node: SquigNode; target: Edi
       fontSize: size,
       lineHeight: `${lineHeight}px`,
     }
-  }, [node.x, node.y, node.w, target, value, v, placeholder, fixed])
+  }, [node.x, node.y, target, value, v, placeholder, fixed, contentWidth, contentInsetX])
 
   return (
     <textarea

@@ -22,7 +22,7 @@
 import { INK, type Prim } from "@/lib/sketch/kit"
 import { measureTextWidth, wrapText } from "@/lib/canvas/text-metrics"
 import { nodePrims } from "@/lib/sketch/node-prims"
-import { anchorFactor, textAnchorX, textBaseline } from "@/lib/sketch/text-layout"
+import { anchorFactor, textAnchorX, textBaseline, textBoxPadding, textContentWidth } from "@/lib/sketch/text-layout"
 import { getDef } from "@/lib/library/registry"
 import { normalizeInk } from "@/lib/types"
 import type { ComponentNode, SquigNode, TextAlign, TextNode } from "@/lib/types"
@@ -223,16 +223,20 @@ export function textControlAt(node: ComponentNode, x: number, y: number): string
  * baseline and the lines read in typing order.
  */
 function textNodeTarget(node: TextNode): EditTarget {
+  const boxed = !!node.boxed
+  const pad = textBoxPadding(node.fontSize, boxed)
+  const measure = textContentWidth(node.w, node.fontSize, boxed)
   const lines = node.fixedW
-    ? wrapText(node.text, node.w, { size: node.fontSize, bold: node.bold, italic: node.italic })
+    ? wrapText(node.text, measure, { size: node.fontSize, bold: node.bold, italic: node.italic })
     : node.text.split("\n")
   const align: TextAlign = node.align ?? "left"
   const flipped: TextAlign = node.flipX ? (align === "left" ? "right" : align === "right" ? "left" : "center") : align
 
-  const x = node.flipX ? node.w - textAnchorX(align, node.w) : textAnchorX(align, node.w)
+  const anchor = pad.x + textAnchorX(align, measure)
+  const x = node.flipX ? node.w - anchor : anchor
   const top = node.flipY
-    ? node.h - textBaseline(Math.max(0, lines.length - 1), node.fontSize) + node.fontSize * 0.6
-    : textBaseline(0, node.fontSize)
+    ? node.h - textBaseline(Math.max(0, lines.length - 1), node.fontSize, boxed) + node.fontSize * 0.6
+    : textBaseline(0, node.fontSize, boxed)
 
   return {
     value: node.text,

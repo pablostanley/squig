@@ -336,7 +336,7 @@ export const NodeSketch = memo(function NodeSketch({
       case "text":
         // w and align place the anchor, so a resize or a realignment is a
         // different set of marks even when the words haven't changed
-        return `t:${node.text}:${node.fontSize}:${node.w}:${node.fixedW ? 1 : 0}:${node.align ?? ""}:${flip}:${node.bold ? 1 : 0}${node.italic ? 1 : 0}${node.underline || node.link ? 1 : 0}:${node.ink ?? ""}`
+        return `t:${node.text}:${node.fontSize}:${node.w}:${node.h}:${node.fixedW ? 1 : 0}:${node.align ?? ""}:${flip}:${node.bold ? 1 : 0}${node.italic ? 1 : 0}${node.underline || node.link ? 1 : 0}:${node.ink ?? ""}:${node.boxed ? 1 : 0}:${node.boxFill ?? ""}:${node.boxBorder === false ? 0 : 1}:${node.boxStroke ?? ""}:${node.boxInk ?? ""}:${node.boxDashed ? 1 : 0}`
       case "image":
         // the src doesn't shape a single mark — only the frame's box does
         return `i:${node.w}:${node.h}:${flip}`

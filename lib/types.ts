@@ -37,6 +37,11 @@ export function normalizeInk(v: unknown): InkTone {
  */
 export type StrokeWeight = "light" | "regular" | "heavy"
 
+/** Imported documents can spell a pen weight however they like; we cannot. */
+export function normalizeStroke(v: unknown): StrokeWeight {
+  return v === "light" || v === "heavy" ? v : "regular"
+}
+
 /** Outline settings shared by every hand-drawn node. */
 export interface Outlined {
   stroke?: StrokeWeight
@@ -134,6 +139,20 @@ export interface TextNode extends BaseNode {
   bold?: boolean
   italic?: boolean
   underline?: boolean
+  /**
+   * Give the text its own surface. This is still one text node — never a
+   * rectangle grouped with a label — and absent keeps the ordinary bare-text
+   * behaviour every older document has.
+   */
+  boxed?: boolean
+  /** the surface behind boxed text; paper is the default when Box is enabled */
+  boxFill?: FillTone
+  /** absent means the ordinary border; false deliberately removes it */
+  boxBorder?: boolean
+  /** border settings stay separate from `ink`, which colours the words */
+  boxStroke?: StrokeWeight
+  boxInk?: InkTone
+  boxDashed?: boolean
   /** where this text points — wireframe metadata, drawn as an underline */
   link?: string
 }

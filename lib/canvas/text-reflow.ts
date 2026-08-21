@@ -2,7 +2,7 @@
 // Keeping a text node's box honest about what's in it.
 // ---------------------------------------------------------------------------
 
-import { anchorFactor, textBlockHeight } from "@/lib/sketch/text-layout"
+import { anchorFactor, textBlockHeight, textBoxPadding, textContentWidth } from "@/lib/sketch/text-layout"
 import { measureLinesWidth, wrapText } from "./text-metrics"
 import type { TextNode } from "@/lib/types"
 
@@ -26,19 +26,31 @@ const SLACK = 2
  */
 export function fitTextBox(n: TextNode, text: string, fontSize = n.fontSize): Partial<TextNode> {
   const style = { size: fontSize, bold: n.bold, italic: n.italic }
+  const boxed = !!n.boxed
   if (n.fixedW) {
-    return { text, fontSize, h: textBlockHeight(wrapText(text, n.w, style).length, fontSize) }
+    const measure = textContentWidth(n.w, fontSize, boxed)
+    return { text, fontSize, h: textBlockHeight(wrapText(text, measure, style).length, fontSize, boxed) }
   }
   const lines = (text || " ").split("\n")
   const measured = measureLinesWidth(lines, style)
-  const w = Math.max(MIN_WIDTH, measured + SLACK)
-  const pinned = n.flipX ? 1 - anchorFactor(n.align) : anchorFactor(n.align)
+  const contentW = Math.max(MIN_WIDTH, measured + SLACK)
+  const oldPad = textBoxPadding(n.fontSize, boxed)
+  const nextPad = textBoxPadding(fontSize, boxed)
+  const w = contentW + nextPad.x * 2
+  const align = anchorFactor(n.align)
+  // Keep the *drawn* anchor still. With a flip that anchor lives on the other
+  // side of the outer box; spelling both local positions out also keeps a
+  // boxed run still when a font-size change changes its em-based padding.
+  const oldAnchor = oldPad.x + align * textContentWidth(n.w, n.fontSize, boxed)
+  const nextAnchor = nextPad.x + align * contentW
+  const oldVisualAnchor = n.flipX ? n.w - oldAnchor : oldAnchor
+  const nextVisualAnchor = n.flipX ? w - nextAnchor : nextAnchor
   return {
     text,
     fontSize,
-    x: n.x + (n.w - w) * pinned,
+    x: n.x + oldVisualAnchor - nextVisualAnchor,
     w,
-    h: textBlockHeight(lines.length, fontSize),
+    h: textBlockHeight(lines.length, fontSize, boxed),
   }
 }
 
@@ -49,7 +61,7 @@ export function fitTextBox(n: TextNode, text: string, fontSize = n.fontSize): Pa
  * line to make progress.
  */
 export function minTextWidth(n: TextNode): number {
-  return Math.max(MIN_WIDTH, n.fontSize)
+  return Math.max(MIN_WIDTH, n.fontSize) + textBoxPadding(n.fontSize, !!n.boxed).x * 2
 }
 
 /**
@@ -59,11 +71,40 @@ export function minTextWidth(n: TextNode): number {
  */
 export function setTextWidth(n: TextNode, w: number): Partial<TextNode> {
   const cw = Math.max(minTextWidth(n), w)
-  const lines = wrapText(n.text, cw, { size: n.fontSize, bold: n.bold, italic: n.italic })
-  return { fixedW: true, w: cw, h: textBlockHeight(lines.length, n.fontSize) }
+  const boxed = !!n.boxed
+  const measure = textContentWidth(cw, n.fontSize, boxed)
+  const lines = wrapText(n.text, measure, { size: n.fontSize, bold: n.bold, italic: n.italic })
+  return { fixedW: true, w: cw, h: textBlockHeight(lines.length, n.fontSize, boxed) }
 }
 
 /** Back to hugging the words — what double-clicking a side handle means. */
 export function autoSizeTextBox(n: TextNode): Partial<TextNode> {
   return { ...fitTextBox({ ...n, fixedW: false }, n.text), fixedW: false }
+}
+
+/**
+ * Put the optional surface around a run, or take it away, without moving a
+ * single glyph. The outer node grows symmetrically around the old text box;
+ * because the insets are symmetric this remains true when the node is flipped.
+ */
+export function setTextBoxed(n: TextNode, boxed: boolean): Partial<TextNode> {
+  if (!!n.boxed === boxed) return {}
+  const pad = textBoxPadding(n.fontSize)
+  if (boxed) {
+    return {
+      boxed: true,
+      boxFill: n.boxFill ?? "paper",
+      x: n.x - pad.x,
+      y: n.y - pad.y,
+      w: n.w + pad.x * 2,
+      h: n.h + pad.y * 2,
+    }
+  }
+  return {
+    boxed: undefined,
+    x: n.x + pad.x,
+    y: n.y + pad.y,
+    w: Math.max(MIN_WIDTH, n.w - pad.x * 2),
+    h: Math.max(textBlockHeight(1, n.fontSize), n.h - pad.y * 2),
+  }
 }

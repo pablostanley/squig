@@ -181,6 +181,12 @@ function standing(): void {
       fixedW: true,
       bold: true,
       link: "https://example.com",
+      boxed: true,
+      boxFill: "light",
+      boxBorder: false,
+      boxStroke: "heavy",
+      boxInk: "muted",
+      boxDashed: true,
     },
   }
 
@@ -203,6 +209,16 @@ function standing(): void {
   const words = st().nodes.words
   check("a label keeps its words", words?.type === "text" && words.text === "hello\nnapkin")
   check("…its measure, its alignment and its link", words?.type === "text" && words.fixedW === true && words.align === "center" && !!words.link)
+  check(
+    "…and its inseparable box treatment",
+    words?.type === "text" &&
+      words.boxed === true &&
+      words.boxFill === "light" &&
+      words.boxBorder === false &&
+      words.boxStroke === "heavy" &&
+      words.boxInk === "muted" &&
+      words.boxDashed === true
+  )
 
   // exporting and importing again has to be a no-op, or a file loses a little
   // more of itself every time it goes round
@@ -210,10 +226,12 @@ function standing(): void {
   const box2 = st().nodes.box
   const line2 = st().nodes.line
   const pic2 = st().nodes.pic
+  const words2 = st().nodes.words
   check("a second trip through changes nothing", again === true)
   check("…the lock survives it", box2?.locked === true)
   check("…and so do the bindings", line2?.type === "arrow" && line2.bind?.join(",") === "box,other")
   check("…and the crop", pic2?.type === "image" && pic2.crop?.x === 0.1)
+  check("…and the text box", words2?.type === "text" && words2.boxed === true && words2.boxFill === "light")
 }
 
 // -- bindings that name nothing ---------------------------------------------

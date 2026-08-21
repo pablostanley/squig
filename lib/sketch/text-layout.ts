@@ -22,13 +22,32 @@ export const TEXT_FIRST_BASELINE = 1
 /** Descender room under the last baseline, again as a multiple of the size. */
 const DESCENDER = 0.3
 
-export function textBaseline(line: number, fontSize: number): number {
-  return fontSize * (TEXT_FIRST_BASELINE + line * TEXT_LINE_HEIGHT)
+/**
+ * A boxed run uses type-relative padding, so scaling the type scales the whole
+ * element exactly like CSS padding set in em. It is intentionally not a user
+ * control yet: Box is a text treatment, not a second layout system.
+ */
+const BOX_PAD_X_EM = 0.7
+const BOX_PAD_Y_EM = 0.45
+
+export function textBoxPadding(fontSize: number, boxed = true): { x: number; y: number } {
+  return boxed ? { x: fontSize * BOX_PAD_X_EM, y: fontSize * BOX_PAD_Y_EM } : { x: 0, y: 0 }
+}
+
+/** The measure the words receive inside the node's outer box. */
+export function textContentWidth(boxWidth: number, fontSize: number, boxed = false): number {
+  const { x } = textBoxPadding(fontSize, boxed)
+  return Math.max(0, boxWidth - x * 2)
+}
+
+export function textBaseline(line: number, fontSize: number, boxed = false): number {
+  return textBoxPadding(fontSize, boxed).y + fontSize * (TEXT_FIRST_BASELINE + line * TEXT_LINE_HEIGHT)
 }
 
 /** The height a run of lines needs: first baseline, the gaps, the descenders. */
-export function textBlockHeight(lineCount: number, fontSize: number): number {
-  return fontSize * (TEXT_FIRST_BASELINE + Math.max(0, lineCount - 1) * TEXT_LINE_HEIGHT + DESCENDER)
+export function textBlockHeight(lineCount: number, fontSize: number, boxed = false): number {
+  const text = fontSize * (TEXT_FIRST_BASELINE + Math.max(0, lineCount - 1) * TEXT_LINE_HEIGHT + DESCENDER)
+  return text + textBoxPadding(fontSize, boxed).y * 2
 }
 
 /**

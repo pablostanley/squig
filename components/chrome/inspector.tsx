@@ -16,12 +16,12 @@
 
 import { useSquig } from "@/lib/store"
 import type { ArrowNode, ComponentNode, FillTone, ImageNode, InkTone, ShapeNode, SquigNode, StrokeWeight, TextNode } from "@/lib/types"
-import { normalizeFill, normalizeInk } from "@/lib/types"
+import { normalizeFill, normalizeInk, normalizeStroke } from "@/lib/types"
 import { isCropped, trueShapePatch } from "@/lib/canvas/crop"
 import { getDef } from "@/lib/library/registry"
 import { lockedIds, selectionSummary, shared, sharedControls, sharedNumber, unionBounds } from "@/lib/selection"
 import { scaleNodes, MIN_SIZE } from "@/lib/canvas/transform"
-import { fitTextBox, setTextWidth } from "@/lib/canvas/text-reflow"
+import { fitTextBox, setTextBoxed, setTextWidth } from "@/lib/canvas/text-reflow"
 import { VariantControl } from "./variant-controls"
 import { MixedNumberField, MixedSwitch, MixedTextField } from "./mixed-fields"
 import { AlignRow } from "./align-row"
@@ -120,6 +120,13 @@ const STROKE_OPTIONS: readonly SegmentOption<StrokeWeight>[] = [
   { value: "light", label: "Light pen", content: <PenChip height={1} /> },
   { value: "regular", label: "Regular pen", content: <PenChip height={1.75} /> },
   { value: "heavy", label: "Heavy pen", content: <PenChip height={3} /> },
+]
+
+/** A boxed text border has the shape controls' three pen weights plus off. */
+type TextBoxBorder = "none" | StrokeWeight
+const TEXT_BOX_BORDER_OPTIONS: readonly SegmentOption<TextBoxBorder>[] = [
+  { value: "none", label: "No border", content: <ToneChip slash /> },
+  ...STROKE_OPTIONS,
 ]
 
 /** "A" set in one tone — the ink previewed on the thing it will colour. */
@@ -352,6 +359,14 @@ function SelectionEditor({ selected }: { selected: SquigNode[] }) {
   const variantControls = controls.filter((c) => c.type !== "text")
   const textControls = controls.filter((c) => c.type === "text")
 
+  const textBoxState = shared(texts.map((n) => !!n.boxed))
+  const textBoxBorder = shared(
+    texts.map((n): TextBoxBorder => (n.boxBorder === false ? "none" : normalizeStroke(n.boxStroke)))
+  )
+  const showTextBoxOptions = !textBoxState.mixed && textBoxState.value
+  const showTextBoxBorderOptions =
+    showTextBoxOptions && (textBoxBorder.mixed || textBoxBorder.value !== "none")
+
   /** Only worth printing a count when the section misses part of the selection. */
   const partial = (n: number) => (n === selected.length ? undefined : n)
 
@@ -485,6 +500,84 @@ function SelectionEditor({ selected }: { selected: SquigNode[] }) {
               }
             />
           </Row>
+
+          {/* Box is a treatment on this text node, not another layer. Keeping
+              the whole group last means revealing it grows into the bottom of
+              the section instead of pushing every familiar type control. */}
+          <div className="mt-1 flex flex-col gap-row border-t border-border/60 pt-3">
+            <Row spread label="Box">
+              <MixedSwitch
+                ariaLabel="Box"
+                shared={textBoxState}
+                onChange={(on) =>
+                  patch((n) =>
+                    n.type === "text" && !!n.boxed !== on ? (setTextBoxed(n, on) as Partial<SquigNode>) : null
+                  )
+                }
+              />
+            </Row>
+
+            {showTextBoxOptions ? (
+              <>
+                <Row label="Fill">
+                  <Segmented
+                    ariaLabel="Box fill"
+                    options={FILL_OPTIONS}
+                    shared={shared(texts.map((n) => normalizeFill(n.boxFill)))}
+                    onChange={(tone) =>
+                      patch((n) => (n.type === "text" ? ({ boxFill: tone } as Partial<SquigNode>) : null))
+                    }
+                  />
+                </Row>
+
+                <Row label="Border">
+                  <Segmented
+                    ariaLabel="Box border"
+                    options={TEXT_BOX_BORDER_OPTIONS}
+                    shared={textBoxBorder}
+                    onChange={(border) =>
+                      patch((n) => {
+                        if (n.type !== "text") return null
+                        if (border === "none") return { boxBorder: false } as Partial<SquigNode>
+                        return {
+                          boxBorder: undefined,
+                          boxStroke: border === "regular" ? undefined : border,
+                        } as Partial<SquigNode>
+                      })
+                    }
+                  />
+                </Row>
+
+                {showTextBoxBorderOptions ? (
+                  <>
+                    <Row label="Border ink">
+                      <Segmented
+                        ariaLabel="Box border ink"
+                        options={LINE_INK_OPTIONS}
+                        shared={shared(texts.map((n) => normalizeInk(n.boxInk)))}
+                        onChange={(tone) =>
+                          patch((n) =>
+                            n.type === "text"
+                              ? ({ boxInk: tone === "ink" ? undefined : tone } as Partial<SquigNode>)
+                              : null
+                          )
+                        }
+                      />
+                    </Row>
+                    <Row spread label="Dashed">
+                      <MixedSwitch
+                        ariaLabel="Dashed box border"
+                        shared={shared(texts.map((n) => !!n.boxDashed))}
+                        onChange={(on) =>
+                          patch((n) => (n.type === "text" ? ({ boxDashed: on || undefined } as Partial<SquigNode>) : null))
+                        }
+                      />
+                    </Row>
+                  </>
+                ) : null}
+              </>
+            ) : null}
+          </div>
         </PanelSection>
       )}
 
