@@ -187,6 +187,9 @@ export function primsToPaths(
         case "line":
           paths.push(...drawableToPaths(gen.line(p.x1, p.y1, p.x2, p.y2, primOptions(p, s)), dash))
           break
+        case "curve":
+          paths.push(...drawableToPaths(gen.path(`M ${p.x1} ${p.y1} Q ${p.cx} ${p.cy} ${p.x2} ${p.y2}`, primOptions(p, s)), dash))
+          break
         case "poly":
           if (p.close) paths.push(...drawableToPaths(gen.polygon(p.pts, primOptions(p, s)), dash))
           else paths.push(...drawableToPaths(gen.linearPath(p.pts, primOptions(p, s)), dash))
@@ -332,7 +335,7 @@ export const NodeSketch = memo(function NodeSketch({
       case "draw":
         return `d:${node.points.length}:${node.w}:${node.h}:${flip}:${node.points[0]?.join()}:${node.points.at(-1)?.join()}:${pen}`
       case "arrow":
-        return `a:${node.w}:${node.h}:${flip}:${node.head}:${node.points.flat().join()}:${pen}`
+        return `a:${node.w}:${node.h}:${flip}:${node.head}:${node.points.flat().join()}:${node.anchors?.join() ?? ""}:${node.lineStyle ?? ""}:${node.elbowAxis ?? ""}:${node.elbowOffset?.join() ?? ""}:${node.curveBend?.join() ?? ""}:${pen}`
       case "text":
         // w and align place the anchor, so a resize or a realignment is a
         // different set of marks even when the words haven't changed

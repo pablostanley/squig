@@ -206,6 +206,8 @@ export function scaleNodes(
       patch.points = n.points.map(([px, py]) => [px * sx, py * sy] as [number, number])
     } else if (n.type === "arrow") {
       patch.points = n.points.map(([px, py]) => [px * sx, py * sy]) as [[number, number], [number, number]]
+      if (n.elbowOffset) patch.elbowOffset = [n.elbowOffset[0] * sx, n.elbowOffset[1] * sy]
+      if (n.curveBend) patch.curveBend = [n.curveBend[0] * sx, n.curveBend[1] * sy]
     } else if (n.type === "text") {
       // the renderer lays every baseline out in multiples of the type size, so
       // the type has to follow the vertical scale or the box and the words

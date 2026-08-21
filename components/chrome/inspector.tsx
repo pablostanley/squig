@@ -15,7 +15,7 @@
 // ---------------------------------------------------------------------------
 
 import { useSquig } from "@/lib/store"
-import type { ArrowNode, ComponentNode, FillTone, ImageNode, InkTone, ShapeNode, SquigNode, StrokeWeight, TextNode } from "@/lib/types"
+import type { ArrowNode, ComponentNode, FillTone, ImageNode, InkTone, LineStyle, ShapeNode, SquigNode, StrokeWeight, TextNode } from "@/lib/types"
 import { normalizeFill, normalizeInk, normalizeStroke } from "@/lib/types"
 import { isCropped, trueShapePatch } from "@/lib/canvas/crop"
 import { getDef } from "@/lib/library/registry"
@@ -47,6 +47,7 @@ import {
 import { kbd } from "@/lib/shortcuts"
 import { InkPicker } from "./ink-picker"
 import { bgOf, paletteOf, PAPER_SHADES, type FontMode, type PaperShade } from "@/lib/theme"
+import { LineStyleSegments } from "./line-style-controls"
 
 // ---------------------------------------------------------------------------
 // Option sets. Declared out here so they aren't rebuilt on every keystroke.
@@ -174,7 +175,9 @@ export function Inspector() {
       ? `${selected.length} selected`
       : selected[0].type === "component"
         ? (getDef((selected[0] as ComponentNode).kind)?.name ?? (selected[0] as ComponentNode).kind)
-        : selected[0].type
+        : selected[0].type === "arrow" && !selected[0].head
+          ? "line"
+          : selected[0].type
 
   const subtitle = selected.length > 1 ? selectionSummary(selected) : undefined
 
@@ -675,7 +678,19 @@ function SelectionEditor({ selected }: { selected: SquigNode[] }) {
 
       {/* --- contextual: arrows ------------------------------------------ */}
       {arrows.length > 0 && (
-        <PanelSection id="arrow" title="Arrow" count={partial(arrows.length)}>
+        <PanelSection id="arrow" title="Line" count={partial(arrows.length)}>
+          <Row label="Path">
+            <LineStyleSegments
+              arrows={arrows}
+              onChange={(style: LineStyle) =>
+                patch((n) =>
+                  n.type === "arrow"
+                    ? ({ lineStyle: style === "straight" ? undefined : style } as Partial<SquigNode>)
+                    : null
+                )
+              }
+            />
+          </Row>
           <Row spread label="Head">
             <MixedSwitch
               ariaLabel="Arrowhead"

@@ -32,6 +32,7 @@ import { unionBounds } from "./selection"
 import { useSquig } from "./store"
 import { paletteOf, type Palette } from "./theme"
 import type { SquigNode } from "./types"
+import { nodeVisualBounds } from "./canvas/line-routing"
 
 /** breathing room around the art, in world units — rough strokes overshoot */
 const PAD = 12
@@ -315,7 +316,10 @@ interface Drawing {
 
 /** Draw a set of nodes, on the current theme's paper. */
 async function draw(list: SquigNode[]): Promise<Drawing> {
-  const b = unionBounds(list)
+  // Routed connectors can bow or dogleg outside the endpoint box stored on
+  // the node. Measure those visible paths so exports never crop a manual bend.
+  const measured = list.map(nodeVisualBounds)
+  const b = unionBounds(measured)
   if (!b) throw new Error("nothing to draw")
 
   const s = useSquig.getState()

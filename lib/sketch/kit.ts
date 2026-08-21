@@ -79,6 +79,7 @@ export type Prim =
   | ({ t: "rect"; x: number; y: number; w: number; h: number; r?: number } & { o?: PrimOpts })
   | ({ t: "ellipse"; x: number; y: number; w: number; h: number } & { o?: PrimOpts })
   | ({ t: "line"; x1: number; y1: number; x2: number; y2: number } & { o?: PrimOpts })
+  | ({ t: "curve"; x1: number; y1: number; cx: number; cy: number; x2: number; y2: number } & { o?: PrimOpts })
   | ({ t: "poly"; pts: [number, number][]; close?: boolean } & { o?: PrimOpts })
   | {
       t: "text"
@@ -158,6 +159,8 @@ export function place(prims: Prim[], dx: number, dy: number): Prim[] {
         return { ...p, x: p.x + dx, y: p.y + dy }
       case "line":
         return { ...p, x1: p.x1 + dx, y1: p.y1 + dy, x2: p.x2 + dx, y2: p.y2 + dy }
+      case "curve":
+        return { ...p, x1: p.x1 + dx, y1: p.y1 + dy, cx: p.cx + dx, cy: p.cy + dy, x2: p.x2 + dx, y2: p.y2 + dy }
       case "poly":
         return { ...p, pts: p.pts.map(([px, py]) => [px + dx, py + dy] as [number, number]) }
     }
@@ -189,6 +192,8 @@ export function mirrorPrims(prims: Prim[], w: number, h: number, fx: boolean, fy
         return { ...p, x: fx ? w - p.x - p.size : p.x, y: fy ? h - p.y - p.size : p.y }
       case "line":
         return { ...p, x1: mx(p.x1), y1: my(p.y1), x2: mx(p.x2), y2: my(p.y2) }
+      case "curve":
+        return { ...p, x1: mx(p.x1), y1: my(p.y1), cx: mx(p.cx), cy: my(p.cy), x2: mx(p.x2), y2: my(p.y2) }
       case "poly":
         return { ...p, pts: p.pts.map(([px, py]) => [mx(px), my(py)] as [number, number]) }
       case "text": {

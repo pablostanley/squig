@@ -11,7 +11,7 @@
 import { useCallback, useState } from "react"
 
 import { useSquig } from "@/lib/store"
-import type { SquigNode, Viewport, ComponentNode, ShapeNode, ArrowNode, TextNode, FillTone } from "@/lib/types"
+import type { SquigNode, Viewport, ComponentNode, ShapeNode, ArrowNode, TextNode, FillTone, LineStyle } from "@/lib/types"
 import { normalizeFill } from "@/lib/types"
 import { fitTextBox } from "@/lib/canvas/text-reflow"
 import { shared, sharedControls, sharedNumber, unionBounds } from "@/lib/selection"
@@ -21,6 +21,8 @@ import { AlignRow } from "@/components/chrome/align-row"
 import { TextAlignMenu, TextStyleToggles } from "@/components/chrome/text-controls"
 import { Segmented, type SegmentOption } from "@/components/ui/segmented"
 import { Panel } from "@/components/ui/panel"
+import { LineStyleMenu } from "@/components/chrome/line-style-controls"
+import { nodeVisualBounds } from "@/lib/canvas/line-routing"
 
 /** Fill tones, as chips — the same four the inspector offers, drawn smaller. */
 const FILL_OPTIONS: readonly SegmentOption<FillTone>[] = (
@@ -81,7 +83,9 @@ export function ContextRow({
     return () => ro.disconnect()
   }, [])
 
-  const bounds = unionBounds(selectedNodes)
+  // Curves and outside-routed elbows can extend past their endpoint box. The
+  // toolbar belongs above the visible path, not on top of its highest bend.
+  const bounds = unionBounds(selectedNodes.map(nodeVisualBounds))
   if (!enabled || uiHidden || editingId || busy || !bounds) return null
 
   const boxLeft = bounds.x * viewport.zoom + viewport.x
@@ -183,6 +187,17 @@ export function ContextRow({
 
       {showHead && (
         <div className="flex items-center gap-2">
+          <LineStyleMenu
+            arrows={arrows}
+            onChange={(style: LineStyle) =>
+              patch((n) =>
+                n.type === "arrow"
+                  ? ({ lineStyle: style === "straight" ? undefined : style } as Partial<SquigNode>)
+                  : null
+              )
+            }
+          />
+          <span className="h-4 w-px bg-border" />
           <span className="text-label text-muted-foreground">Arrowhead</span>
           <MixedSwitch
             ariaLabel="Arrowhead"

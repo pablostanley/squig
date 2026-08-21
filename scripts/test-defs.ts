@@ -46,6 +46,9 @@ function coords(p: Prim): [string, number][] {
     case "line":
       add(["x1", p.x1], ["y1", p.y1], ["x2", p.x2], ["y2", p.y2])
       break
+    case "curve":
+      add(["x1", p.x1], ["y1", p.y1], ["cx", p.cx], ["cy", p.cy], ["x2", p.x2], ["y2", p.y2])
+      break
     case "poly":
       p.pts.forEach(([x, y], i) => add([`pts[${i}].x`, x], [`pts[${i}].y`, y]))
       break
@@ -78,6 +81,14 @@ function span(p: Prim): { minX: number; minY: number; maxX: number; maxY: number
         minY: Math.min(p.y1, p.y2),
         maxX: Math.max(p.x1, p.x2),
         maxY: Math.max(p.y1, p.y2),
+      }
+    case "curve":
+      // The control-point box is a safe superset of a quadratic's bounds.
+      return {
+        minX: Math.min(p.x1, p.cx, p.x2),
+        minY: Math.min(p.y1, p.cy, p.y2),
+        maxX: Math.max(p.x1, p.cx, p.x2),
+        maxY: Math.max(p.y1, p.cy, p.y2),
       }
     case "poly": {
       const xs = p.pts.map(([x]) => x)

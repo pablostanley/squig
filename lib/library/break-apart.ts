@@ -69,6 +69,29 @@ export function breakApart(node: ComponentNode): SquigNode[] {
         })
         break
       }
+      case "curve": {
+        const x = Math.min(p.x1, p.x2)
+        const y = Math.min(p.y1, p.y2)
+        const w = Math.abs(p.x2 - p.x1)
+        const h = Math.abs(p.y2 - p.y1)
+        const midX = (p.x1 + p.x2) / 2
+        const midY = (p.y1 + p.y2) / 2
+        // Convert the quadratic control point to the on-curve midpoint Squig
+        // exposes as its handle: (start + 2*control + end) / 4.
+        const handleX = (p.x1 + 2 * p.cx + p.x2) / 4
+        const handleY = (p.y1 + 2 * p.cy + p.y2) / 4
+        out.push({
+          id: nanoid(8), type: "arrow", head: false, lineStyle: "curved",
+          x: node.x + x, y: node.y + y, w: Math.max(w, 1), h: Math.max(h, 1),
+          points: [
+            [p.x1 - x, p.y1 - y],
+            [p.x2 - x, p.y2 - y],
+          ],
+          curveBend: [handleX - midX, handleY - midY],
+          seed: seed(),
+        })
+        break
+      }
       case "poly": {
         const xs = p.pts.map(([px]) => px)
         const ys = p.pts.map(([, py]) => py)

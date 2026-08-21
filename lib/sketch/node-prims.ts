@@ -9,6 +9,7 @@
 import { HAND, mirrorPrims, type Prim, type PrimOpts } from "./kit"
 import { textAnchorX, textBaseline, textBoxPadding, textContentWidth } from "./text-layout"
 import { wrapText } from "@/lib/canvas/text-metrics"
+import { localArrowRoute, localRouteEndTangent } from "@/lib/canvas/line-routing"
 import {
   normalizeFill,
   normalizeInk,
@@ -83,11 +84,18 @@ export function basePrims(node: SquigNode): Prim[] {
       // price of not having to trust that. scripts/test-history.ts says so.
       return [{ t: "poly", pts: [...node.points], o: outline(node, 1.9, { roughness: 0.2 }) }]
     case "arrow": {
-      const [[x1, y1], [x2, y2]] = node.points
+      const route = localArrowRoute(node)
+      const end = route.kind === "curve" ? route.end : route.points[route.points.length - 1]
+      const [x2, y2] = end
       const o = outline(node, 1.6)
-      const out: Prim[] = [{ t: "line", x1, y1, x2, y2, o }]
+      const out: Prim[] = route.kind === "curve"
+        ? [{ t: "curve", x1: route.start[0], y1: route.start[1], cx: route.control[0], cy: route.control[1], x2, y2, o }]
+        : route.style === "elbow"
+          ? [{ t: "poly", pts: route.points, o }]
+          : [{ t: "line", x1: route.points[0][0], y1: route.points[0][1], x2, y2, o }]
       if (node.head) {
-        const a = Math.atan2(y2 - y1, x2 - x1)
+        const [tx, ty] = localRouteEndTangent(route)
+        const a = Math.atan2(ty, tx)
         const L = 12
         out.push({
           t: "poly",

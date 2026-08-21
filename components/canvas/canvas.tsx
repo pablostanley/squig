@@ -54,6 +54,7 @@ import { inViewBox, visibleBox } from "@/lib/canvas/cull"
 import { ContextRow } from "./context-row"
 import { EmptyCanvas } from "./empty-canvas"
 import { TextEditOverlay } from "./text-edit-overlay"
+import { nodeVisualBounds, worldRouteHandle, type RouteHandle } from "@/lib/canvas/line-routing"
 
 /**
  * A gesture's zoom floor is not a constant: ⇧1 is allowed below MIN_ZOOM to
@@ -199,6 +200,26 @@ type Gesture =
       dirty: boolean
     }
   | {
+      /** The bend/midpoint of one routed connector. */
+      kind: "route"
+      wx: number
+      wy: number
+      sx: number
+      sy: number
+      pointerId: number
+      exceeded: boolean
+      id: string
+      style: "elbow" | "curved"
+      /** Elbows move on one axis and may switch a collapsed straight run into
+       *  a dogleg on that axis. Curves use both axes. */
+      axis?: "x" | "y"
+      routeAxis?: "x" | "y"
+      origOffset: [number, number]
+      flipX: boolean
+      flipY: boolean
+      dirty: boolean
+    }
+  | {
       kind: "resize"
       handle: Handle
       wx: number
@@ -247,6 +268,7 @@ const canAutoPan = (g: Gesture | null) =>
   (g.kind === "marquee" ||
     g.kind === "move" ||
     g.kind === "resize" ||
+    g.kind === "route" ||
     g.kind === "create" ||
     // the box you want to attach to is often the one just off the edge
     g.kind === "endpoint")
@@ -645,9 +667,9 @@ export function Canvas() {
         }
         const bind = bindOf(g.orig)
         const other = g.end === 0 ? bind[1] : bind[0]
-        // whatever the far end is already holding is off the table: a straight
-        // line from a box back to itself has nowhere to go, and squig has no
-        // curve to draw instead
+        // Whatever the far end is already holding is off the table. Self-loop
+        // attachment needs its own anchor semantics; a route style alone does
+        // not make two ends on one box unambiguous.
         const target = snapsToObjects(g.orig)
           ? anchorTargetAt(s.nodes, s.order, wx, wy, v.zoom, [g.id, other])
           : null
@@ -662,6 +684,29 @@ export function Canvas() {
         s.updateNodes({
           [g.id]: { ...endsPatch(ends[0], ends[1]), ...withTarget(g.orig, g.end, target) } as Partial<SquigNode>,
         })
+        return
+      }
+
+      if (g.kind === "route") {
+        if (!g.dirty) {
+          if (!g.exceeded) return
+          s.checkpoint()
+          g.dirty = true
+        }
+        const dx = (wx - g.wx) * (g.flipX ? -1 : 1)
+        const dy = (wy - g.wy) * (g.flipY ? -1 : 1)
+        if (g.style === "curved") {
+          s.updateNodes({
+            [g.id]: { curveBend: [g.origOffset[0] + dx, g.origOffset[1] + dy] } as Partial<SquigNode>,
+          })
+        } else {
+          const offset: [number, number] = [...g.origOffset]
+          if (g.axis === "x") offset[0] += dx
+          else offset[1] += dy
+          s.updateNodes({
+            [g.id]: { elbowAxis: g.routeAxis, elbowOffset: offset } as Partial<SquigNode>,
+          })
+        }
         return
       }
 
@@ -1048,7 +1093,7 @@ export function Canvas() {
 
     if (g.kind === "marquee") {
       s.setSelection(g.base)
-    } else if ((g.kind === "move" || g.kind === "resize" || g.kind === "crop" || g.kind === "endpoint") && g.dirty) {
+    } else if ((g.kind === "move" || g.kind === "resize" || g.kind === "crop" || g.kind === "endpoint" || g.kind === "route") && g.dirty) {
       // Escape undoes this drag, not the whole crop — you stay in the mode
       s.revertToCheckpoint()
     } else if (g.kind === "create") {
@@ -1178,7 +1223,7 @@ export function Canvas() {
       e.preventDefault()
       const s = st()
       const sel = s.selection.map((id) => s.nodes[id]).filter(Boolean) as SquigNode[]
-      const b = unionBounds(sel)
+      const b = unionBounds(sel.map(nodeVisualBounds))
       if (!b) return
 
       // the second press on the same handle, soon enough after the first
@@ -1257,6 +1302,40 @@ export function Canvas() {
           id: n.id,
           end,
           orig: structuredClone(n),
+          dirty: false,
+        },
+        e
+      )
+    },
+    [st, beginGesture, toWorld]
+  )
+
+  /** Pick up the active connector's elbow segment or curved midpoint. */
+  const startRoute = useCallback(
+    (handle: RouteHandle, e: React.PointerEvent) => {
+      e.stopPropagation()
+      e.preventDefault()
+      const s = st()
+      const n = s.selection.length === 1 ? s.nodes[s.selection[0]] : null
+      if (n?.type !== "arrow") return
+      modsRef.current = readMods(e)
+      const [wx, wy] = toWorld(e)
+      beginGesture(
+        {
+          kind: "route",
+          wx,
+          wy,
+          sx: e.clientX,
+          sy: e.clientY,
+          pointerId: e.pointerId,
+          exceeded: false,
+          id: n.id,
+          style: handle.kind,
+          axis: handle.kind === "elbow" ? handle.axis : undefined,
+          routeAxis: handle.kind === "elbow" ? handle.routeAxis : undefined,
+          origOffset: [...handle.offset],
+          flipX: !!n.flipX,
+          flipY: !!n.flipY,
           dirty: false,
         },
         e
@@ -1809,9 +1888,8 @@ export function Canvas() {
             e.preventDefault()
             s.toggleTextStyle("underline")
             return
-          // ⇧⌘L is Figma's lock, and nothing here wanted it: plain L is the
-          // line tool and ⇧L the arrow, both without a modifier. It only
-          // locks — unlocking is the right button's job, because by then
+          // ⇧⌘L is Figma's lock, while plain L activates the Arrow tool. It
+          // only locks — unlocking is the right button's job, because by then
           // there is nothing selected to unlock.
           case "KeyL":
             if (!e.shiftKey) return
@@ -1894,7 +1972,6 @@ export function Canvas() {
             s.flipSelected("y")
             return
           case "l":
-            s.setArrowHead(true)
             s.setTool("arrow")
             return
         }
@@ -2000,8 +2077,8 @@ export function Canvas() {
         case "o": s.setShapeKind("ellipse"); s.setTool("shape"); break
         case "p": s.setTool("draw"); break
         case "t": s.setTool("text"); break
-        case "l": s.setArrowHead(false); s.setTool("arrow"); break
-        case "a": s.setArrowHead(true); s.setTool("arrow"); break
+        case "l":
+        case "a": s.setTool("arrow"); break
         case "c": s.setPanel("components"); break
         case "b": s.setPanel("blocks"); break
         case "ArrowLeft":
@@ -2089,6 +2166,7 @@ export function Canvas() {
   // that happened to be stacked above it shouldn't sit in the middle of it
   const cropNode = cropTarget(nodes, selection, croppingId)
   const hoverNode = hover && !selection.includes(hover.id) && !cropNode ? nodes[hover.id] : null
+  const hoverBounds = hoverNode ? nodeVisualBounds(hoverNode) : null
   const bindNode = bindHint ? nodes[bindHint.id] : null
   /**
    * The world worth drawing. Recomputed on every pan and zoom, which is
@@ -2108,7 +2186,7 @@ export function Canvas() {
         ? (altHeld ? "copy" : "move")
         // a crop drag captures the pointer, so the cursor comes from here once
         // it leaves the handle it started on
-        : gestureKind === "crop" || gestureKind === "endpoint"
+        : gestureKind === "crop" || gestureKind === "endpoint" || gestureKind === "route"
           ? "move"
           : cropNode
             ? "default"
@@ -2169,7 +2247,7 @@ export function Canvas() {
             // off the glass, so no paths for it — except for the one being
             // edited, which the editor is standing over and whose runs the
             // renderer has to keep agreeing with
-            if (id !== editingId && !inViewBox(n, view)) return null
+            if (id !== editingId && !inViewBox(nodeVisualBounds(n), view)) return null
             return (
               <g key={id} transform={`translate(${n.x} ${n.y})`}>
                 <NodeSketch node={n} hiddenText={id === editingId ? editing?.hidden : undefined} />
@@ -2207,14 +2285,14 @@ export function Canvas() {
           of its feedback: enough to tell "held down" from "broken",
           gone the moment the pointer moves off, and never a badge that would
           print itself into a screenshot. */}
-      {hoverNode && !editingId && !gestureKind && (
+      {hoverNode && hoverBounds && !editingId && !gestureKind && (
         <div
           className="pointer-events-none absolute rounded-sm"
           style={{
-            left: hoverNode.x * v.zoom + v.x,
-            top: hoverNode.y * v.zoom + v.y,
-            width: hoverNode.w * v.zoom,
-            height: hoverNode.h * v.zoom,
+            left: hoverBounds.x * v.zoom + v.x,
+            top: hoverBounds.y * v.zoom + v.y,
+            width: hoverBounds.w * v.zoom,
+            height: hoverBounds.h * v.zoom,
             // dashes lay down less ink than a solid rule, so the locked one is
             // mixed stronger to land at the same weight on the page — the dash
             // is meant to be the difference, not the dimness
@@ -2241,6 +2319,7 @@ export function Canvas() {
           viewport={v}
           onStartResize={startResize}
           onStartEndpoint={startEndpoint}
+          onStartRoute={startRoute}
           editing={!!editingId && selection.includes(editingId)}
           gestureKind={gestureKind}
         />
@@ -2596,11 +2675,104 @@ function ArrowEnds({
   )
 }
 
+/** The one route handle a selected elbow or curve exposes. */
+function ConnectorRouteHandle({
+  node,
+  viewport,
+  onStart,
+  show,
+}: {
+  node: ArrowNode
+  viewport: { x: number; y: number; zoom: number }
+  onStart: (handle: RouteHandle, e: React.PointerEvent) => void
+  show: boolean
+}) {
+  const handle = worldRouteHandle(node)
+  if (!handle) return null
+  const v = viewport
+  const dot = 9
+  const reach = dot / 2 + GRAB_OUT
+  const hx = handle.point[0] * v.zoom + v.x
+  const hy = handle.point[1] * v.zoom + v.y
+
+  if (handle.kind === "curved") {
+    const [start, end] = arrowEnds(node)
+    const midX = ((start[0] + end[0]) / 2) * v.zoom + v.x
+    const midY = ((start[1] + end[1]) / 2) * v.zoom + v.y
+    return (
+      <>
+        <svg className="pointer-events-none absolute inset-0 h-full w-full">
+          <line
+            x1={midX}
+            y1={midY}
+            x2={hx}
+            y2={hy}
+            stroke="var(--sq-select)"
+            strokeWidth={1}
+            strokeDasharray="3 3"
+            opacity={0.55}
+          />
+        </svg>
+        <div
+          className={`absolute ${show ? "pointer-events-auto" : "pointer-events-none"}`}
+          style={{ left: hx - reach, top: hy - reach, width: reach * 2, height: reach * 2, cursor: "move" }}
+          onPointerDown={show ? (e) => onStart(handle, e) : undefined}
+        >
+          <div
+            className="pointer-events-none absolute rotate-45 rounded-[2px] bg-white"
+            style={{ left: GRAB_OUT, top: GRAB_OUT, width: dot, height: dot, border: "2px solid var(--sq-select)" }}
+          />
+        </div>
+      </>
+    )
+  }
+
+  const [[ax, ay], [bx, by]] = handle.segment
+  const x1 = ax * v.zoom + v.x
+  const y1 = ay * v.zoom + v.y
+  const x2 = bx * v.zoom + v.x
+  const y2 = by * v.zoom + v.y
+  const vertical = handle.axis === "x"
+  const pad = reach
+  const left = vertical ? x1 - pad : Math.min(x1, x2) - pad
+  const top = vertical ? Math.min(y1, y2) - pad : y1 - pad
+  const width = vertical ? pad * 2 : Math.abs(x2 - x1) + pad * 2
+  const height = vertical ? Math.abs(y2 - y1) + pad * 2 : pad * 2
+
+  return (
+    <div
+      className={`absolute ${show ? "pointer-events-auto" : "pointer-events-none"}`}
+      style={{ left, top, width, height, cursor: vertical ? "ew-resize" : "ns-resize" }}
+      onPointerDown={show ? (e) => onStart(handle, e) : undefined}
+    >
+      <div
+        className="pointer-events-none absolute bg-[var(--sq-select)] opacity-[0.55]"
+        style={
+          vertical
+            ? { left: pad - 0.5, top: pad, width: 1, height: Math.max(1, Math.abs(y2 - y1)) }
+            : { left: pad, top: pad - 0.5, width: Math.max(1, Math.abs(x2 - x1)), height: 1 }
+        }
+      />
+      <div
+        className="pointer-events-none absolute rotate-45 rounded-[2px] bg-white"
+        style={{
+          left: hx - left - dot / 2,
+          top: hy - top - dot / 2,
+          width: dot,
+          height: dot,
+          border: "2px solid var(--sq-select)",
+        }}
+      />
+    </div>
+  )
+}
+
 function SelectionOverlay({
   selectedNodes,
   viewport,
   onStartResize,
   onStartEndpoint,
+  onStartRoute,
   editing,
   gestureKind,
 }: {
@@ -2608,10 +2780,12 @@ function SelectionOverlay({
   viewport: { x: number; y: number; zoom: number }
   onStartResize: (h: Handle, e: React.PointerEvent) => void
   onStartEndpoint: (end: 0 | 1, e: React.PointerEvent) => void
+  onStartRoute: (handle: RouteHandle, e: React.PointerEvent) => void
   editing: boolean
   gestureKind: Gesture["kind"] | null
 }) {
-  const b = unionBounds(selectedNodes)
+  const visualBounds = selectedNodes.map(nodeVisualBounds)
+  const b = unionBounds(visualBounds)
   // the text editor draws its own dashed box; two boxes on one node is noise.
   // Only when it's the *selected* node being edited, mind: a picture dropped in
   // while the caret is still blinking somewhere else is selected and has every
@@ -2627,13 +2801,21 @@ function SelectionOverlay({
     selectedNodes.length === 1 && selectedNodes[0].type === "arrow" ? (selectedNodes[0] as ArrowNode) : null
   if (soloArrow && gestureKind !== "marquee") {
     return (
-      <ArrowEnds
-        node={soloArrow}
-        viewport={viewport}
-        onStart={onStartEndpoint}
-        // they stay up through their own drag, the way the resize handles do
-        show={!gestureKind || gestureKind === "endpoint"}
-      />
+      <>
+        <ConnectorRouteHandle
+          node={soloArrow}
+          viewport={viewport}
+          onStart={onStartRoute}
+          show={!gestureKind || gestureKind === "route"}
+        />
+        <ArrowEnds
+          node={soloArrow}
+          viewport={viewport}
+          onStart={onStartEndpoint}
+          // they stay up through their own drag, the way the resize handles do
+          show={!gestureKind || gestureKind === "endpoint"}
+        />
+      </>
     )
   }
 
@@ -2673,15 +2855,15 @@ function SelectionOverlay({
     <>
       {/* each member gets a hairline, so you can see exactly what's in the set */}
       {(multi || marqueeing) &&
-        selectedNodes.map((n) => (
+        selectedNodes.map((n, i) => (
           <div
             key={n.id}
             className="pointer-events-none absolute rounded-sm"
             style={{
-              left: n.x * v.zoom + v.x,
-              top: n.y * v.zoom + v.y,
-              width: n.w * v.zoom,
-              height: n.h * v.zoom,
+              left: visualBounds[i].x * v.zoom + v.x,
+              top: visualBounds[i].y * v.zoom + v.y,
+              width: visualBounds[i].w * v.zoom,
+              height: visualBounds[i].h * v.zoom,
               border: "1px solid color-mix(in srgb, var(--sq-select) 50%, transparent)",
             }}
           />

@@ -98,6 +98,16 @@ function pic(src: string): ImageNode {
   check("a node with no seed still gets one", typeof validNode({ ...rect("a"), seed: undefined })?.seed === "number")
 
   check("an arrow needs both ends", validNode({ id: "a", type: "arrow", x: 0, y: 0, w: 10, h: 10, seed: 1, head: true, points: [[0, 0]] }) === null)
+  const routed = validNode({
+    id: "a", type: "arrow", x: 0, y: 0, w: 10, h: 10, seed: 1, head: true,
+    points: [[0, 0], [10, 10]], lineStyle: "curved", curveBend: [2, 3],
+  })
+  check("a routed arrow keeps its style and finite bend", routed?.type === "arrow" && routed.lineStyle === "curved" && routed.curveBend?.[1] === 3)
+  const unsafeRoute = validNode({
+    id: "a", type: "arrow", x: 0, y: 0, w: 10, h: 10, seed: 1, head: true,
+    points: [[0, 0], [10, 10]], lineStyle: "spiral", curveBend: [NaN, 3],
+  })
+  check("unknown routes and unsafe bend geometry fall back safely", unsafeRoute?.type === "arrow" && !unsafeRoute.lineStyle && !unsafeRoute.curveBend)
   check("a scribble needs points", validNode({ id: "a", type: "draw", x: 0, y: 0, w: 10, h: 10, seed: 1, points: [] }) === null)
 
   check("a picture may carry its own pixels", validNode(pic("data:image/png;base64,AAA")) !== null)

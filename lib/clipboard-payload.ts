@@ -16,7 +16,7 @@
 // ---------------------------------------------------------------------------
 
 import type { SquigNode, TextNode } from "./types"
-import { normalizeArrowAnchors, normalizeBind, normalizeCrop } from "./types"
+import { normalizeArrowAnchors, normalizeBind, normalizeCrop, normalizeLineStyle } from "./types"
 
 const PAYLOAD_VERSION = 1
 /** the attribute the HTML carrier hides the payload in */
@@ -94,8 +94,12 @@ function validPoints(v: unknown): v is [number, number][] {
   return (
     Array.isArray(v) &&
     v.length > 0 &&
-    v.every((p) => Array.isArray(p) && p.length === 2 && num(p[0]) && num(p[1]))
+    v.every(validPoint)
   )
+}
+
+function validPoint(v: unknown): v is [number, number] {
+  return Array.isArray(v) && v.length === 2 && num(v[0]) && num(v[1])
 }
 
 /**
@@ -130,6 +134,13 @@ export function validNode(v: unknown): SquigNode | null {
       n.bind = normalizeBind(n.bind)
       n.anchors = normalizeArrowAnchors(n.anchors, n.bind)
       n.snap = n.snap === false ? false : undefined
+      {
+        const style = normalizeLineStyle(n.lineStyle)
+        n.lineStyle = style === "straight" ? undefined : style
+      }
+      n.elbowAxis = n.elbowAxis === "x" || n.elbowAxis === "y" ? n.elbowAxis : undefined
+      n.elbowOffset = validPoint(n.elbowOffset) ? n.elbowOffset : undefined
+      n.curveBend = validPoint(n.curveBend) ? n.curveBend : undefined
       // A free line cannot carry a live relationship in through a file or the
       // clipboard. Keeping both spellings would make the inspector lie.
       if (n.snap === false) {

@@ -13,8 +13,8 @@
 // nothing downstream — drag, resize, nudge, align, undo, paste — has to know
 // bindings exist.
 //
-// Deliberately not here: elbows, waypoints, curves, self-loops. A straight
-// line between two boxes is the whole vocabulary.
+// Route shape lives in line-routing.ts. This file owns only the two endpoints
+// and what they are attached to, so changing path style cannot loosen a bind.
 // ---------------------------------------------------------------------------
 
 import type { ArrowAnchor, ArrowAnchors, ArrowBind, ArrowNode, SquigNode } from "../types"

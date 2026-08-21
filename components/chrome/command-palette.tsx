@@ -32,7 +32,6 @@ import {
   PencilSimpleIcon,
   TextTIcon,
   ArrowUpRightIcon,
-  LineSegmentIcon,
   ArrowUUpLeftIcon,
   ArrowUUpRightIcon,
   CopyIcon,
@@ -155,8 +154,7 @@ function Palette() {
       { id: "ellipse", label: "Ellipse", hint: kbd("o"), section: "Tools", keywords: "circle oval shape", icon: CircleIcon, run: () => { st().setShapeKind("ellipse"); st().setTool("shape") } },
       { id: "draw", label: "Draw", hint: kbd("p"), section: "Tools", keywords: "pencil pen freehand scribble", icon: PencilSimpleIcon, run: () => st().setTool("draw") },
       { id: "text", label: "Text", hint: kbd("t"), section: "Tools", keywords: "type label", icon: TextTIcon, run: () => st().setTool("text") },
-      { id: "line", label: "Line", hint: kbd("l"), section: "Tools", keywords: "rule divider stroke", icon: LineSegmentIcon, run: () => { st().setArrowHead(false); st().setTool("arrow") } },
-      { id: "arrow", label: "Arrow", hint: kbd("shift+l"), section: "Tools", keywords: "line connector point", icon: ArrowUpRightIcon, run: () => { st().setArrowHead(true); st().setTool("arrow") } },
+      { id: "arrow", label: "Arrow", hint: kbd("l"), section: "Tools", keywords: "line connector point rule divider stroke", icon: ArrowUpRightIcon, run: () => st().setTool("arrow") },
 
       { id: "undo", label: "Undo", hint: kbd("mod+z"), section: "Edit", icon: ArrowUUpLeftIcon, run: () => st().undo() },
       { id: "redo", label: "Redo", hint: kbd("mod+shift+z"), section: "Edit", icon: ArrowUUpRightIcon, run: () => st().redo() },

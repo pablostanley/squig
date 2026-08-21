@@ -136,6 +136,7 @@ function nodeLabel(n: SquigNode): string {
   if (n.type === "component") return getDef(n.kind)?.name.toLowerCase() ?? n.kind
   if (n.type === "shape") return n.shape
   if (n.type === "draw") return "scribble"
+  if (n.type === "arrow" && !n.head) return "line"
   return n.type
 }
 
@@ -202,13 +203,13 @@ export interface Bounds {
   h: number
 }
 
-export function unionBounds(nodes: readonly SquigNode[]): Bounds | null {
-  if (!nodes.length) return null
+export function unionBounds(boxes: readonly Bounds[]): Bounds | null {
+  if (!boxes.length) return null
   let minX = Infinity
   let minY = Infinity
   let maxX = -Infinity
   let maxY = -Infinity
-  for (const n of nodes) {
+  for (const n of boxes) {
     if (n.x < minX) minX = n.x
     if (n.y < minY) minY = n.y
     if (n.x + n.w > maxX) maxX = n.x + n.w

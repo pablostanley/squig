@@ -54,7 +54,7 @@ Figma's, so your hands already know it. `?` opens the full list in the app.
 
 | | |
 |---|---|
-| `V` `R` `O` `P` `T` `L` `⇧L` | select, rectangle, ellipse, draw, text, line, arrow |
+| `V` `R` `O` `P` `T` `L` | select, rectangle, ellipse, draw, text, arrow |
 | `C` / `B` | components / blocks panel |
 | `⌘K` / `⌘/` | search everything (`⌘K` over text links it instead) |
 | `⌘Z` / `⇧⌘Z` | undo / redo |

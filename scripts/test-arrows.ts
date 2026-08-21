@@ -24,6 +24,7 @@ import {
   withTarget,
 } from "../lib/canvas/arrow-binding.ts"
 import { normalizeArrowAnchors, normalizeBind, type ArrowNode, type ShapeNode, type SquigNode } from "../lib/types.ts"
+import { arrowRouteBounds, localArrowRoute, nodeVisualBounds, sampleArrowRoute, worldRouteHandle } from "../lib/canvas/line-routing.ts"
 
 let passed = 0
 const failures: string[] = []
@@ -81,6 +82,49 @@ function arrowBetween(a: Point, b: Point, over: Partial<ArrowNode>): ArrowNode {
 
 function doc(list: SquigNode[]): Record<string, SquigNode> {
   return Object.fromEntries(list.map((n) => [n.id, n]))
+}
+
+// -- routed line geometry ---------------------------------------------------
+
+{
+  const elbow = arrow({ lineStyle: "elbow", h: 80, points: [[0, 0], [100, 80]] })
+  const route = localArrowRoute(elbow)
+  check("elbow: route is a polyline", route.kind === "polyline" && route.style === "elbow")
+  if (route.kind === "polyline") {
+    check(
+      "elbow: every run is orthogonal",
+      route.points.slice(1).every((p, i) => close(p[0], route.points[i][0]) || close(p[1], route.points[i][1]))
+    )
+    pointIs("elbow: starts at the connector tail", route.points[0], [0, 0])
+    pointIs("elbow: ends at the connector head", route.points[route.points.length - 1], [100, 80])
+  }
+
+  const outside = localArrowRoute(arrow({ lineStyle: "elbow", h: 80, points: [[0, 0], [100, 80]], anchors: ["right", "right"] }))
+  check(
+    "elbow: same-facing anchors route outside both ends",
+    outside.kind === "polyline" && outside.points.some(([x]) => x > 100)
+  )
+
+  const flat = worldRouteHandle(arrow({ lineStyle: "elbow" }))
+  check("elbow: a collapsed horizontal route still offers a vertical dogleg handle", flat?.kind === "elbow" && flat.axis === "y")
+
+  const curved = arrow({ lineStyle: "curved" })
+  const curve = localArrowRoute(curved)
+  const sampled = sampleArrowRoute(curved, 24)
+  check("curve: automatic route visibly bows", curve.kind === "curve" && !close(curve.handle.offset[1], 0))
+  if (curve.kind === "curve") pointIs("curve: handle sits on the curve", sampled[12], curve.handle.point)
+  check("curve: visible bounds include the automatic bow", arrowRouteBounds(curved).y < curved.y)
+
+  const bent = localArrowRoute(arrow({ lineStyle: "curved", curveBend: [12, 30] }))
+  check(
+    "curve: a manual midpoint is read relative to the endpoints",
+    bent.kind === "curve" && close(bent.handle.point[0], 62) && close(bent.handle.point[1], 30)
+  )
+
+  const deep = arrow({ lineStyle: "curved", curveBend: [83, 1000] })
+  const deepBounds = arrowRouteBounds(deep)
+  check("curve: exact bounds include an extreme manual midpoint", close(deepBounds.y + deepBounds.h, 1000))
+  check("visual bounds: routed arrows use their visible path", nodeVisualBounds(deep).h > deep.h)
 }
 
 // -- the ray, against a rectangle -------------------------------------------

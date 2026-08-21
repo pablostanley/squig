@@ -11,6 +11,7 @@
 import { normalizeFill, type SquigNode } from "../types"
 import type { Bounds } from "../selection"
 import { mirrorPoint } from "./transform"
+import { arrowRouteBounds, sampleArrowRoute } from "./line-routing"
 
 /**
  * How far off a stroke the pointer may be and still count, in screen px.
@@ -46,6 +47,7 @@ function inBox(x: number, y: number, b: Bounds, tol: number): boolean {
 }
 
 function boxOf(n: SquigNode): Bounds {
+  if (n.type === "arrow") return arrowRouteBounds(n)
   return { x: n.x, y: n.y, w: n.w, h: n.h }
 }
 
@@ -109,6 +111,7 @@ function segmentNearRect(ax: number, ay: number, bx: number, by: number, r: Boun
  */
 function polylineOf(n: SquigNode): [number, number][] | null {
   if (n.type !== "draw" && n.type !== "arrow") return null
+  if (n.type === "arrow") return sampleArrowRoute(n)
   return (n.points as [number, number][]).map(([px, py]) => mirrorPoint(n, n.x + px, n.y + py))
 }
 

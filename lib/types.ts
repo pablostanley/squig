@@ -165,6 +165,14 @@ export const ARROW_ANCHORS = ["top", "right", "bottom", "left", "center"] as con
 export type ArrowAnchor = (typeof ARROW_ANCHORS)[number]
 export type ArrowAnchors = [ArrowAnchor | null, ArrowAnchor | null]
 
+/** How the two endpoints of a connector are joined. Absent means straight. */
+export type LineStyle = "straight" | "elbow" | "curved"
+
+/** Documents predate routed connectors, so unknown values fall back safely. */
+export function normalizeLineStyle(v: unknown): LineStyle {
+  return v === "elbow" || v === "curved" ? v : "straight"
+}
+
 export interface ArrowNode extends BaseNode, Outlined {
   type: "arrow"
   /** [start, end] relative to node origin — components of w/h so they scale on resize */
@@ -180,6 +188,20 @@ export interface ArrowNode extends BaseNode, Outlined {
   anchors?: ArrowAnchors
   /** False makes this a free line. Absent is the default, auto-snapping state. */
   snap?: false
+  /** Absent is the original straight connector. */
+  lineStyle?: LineStyle
+  /**
+   * Once an elbow has been reshaped, keep its first/last run on this axis.
+   * Before that the route is inferred from the endpoints and their anchors.
+   */
+  elbowAxis?: "x" | "y"
+  /** Manual displacement from the automatically chosen elbow midpoint. */
+  elbowOffset?: [number, number]
+  /**
+   * The curve's draggable midpoint, stored as an offset from the midpoint of
+   * its endpoints. This makes a bend follow when connected boxes move.
+   */
+  curveBend?: [number, number]
 }
 
 /**
@@ -320,7 +342,7 @@ export interface Box {
   maxY: number
 }
 
-export function unionBox(nodes: SquigNode[]): Box | null {
+export function unionBox(nodes: readonly { x: number; y: number; w: number; h: number }[]): Box | null {
   if (!nodes.length) return null
   return {
     minX: Math.min(...nodes.map((n) => n.x)),
