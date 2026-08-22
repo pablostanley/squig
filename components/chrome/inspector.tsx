@@ -14,6 +14,8 @@
 // somewhere else.
 // ---------------------------------------------------------------------------
 
+import { useEffect } from "react"
+
 import { useSquig } from "@/lib/store"
 import type { ArrowNode, ComponentNode, FillTone, ImageNode, InkTone, LineStyle, ShapeNode, SquigNode, StrokeWeight, TextNode } from "@/lib/types"
 import { normalizeFill, normalizeInk, normalizeStroke } from "@/lib/types"
@@ -32,7 +34,7 @@ import {
   sharedAlign,
   sharedVerticalAlign,
 } from "./text-controls"
-import { Panel, PanelFooter, PanelHeader, PanelNote, PanelSection, Row, StackRow } from "@/components/ui/panel"
+import { openPanelSection, Panel, PanelFooter, PanelHeader, PanelNote, PanelSection, Row, StackRow } from "@/components/ui/panel"
 import { IconAction, Segmented, type SegmentOption } from "@/components/ui/segmented"
 import { Switch } from "@/components/ui/switch"
 import { Button } from "@/components/ui/button"
@@ -334,6 +336,8 @@ function PageFooter() {
 
 function SelectionEditor({ selected }: { selected: SquigNode[] }) {
   const st = useSquig.getState
+  const focusedId = useSquig((s) => s.inspectorFocus?.id)
+  const focusedKey = useSquig((s) => s.inspectorFocus?.key)
   const multi = selected.length > 1
 
   /**
@@ -367,6 +371,18 @@ function SelectionEditor({ selected }: { selected: SquigNode[] }) {
   const controls = components.length === selected.length ? sharedControls(components) : []
   const variantControls = controls.filter((c) => c.type !== "text")
   const textControls = controls.filter((c) => c.type === "text")
+  const focusedControlIsHere =
+    !!focusedId &&
+    !!focusedKey &&
+    components.some((n) => n.id === focusedId) &&
+    variantControls.some((c) => c.key === focusedKey)
+
+  // The section can be folded between visits. A double-click on a drawn icon
+  // is an explicit request for one of its controls, so reveal the destination
+  // before IconControl moves keyboard focus into the search field.
+  useEffect(() => {
+    if (focusedControlIsHere) openPanelSection("variant")
+  }, [focusedControlIsHere])
 
   const textBoxState = shared(texts.map((n) => !!n.boxed))
   const textBoxBorder = shared(

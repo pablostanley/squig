@@ -170,6 +170,33 @@ hand-waving crown seal-check`
 If you need a name that isn't listed, pick the nearest one that is. Do not
 invent names — an unknown name renders nothing.
 
+Any property whose value is an icon name must declare an `icon` control, not a
+`select` with a curated handful. That gives standalone icons, buttons, list
+items, cards, and blocks the same searchable catalog in the inspector:
+
+```ts
+defaults: { icon: "star" },
+controls: [{ key: "icon", label: "Icon", type: "icon" }],
+```
+
+Use `allowNone: true` when the renderer treats `"none"` as a real absence. An
+icon search is intentionally never `quick`: the floating context row cannot
+hold its search field and grid. Mode controls such as `Icon side:
+none|left|right` remain ordinary selects; their values are layout choices, not
+icon names.
+
+If another property decides whether the configurable icon is drawn, keep the
+large picker out of the way until that mode is active:
+
+```ts
+{ key: "glyph", label: "Icon", type: "icon",
+  visibleWhen: { key: "iconSide", equals: ["left", "right"] } }
+```
+
+Conditional controls only appear when every selected component currently
+matches its condition, so a multi-selection never offers a property that is
+latent on half the selection.
+
 ## Registration
 
 Export a single array at the bottom of your file:

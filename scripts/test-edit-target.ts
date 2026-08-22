@@ -8,7 +8,15 @@
 // walk all 150 defs to make sure the aimed route didn't move the unaimed one.
 // ---------------------------------------------------------------------------
 
-import { editTarget, hasEditableText, textControlAt, textControlKey, textControlKeys } from "../lib/canvas/edit-target.ts"
+import {
+  editTarget,
+  hasEditableText,
+  iconControlAt,
+  iconControlKeys,
+  textControlAt,
+  textControlKey,
+  textControlKeys,
+} from "../lib/canvas/edit-target.ts"
 import { ALL_DEFS, getDef } from "../lib/library/registry.ts"
 import { nodePrims } from "../lib/sketch/node-prims.ts"
 import type { Prim } from "../lib/sketch/kit.ts"
@@ -29,6 +37,7 @@ function is(name: string, got: unknown, want: unknown) {
 // -- fixtures ---------------------------------------------------------------
 
 type TextPrim = Extract<Prim, { t: "text" }>
+type IconPrim = Extract<Prim, { t: "path" }>
 
 /** A library item dropped at its default size, with nothing overridden. */
 function drop(kind: string, props: Record<string, unknown> = {}): ComponentNode {
@@ -49,6 +58,14 @@ function drop(kind: string, props: Record<string, unknown> = {}): ComponentNode 
 
 function runs(node: ComponentNode): TextPrim[] {
   return nodePrims(node).filter((p): p is TextPrim => p.t === "text")
+}
+
+function icons(node: ComponentNode): IconPrim[] {
+  return nodePrims(node).filter((p): p is IconPrim => p.t === "path")
+}
+
+function iconMiddle(p: IconPrim): [number, number] {
+  return [p.x + p.size / 2, p.y + p.size / 2]
 }
 
 /**
@@ -174,6 +191,41 @@ function aimAt(node: ComponentNode, text: string, nth = 0): string | null {
   is(`${wordless.kind}: …and no words to step into`, hasEditableText(bare), false)
   is(`${wordless.kind}: …nor a control to name`, textControlKey(bare), null)
   is("button: unlike one that has a label", hasEditableText(button), true)
+}
+
+// -- configurable icons ----------------------------------------------------
+
+{
+  // A wordless icon button still has a nested property to step into. The
+  // pointer names that control from the drawn path, not from the component's
+  // kind or from a hard-coded list of special cases.
+  const iconButton = drop("icon-button")
+  is("icon button: one searchable icon control", iconControlKeys(iconButton).join(","), "icon")
+  const plus = icons(iconButton).find((p) => p.name === "plus")!
+  is("icon button: its drawn plus owns the icon control", iconControlAt(iconButton, ...iconMiddle(plus)), "icon")
+
+  // Conditional component icons only answer while they are actually drawn.
+  // A list item's avatar is structural; switching Leading to Icon reveals the
+  // configurable folder at the same spot.
+  const avatarItem = drop("list-item")
+  const user = icons(avatarItem).find((p) => p.name === "user")!
+  is("list item: its fixed avatar glyph is not editable", iconControlAt(avatarItem, ...iconMiddle(user)), null)
+
+  const iconItem = drop("list-item", { leading: "icon" })
+  const folder = icons(iconItem).find((p) => p.name === "folder")!
+  is("list item: its configurable leading icon is editable", iconControlAt(iconItem, ...iconMiddle(folder)), "icon")
+
+  // A stat card draws both an editable currency glyph and a structural trend
+  // arrow. Ownership keeps the arrow from opening the wrong control.
+  const stat = drop("card-stat")
+  const currency = icons(stat).find((p) => p.name === "currency-dollar")!
+  const trend = icons(stat).find((p) => p.name === "arrow-up")!
+  is("stat: its currency glyph owns the icon control", iconControlAt(stat, ...iconMiddle(currency)), "icon")
+  is("stat: its trend arrow is not the currency control", iconControlAt(stat, ...iconMiddle(trend)), null)
+
+  const avatar = drop("avatar")
+  const person = icons(avatar).find((p) => p.name === "user")!
+  is("avatar: its formerly fixed person glyph is now editable", iconControlAt(avatar, ...iconMiddle(person)), "glyph")
 }
 
 // -- an aim that isn't one ---------------------------------------------------

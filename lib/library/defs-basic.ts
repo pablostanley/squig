@@ -27,9 +27,9 @@ export const buttonDef: ComponentDef = {
     { key: "icon", label: "Icon side", type: "select", options: ["none", "left", "right"], quick: true },
     {
       key: "glyph",
-      label: "Glyph",
-      type: "select",
-      options: ["plus", "arrow-right", "arrow-left", "download-simple", "paper-plane-tilt", "sparkle"],
+      label: "Icon",
+      type: "icon",
+      visibleWhen: { key: "icon", equals: ["left", "right"] },
     },
   ],
   render(p, w, h) {
@@ -111,10 +111,11 @@ export const avatarDef: ComponentDef = {
   group: "Display",
   keywords: ["user", "profile", "photo", "person"],
   size: { w: 48, h: 48 },
-  defaults: { shape: "circle", content: "icon", initials: "PS", status: false },
+  defaults: { shape: "circle", content: "icon", glyph: "user", initials: "PS", status: false },
   controls: [
     { key: "shape", label: "Shape", type: "select", options: ["circle", "square"], quick: true },
     { key: "content", label: "Content", type: "select", options: ["icon", "initials"], quick: true },
+    { key: "glyph", label: "Icon", type: "icon", visibleWhen: { key: "content", equals: "icon" } },
     { key: "initials", label: "Initials", type: "text" },
     { key: "status", label: "Status dot", type: "toggle" },
   ],
@@ -125,7 +126,7 @@ export const avatarDef: ComponentDef = {
     if (str(p, "content") === "initials") {
       prims.push(text(w / 2, h / 2 + h * 0.14, str(p, "initials", "PS").slice(0, 2), h * 0.38, { align: "center" }))
     } else {
-      prims.push(...icon("user", w / 2, h / 2, Math.min(w, h) * 0.5))
+      prims.push(...icon(str(p, "glyph", "user"), w / 2, h / 2, Math.min(w, h) * 0.5))
     }
     if (bool(p, "status")) {
       prims.push(ellipse(w - w * 0.28, h - h * 0.28, w * 0.24, h * 0.24, { fill: "solid", fillColor: "ink" }))
@@ -148,7 +149,7 @@ export const inputDef: ComponentDef = {
     { key: "label", label: "Label", type: "text" },
     { key: "showLabel", label: "Show label", type: "toggle", quick: true },
     { key: "placeholder", label: "Placeholder", type: "text" },
-    { key: "icon", label: "Icon", type: "select", options: ["none", "search", "mail", "lock"], quick: true },
+    { key: "icon", label: "Icon", type: "icon", allowNone: true },
   ],
   render(p, w, h) {
     const showLabel = bool(p, "showLabel")

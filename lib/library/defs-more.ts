@@ -82,9 +82,7 @@ export const iconButtonDef: ComponentDef = {
     {
       key: "icon",
       label: "Icon",
-      type: "select",
-      options: ["plus", "pencil-simple", "trash", "gear", "heart", "dots-three", "magnifying-glass", "bell"],
-      quick: true,
+      type: "icon",
     },
     { key: "variant", label: "Variant", type: "select", options: ["filled", "outline", "ghost"], quick: true },
     { key: "shape", label: "Shape", type: "select", options: ["square", "round"], quick: true },
@@ -182,7 +180,7 @@ export const fabDef: ComponentDef = {
   size: { w: 56, h: 56 },
   defaults: { icon: "plus", extended: false, label: "New note" },
   controls: [
-    { key: "icon", label: "Icon", type: "select", options: ["plus", "pencil-simple", "paper-plane-tilt", "camera", "chat-circle"], quick: true },
+    { key: "icon", label: "Icon", type: "icon" },
     { key: "extended", label: "Extended", type: "toggle", quick: true },
     { key: "label", label: "Label", type: "text" },
   ],
@@ -1228,7 +1226,7 @@ export const listItemDef: ComponentDef = {
     { key: "leading", label: "Leading", type: "select", options: ["avatar", "icon", "none"], quick: true },
     { key: "trailing", label: "Trailing", type: "select", options: ["chevron", "switch", "badge", "button", "meta", "none"], quick: true },
     { key: "trailingText", label: "Trailing text", type: "text" },
-    { key: "icon", label: "Icon", type: "select", options: ["folder", "file-text", "bell", "lock", "star", "clock"] },
+    { key: "icon", label: "Icon", type: "icon", visibleWhen: { key: "leading", equals: "icon" } },
     { key: "divider", label: "Divider", type: "toggle" },
   ],
   render(p, w, h) {
@@ -1559,9 +1557,9 @@ export const cardStatDef: ComponentDef = {
     { key: "showIcon", label: "Icon", type: "toggle", quick: true },
     {
       key: "icon",
-      label: "Glyph",
-      type: "select",
-      options: ["currency-dollar", "users", "chart-line", "shopping-cart", "clock", "eye"],
+      label: "Icon",
+      type: "icon",
+      visibleWhen: { key: "showIcon", equals: true },
     },
     { key: "spark", label: "Sparkline", type: "toggle", quick: true },
   ],
@@ -1950,7 +1948,7 @@ export const cardNotificationDef: ComponentDef = {
   defaults: { title: "Ada invited you to Squig", icon: "user-plus", actions: true, unread: true, timestamp: "2m" },
   controls: [
     { key: "title", label: "Title", type: "text" },
-    { key: "icon", label: "Icon", type: "select", options: ["user-plus", "bell", "chat-circle", "git-pull-request", "warning"], quick: true },
+    { key: "icon", label: "Icon", type: "icon" },
     { key: "actions", label: "Actions", type: "toggle", quick: true },
     { key: "unread", label: "Unread", type: "toggle", quick: true },
     { key: "timestamp", label: "Timestamp", type: "text" },

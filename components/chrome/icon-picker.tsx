@@ -14,8 +14,8 @@
 // frame — the version bump fills it in rather than blocking the panel.
 // ---------------------------------------------------------------------------
 
-import { useEffect, useState } from "react"
-import { MagnifyingGlassIcon } from "@phosphor-icons/react"
+import { useEffect, useRef, useState } from "react"
+import { MagnifyingGlassIcon, XIcon } from "@phosphor-icons/react"
 
 import { useSquig } from "@/lib/store"
 import type { ComponentNode, SquigNode } from "@/lib/types"
@@ -72,7 +72,11 @@ function Glyph({ name, weight, className }: { name: string; weight: IconWeight; 
  */
 function IconPicker({ nodes, control }: { nodes: ComponentNode[]; control: ControlDef }) {
   const st = useSquig.getState
+  const searchRef = useRef<HTMLInputElement>(null)
   const [query, setQuery] = useState("")
+  const focusRequested = useSquig(
+    (s) => nodes.length === 1 && s.inspectorFocus?.id === nodes[0].id && s.inspectorFocus.key === control.key
+  )
   // the tags index arrives after mount; without a re-render the grid would keep
   // showing the popular fallback until something else happened to redraw it
   const [, setIndexReady] = useState(iconIndexReady)
@@ -83,7 +87,12 @@ function IconPicker({ nodes, control }: { nodes: ComponentNode[]; control: Contr
   // aliases and the grid must agree on a spelling, or the current icon never
   // reads as selected — resolve once and compare against that
   const rawName = current.mixed ? null : String(current.value ?? "")
-  const currentName = rawName === "logo" ? "logo" : rawName ? (resolveIconName(rawName) ?? rawName) : null
+  const currentName =
+    rawName === "none" || !rawName
+      ? null
+      : rawName === "logo"
+        ? "logo"
+        : (resolveIconName(rawName) ?? rawName)
   const weight = normalizeIconWeight(nodes[0]?.props.weight)
 
   useEffect(() => {
@@ -94,6 +103,20 @@ function IconPicker({ nodes, control }: { nodes: ComponentNode[]; control: Contr
   useEffect(() => {
     void loadIconWeight(weight)
   }, [weight])
+
+  // A double-click on a component's drawn glyph arrives here through the
+  // inspector-focus handoff. Wait one frame so a previously folded Variant
+  // section has mounted and measured before scrolling to and focusing it.
+  useEffect(() => {
+    if (!focusRequested) return
+    const frame = requestAnimationFrame(() => {
+      searchRef.current?.scrollIntoView({ block: "nearest" })
+      searchRef.current?.focus()
+      searchRef.current?.select()
+      st().setInspectorFocus(null)
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [focusRequested, st])
 
   // both calls read the index as it stands, so they're redone every render
   // rather than memoised against it — a scan of 1,500 names costs less than
@@ -123,13 +146,26 @@ function IconPicker({ nodes, control }: { nodes: ComponentNode[]; control: Contr
       <div className="flex h-ctl items-center gap-2">
         {currentName && <Glyph name={currentName} weight={weight} className="size-5 shrink-0 text-foreground" />}
         <span className="min-w-0 flex-1 truncate text-label text-muted-foreground">
-          {current.mixed ? MIXED_LABEL : currentName}
+          {current.mixed ? MIXED_LABEL : (currentName ?? "No icon")}
         </span>
+        {control.allowNone && (
+          <button
+            type="button"
+            aria-label="Remove icon"
+            aria-pressed={!current.mixed && currentName === null}
+            disabled={!current.mixed && currentName === null}
+            onClick={() => setValue("none")}
+            className="flex h-ctl-sm items-center gap-1 rounded-chrome-xs px-1.5 text-label text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-[var(--sq-ink)]/40 disabled:opacity-45"
+          >
+            <XIcon className="size-3" /> None
+          </button>
+        )}
       </div>
 
       <div className="relative">
         <MagnifyingGlassIcon className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground" />
         <Input
+          ref={searchRef}
           value={query}
           aria-label="Search icons"
           placeholder="search 1,500 icons…"

@@ -16,6 +16,16 @@ export type Shared<T> = { mixed: true; value?: undefined } | { mixed: false; val
 
 export const MIXED = { mixed: true } as const
 
+/** A conditional control is only useful while its companion mode is active. */
+export function controlIsVisible(node: ComponentNode, control: ControlDef): boolean {
+  if (!control.visibleWhen) return true
+  const actual = resolveProp(node, control.visibleWhen.key)
+  const accepted = Array.isArray(control.visibleWhen.equals)
+    ? control.visibleWhen.equals
+    : [control.visibleWhen.equals]
+  return accepted.some((value) => Object.is(value, actual))
+}
+
 /**
  * Collapse a list of values to one shared value, or `mixed`.
  *
@@ -71,16 +81,19 @@ export function sharedControls(nodes: readonly ComponentNode[]): ControlDef[] {
   const out: ControlDef[] = []
 
   for (const control of first.controls) {
+    if (!controlIsVisible(nodes[0], control)) continue
     let options = control.options ? [...control.options] : undefined
     let quick = control.quick
     let min = control.min
     let max = control.max
+    let allowNone = control.allowNone
     let sameLabel = true
     let ok = true
 
-    for (const def of rest) {
+    for (let i = 0; i < rest.length; i++) {
+      const def = rest[i]
       const other = def.controls.find((c) => c.key === control.key)
-      if (!other || other.type !== control.type) {
+      if (!other || other.type !== control.type || !controlIsVisible(nodes[i + 1], other)) {
         ok = false
         break
       }
@@ -100,13 +113,22 @@ export function sharedControls(nodes: readonly ComponentNode[]): ControlDef[] {
           break
         }
       }
+      if (control.type === "icon") allowNone = allowNone && other.allowNone
       if (other.label !== control.label) sameLabel = false
       // only "quick" if every def agrees it belongs in the context row
       quick = quick && other.quick
     }
 
     if (!ok) continue
-    out.push({ ...control, label: sameLabel ? control.label : humanizeKey(control.key), options, quick, min, max })
+    out.push({
+      ...control,
+      label: sameLabel ? control.label : humanizeKey(control.key),
+      options,
+      quick,
+      min,
+      max,
+      allowNone,
+    })
   }
 
   return out

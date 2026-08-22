@@ -48,7 +48,7 @@ import { HANDLES, HANDLE_CURSORS, handleOffset, resizeBounds, scaleNodes, type H
 import { pickAt, pickInRect, pickSoftAt, type PickOpts } from "@/lib/canvas/hit-test"
 import { canvasOwnsKeyboard } from "@/lib/canvas/keyboard-owner"
 import { useClipboard } from "@/lib/canvas/use-clipboard"
-import { editTarget, hasEditableText, textControlAt } from "@/lib/canvas/edit-target"
+import { editTarget, hasEditableText, iconControlAt, textControlAt } from "@/lib/canvas/edit-target"
 import { textBlockHeight } from "@/lib/sketch/text-layout"
 import { unionBounds, type Bounds } from "@/lib/selection"
 import { NodeSketch, SketchPrims, imagePlacement, mirrorBox } from "./sketch"
@@ -1706,6 +1706,19 @@ export function Canvas() {
       }
       // double-clicking inside a multi-selection narrows to what you clicked
       if (s.selection.length !== 1 || s.selection[0] !== hitId) s.setSelection([hitId])
+      // A configurable glyph is a property of the component, not a detached
+      // layer. Hand that property to the inspector just like an aimed text run
+      // is handed to the inline editor below.
+      if (n.type === "component") {
+        const [wx, wy] = toWorld(e)
+        const key = iconControlAt(n, wx - n.x, wy - n.y)
+        if (key) {
+          setAim(null)
+          s.setEditing(null)
+          s.setInspectorFocus({ id: hitId, key })
+          return
+        }
+      }
       // a picture has no words to step into, so the same press steps into its
       // crop instead — the one edit a picture has
       if (n.type === "image") s.setCropping(hitId)

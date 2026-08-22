@@ -93,8 +93,9 @@ check("an empty selection reads as mixed", shared([]).mixed === true)
 {
   const kind = Object.keys(REGISTRY).find((k) => REGISTRY[k].controls.length > 0)!
   const same = sharedControls([comp("a", kind), comp("b", kind)])
-  check("two of the same kind share all their controls", same.length === REGISTRY[kind].controls.length, kind)
-  check("one component shares its own controls", sharedControls([comp("a", kind)]).length === REGISTRY[kind].controls.length)
+  const one = sharedControls([comp("a", kind)])
+  check("two of the same kind share the same visible controls", same.map((c) => c.key).join(",") === one.map((c) => c.key).join(","), kind)
+  check("one component exposes at least one visible control", one.length > 0 && one.length <= REGISTRY[kind].controls.length)
   check("no components, no controls", sharedControls([]).length === 0)
 }
 
@@ -163,6 +164,32 @@ check("an empty selection reads as mixed", shared([]).mixed === true)
   } else {
     passed++ // registry has no type clashes today
   }
+}
+
+{
+  // "None" is only safe when every selected component knows that sentinel.
+  const twoOptional = sharedControls([comp("a", "input"), comp("b", "input")]).find((c) => c.key === "icon")
+  check("optional icon selections keep the None action", twoOptional?.type === "icon" && twoOptional.allowNone === true)
+
+  const mixedRequirement = sharedControls([comp("a", "input"), comp("b", "icon-button")]).find((c) => c.key === "icon")
+  check(
+    "mixed icon selections only offer None when every component allows it",
+    mixedRequirement?.type === "icon" && !mixedRequirement.allowNone
+  )
+}
+
+{
+  const bareButton = sharedControls([comp("a", "button")])
+  check("button hides its large icon picker while Icon side is None", !bareButton.some((c) => c.key === "glyph"))
+
+  const iconButton = sharedControls([comp("a", "button", { icon: "left" })])
+  check("button reveals icon search when an icon side is active", iconButton.some((c) => c.key === "glyph" && c.type === "icon"))
+
+  const mixedMode = sharedControls([comp("a", "button", { icon: "left" }), comp("b", "button")])
+  check("conditional controls stay hidden when only part of a selection shows them", !mixedMode.some((c) => c.key === "glyph"))
+
+  const initials = sharedControls([comp("a", "avatar", { content: "initials" })])
+  check("avatar hides icon search while it is showing initials", !initials.some((c) => c.key === "glyph"))
 }
 
 // -- summaries and bounds ---------------------------------------------------

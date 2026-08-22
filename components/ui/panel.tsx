@@ -102,6 +102,12 @@ function toggleSection(id: string) {
   listeners.forEach((fn) => fn())
 }
 
+/** Reveal a section when the canvas hands one of its nested properties over. */
+export function openPanelSection(id: string) {
+  if (!collapsed.delete(id)) return
+  listeners.forEach((fn) => fn())
+}
+
 function useSectionOpen(id: string): boolean {
   return React.useSyncExternalStore(
     (fn) => {

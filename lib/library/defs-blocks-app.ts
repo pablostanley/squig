@@ -1078,7 +1078,7 @@ export const emptyBlockDef: ComponentDef = {
   controls: [
     { key: "title", label: "Title", type: "text" },
     { key: "subtitle", label: "Subtitle", type: "text" },
-    { key: "icon", label: "Icon", type: "select", options: ["folder", "file", "magnifying-glass", "star", "sparkle", "bell"], quick: true },
+    { key: "icon", label: "Icon", type: "icon" },
     { key: "cta", label: "Button", type: "toggle", quick: true },
     { key: "ctaLabel", label: "Button label", type: "text" },
   ],

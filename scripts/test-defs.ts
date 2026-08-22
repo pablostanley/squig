@@ -15,6 +15,7 @@
 
 import { ALL_DEFS, type ComponentDef } from "../lib/library/registry.ts"
 import type { Prim } from "../lib/sketch/kit.ts"
+import { resolveIconName } from "../lib/sketch/icons.ts"
 
 let passed = 0
 const failures: string[] = []
@@ -197,6 +198,37 @@ for (const def of ALL_DEFS) {
   // and a text field can't live there: it needs room to type in
   const quickText = def.controls.filter((c) => c.quick && c.type === "text").map((c) => c.key)
   check(`${def.kind} keeps text out of the quick row`, quickText.length === 0, quickText.join(", "))
+
+  // An icon-name select quietly limits the catalog to its authored handful.
+  // Searchable icon properties all use the same full picker; selects remain
+  // appropriate for modes such as "Icon side" or "Content: icon/initials".
+  const limitedIcons = def.controls
+    .filter((c) => c.type === "select" && /icon|glyph/i.test(c.label))
+    .filter((c) => (c.options ?? []).some((o) => !!resolveIconName(o)))
+    .map((c) => c.key)
+  check(`${def.kind} has no curated icon-name selects`, limitedIcons.length === 0, limitedIcons.join(", "))
+
+  const badIconDefaults = def.controls
+    .filter((c) => c.type === "icon")
+    .filter((c) => {
+      const value = String(def.defaults[c.key] ?? "")
+      return value !== "logo" && !(c.allowNone && value === "none") && !resolveIconName(value)
+    })
+    .map((c) => `${c.key}=${JSON.stringify(def.defaults[c.key])}`)
+  check(`${def.kind} icon controls have drawable defaults`, badIconDefaults.length === 0, badIconDefaults.join(", "))
+
+  const quickIcons = def.controls.filter((c) => c.type === "icon" && c.quick).map((c) => c.key)
+  check(`${def.kind} keeps icon search in the inspector`, quickIcons.length === 0, quickIcons.join(", "))
+
+  const orphanConditions = def.controls
+    .filter((c) => c.visibleWhen && !(c.visibleWhen.key in def.defaults))
+    .map((c) => `${c.key} → ${c.visibleWhen!.key}`)
+  check(`${def.kind} conditions refer to real props`, orphanConditions.length === 0, orphanConditions.join(", "))
+
+  const emptyConditions = def.controls
+    .filter((c) => c.visibleWhen && Array.isArray(c.visibleWhen.equals) && c.visibleWhen.equals.length === 0)
+    .map((c) => c.key)
+  check(`${def.kind} conditions allow at least one value`, emptyConditions.length === 0, emptyConditions.join(", "))
 }
 
 // -- phone screens ----------------------------------------------------------

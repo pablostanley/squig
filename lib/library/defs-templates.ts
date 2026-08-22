@@ -453,7 +453,7 @@ export const emptyStateDef: ComponentDef = {
   defaults: { title: "Nothing here yet", cta: true, icon: "image" },
   controls: [
     { key: "title", label: "Title", type: "text" },
-    { key: "icon", label: "Icon", type: "select", options: ["image", "folder", "file", "magnifying-glass", "star", "sparkle", "bell"], quick: true },
+    { key: "icon", label: "Icon", type: "icon" },
     { key: "cta", label: "Button", type: "toggle", quick: true },
   ],
   render(p, w, h) {

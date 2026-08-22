@@ -22,6 +22,10 @@ export interface ControlDef {
   label: string
   type: ControlType
   options?: string[]
+  /** `icon` controls may write the conventional "none" sentinel. */
+  allowNone?: boolean
+  /** only show this control while another prop has one of these values */
+  visibleWhen?: { key: string; equals: unknown | unknown[] }
   min?: number
   max?: number
   /** surfaced in the floating context row */

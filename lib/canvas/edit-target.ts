@@ -17,6 +17,11 @@
 // runs backed by a control count: a lorem line or a timestamp isn't a prop, so
 // aiming at one falls back to the first control rather than editing something
 // you weren't pointing at.
+//
+// Configurable icons use the same ownership rule. A component may draw several
+// structural glyphs around one editable icon; rendering its icon prop with a
+// marker tells us exactly which path belongs to the control, so a double-click
+// on that glyph can hand the real property to the inspector.
 // ---------------------------------------------------------------------------
 
 import { INK, type Prim } from "@/lib/sketch/kit"
@@ -28,6 +33,7 @@ import { normalizeInk } from "@/lib/types"
 import type { ComponentNode, SquigNode, TextAlign, TextNode } from "@/lib/types"
 
 type TextPrim = Extract<Prim, { t: "text" }>
+type IconPrim = Extract<Prim, { t: "path" }>
 
 export interface EditTarget {
   /** the string the editor starts on */
@@ -83,9 +89,18 @@ function textPrims(prims: Prim[]): TextPrim[] {
   return prims.filter((p): p is TextPrim => p.t === "text")
 }
 
+function iconPrims(prims: Prim[]): IconPrim[] {
+  return prims.filter((p): p is IconPrim => p.t === "path" && !!p.name)
+}
+
 /** Every text control a def declares, in the order the inspector lists them. */
 export function textControlKeys(node: ComponentNode): string[] {
   return (getDef(node.kind)?.controls ?? []).filter((c) => c.type === "text").map((c) => c.key)
+}
+
+/** Every searchable icon property a component exposes. */
+export function iconControlKeys(node: ComponentNode): string[] {
+  return (getDef(node.kind)?.controls ?? []).filter((c) => c.type === "icon").map((c) => c.key)
 }
 
 /** The text control an unaimed edit lands on — the first one the def declares. */
@@ -170,6 +185,54 @@ function runBox(p: TextPrim): { x0: number; y0: number; x1: number; y1: number }
 /** How far a point sits outside a box — zero anywhere inside it. */
 function gapTo(b: { x0: number; y0: number; x1: number; y1: number }, x: number, y: number): number {
   return Math.hypot(Math.max(b.x0 - x, 0, x - b.x1), Math.max(b.y0 - y, 0, y - b.y1))
+}
+
+/**
+ * Curated icons that are always available synchronously. We choose one the
+ * property is not already using, then look for that name in the marked render.
+ */
+const ICON_MARKERS = ["bug", "rocket-launch", "crown"] as const
+
+/** Which rendered icon paths are owned by one searchable icon control. */
+function iconRuns(node: ComponentNode, key: string, runs: IconPrim[]): number[] {
+  if (!runs.length) return []
+  const value = currentValue(node, key)
+  const marker = ICON_MARKERS.find((name) => name !== value) ?? ICON_MARKERS[0]
+  const marked = iconPrims(nodePrims({ ...node, props: { ...node.props, [key]: marker } }))
+
+  // A visible icon swapped for another icon keeps the path count and geometry.
+  // If a component uses the property as a visibility switch or has an invalid
+  // saved value, there is no drawn glyph to aim at, so declining the hit is the
+  // honest fallback.
+  if (marked.length !== runs.length) return []
+  return marked.flatMap((run, i) => (run.name === marker && runs[i]?.name !== marker ? [i] : []))
+}
+
+/**
+ * The searchable icon property whose drawn glyph sits under a component-local
+ * point. Structural carets, status marks, and other fixed glyphs return null.
+ */
+export function iconControlAt(node: ComponentNode, x: number, y: number): string | null {
+  const keys = iconControlKeys(node)
+  if (!keys.length) return null
+
+  const runs = iconPrims(nodePrims(node))
+  const owner = new Map<number, string>()
+  for (const key of keys) {
+    for (const i of iconRuns(node, key, runs)) if (!owner.has(i)) owner.set(i, key)
+  }
+
+  let best: string | null = null
+  let bestGap = Infinity
+  runs.forEach((run, i) => {
+    const key = owner.get(i)
+    if (!key) return
+    const gap = gapTo({ x0: run.x, y0: run.y, x1: run.x + run.size, y1: run.y + run.size }, x, y)
+    if (gap > Math.max(3, run.size * 0.15) || gap >= bestGap) return
+    bestGap = gap
+    best = key
+  })
+  return best
 }
 
 /**

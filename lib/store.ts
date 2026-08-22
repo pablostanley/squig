@@ -66,6 +66,13 @@ export interface ContextMenuState {
   nodeId: string | null
 }
 
+export interface InspectorFocus {
+  /** the selected component whose property should receive focus */
+  id: string
+  /** the component control key, not a DOM id */
+  key: string
+}
+
 interface SquigState {
   /** which file in the drawer this canvas is — every doc has one */
   docId: string
@@ -104,6 +111,8 @@ interface SquigState {
   contextMenu: ContextMenuState | null
   /** the floating file name is in its editable state */
   renamingFile: boolean
+  /** a canvas gesture is handing a nested component property to the inspector */
+  inspectorFocus: InspectorFocus | null
   /** a gesture is actively changing a layer's geometry — move, resize, draw, create */
   transforming: boolean
   /** ⌘\ — everything but the canvas gets out of the way */
@@ -156,6 +165,7 @@ interface SquigState {
   setCommandOpen: (open: boolean) => void
   setContextMenu: (m: ContextMenuState | null) => void
   setRenamingFile: (on: boolean) => void
+  setInspectorFocus: (target: InspectorFocus | null) => void
   setTransforming: (on: boolean) => void
   setUiHidden: (on: boolean) => void
   setShortcutsOpen: (on: boolean) => void
@@ -787,6 +797,7 @@ export const useSquig = create<SquigState>((set, get) => ({
   commandOpen: false,
   contextMenu: null,
   renamingFile: false,
+  inspectorFocus: null,
   transforming: false,
   uiHidden: false,
   shortcutsOpen: false,
@@ -899,6 +910,7 @@ export const useSquig = create<SquigState>((set, get) => ({
     set({ commandOpen: open, contextMenu: null, shortcutsOpen: false, panel: open ? null : get().panel }),
   setContextMenu: (m) => set({ contextMenu: m }),
   setRenamingFile: (on) => set({ renamingFile: on }),
+  setInspectorFocus: (target) => set({ inspectorFocus: target }),
   // called on the edges of a drag, so the hundreds of moves in between don't
   // each write to the store
   setTransforming: (on) => set((s) => (s.transforming === on ? s : { transforming: on })),
