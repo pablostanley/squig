@@ -7,7 +7,7 @@
 // bundler and no test framework.
 // ---------------------------------------------------------------------------
 
-import { resizeBounds, scaleNodes, MIN_SIZE, type Handle } from "../lib/canvas/transform.ts"
+import { resizeBounds, resizeNodesBy, scaleNodes, MIN_SIZE, type Handle } from "../lib/canvas/transform.ts"
 import { hitsInterior, hitsPoint, hitsRect, pickAt, pickInRect, pickSoftAt, pickTolerance } from "../lib/canvas/hit-test.ts"
 import { repeatStep } from "../lib/canvas/duplicate.ts"
 import type { SquigNode } from "../lib/types.ts"
@@ -74,6 +74,18 @@ const text = (id: string, x: number, y: number, w: number, h: number, fontSize =
   h,
   text: "hi",
   fontSize,
+  seed: 1,
+})
+
+const component = (id: string, x: number, y: number, w: number, h: number): SquigNode => ({
+  id,
+  type: "component",
+  kind: "button",
+  props: { label: "Go" },
+  x,
+  y,
+  w,
+  h,
   seed: 1,
 })
 
@@ -196,6 +208,74 @@ const apply = (ns: SquigNode[], patches: Record<string, Partial<SquigNode>>): Sq
   const a = [arrow("a", 0, 0, 10, 10)]
   const out = apply(a, scaleNodes(a, bounds(a), { x: 0, y: 0, w: 20, h: 40 })) as [SquigNode & { points: number[][] }]
   check("arrow points scale with the box", close(out[0].points[1][0], 20) && close(out[0].points[1][1], 40))
+}
+
+// -- keyboard resize nudges -------------------------------------------------
+
+{
+  const n = rect("r", 20, 30, 100, 50)
+  const wider = apply([n], resizeNodesBy([n], bounds([n]), "width", 1))[0]
+  check(
+    "a right resize nudge adds exactly one pixel and pins the top-left",
+    wider.x === 20 && wider.y === 30 && wider.w === 101 && wider.h === 50,
+    JSON.stringify(wider)
+  )
+
+  const shorter = apply([n], resizeNodesBy([n], bounds([n]), "height", -1))[0]
+  check(
+    "an up resize nudge removes exactly one pixel from height",
+    shorter.x === 20 && shorter.y === 30 && shorter.w === 100 && shorter.h === 49,
+    JSON.stringify(shorter)
+  )
+
+  const big = apply([n], resizeNodesBy([n], bounds([n]), "width", 10))[0]
+  check("the default big resize nudge adds ten pixels", close(big.w, 110), `${big.w}`)
+}
+
+{
+  const group = [
+    { ...rect("a", 10, 20, 40, 20), groupIds: ["g"] },
+    { ...component("b", 70, 20, 40, 20), groupIds: ["g"] },
+  ] as SquigNode[]
+  const from = bounds(group)
+  const resized = apply(group, resizeNodesBy(group, from, "width", 10))
+  const after = bounds(resized)
+  check(
+    "a group resize nudge changes the whole selection width by the requested step",
+    after.x === from.x && after.y === from.y && close(after.w, from.w + 10) && after.h === from.h,
+    JSON.stringify(after)
+  )
+  check(
+    "group members keep their relative layout while resizing",
+    close((resized[1].x - after.x) / after.w, (group[1].x - from.x) / from.w)
+  )
+}
+
+{
+  const n = component("component", 0, 0, 80, 32)
+  const taller = apply([n], resizeNodesBy([n], bounds([n]), "height", 10))[0]
+  check("a component accepts the big height nudge", taller.w === 80 && taller.h === 42, JSON.stringify(taller))
+}
+
+{
+  const n = rect("minimum", 0, 0, MIN_SIZE, 20)
+  check(
+    "a resize nudge at the minimum is a no-op",
+    Object.keys(resizeNodesBy([n], bounds([n]), "width", -1)).length === 0
+  )
+}
+
+{
+  const n = text("text", 5, 6, 100, 24)
+  const wider = apply([n], resizeNodesBy([n], bounds([n]), "width", 1))[0] as SquigNode & {
+    fixedW?: boolean
+    fontSize: number
+  }
+  check(
+    "a lone text resize uses its container width without scaling the type",
+    wider.x === n.x && wider.y === n.y && wider.w === 101 && wider.fixedW === true && wider.fontSize === 18,
+    JSON.stringify(wider)
+  )
 }
 
 // -- hit testing ------------------------------------------------------------

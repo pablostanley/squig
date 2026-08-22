@@ -10,7 +10,7 @@ import type { SquigNode } from "../types"
 import type { Bounds } from "../selection"
 import { textBlockHeight, textContentWidth } from "../sketch/text-layout"
 import { wrapText } from "./text-metrics"
-import { textNaturalHeight } from "./text-reflow"
+import { setTextHeight, setTextWidth, textNaturalHeight } from "./text-reflow"
 
 export const HANDLES = ["nw", "n", "ne", "e", "se", "s", "sw", "w"] as const
 export type Handle = (typeof HANDLES)[number]
@@ -235,6 +235,35 @@ export function scaleNodes(
   }
 
   return patches
+}
+
+export type ResizeNudgeAxis = "width" | "height"
+
+/**
+ * Resize a selection from its right or bottom edge by an exact keyboard step.
+ * The top-left stays put, matching Figma's Cmd/Ctrl + arrow behavior. Text on
+ * its own keeps the same container semantics as its side handles; everything
+ * else goes through the selection scale used by pointer resizing.
+ */
+export function resizeNodesBy(
+  origNodes: readonly SquigNode[],
+  orig: Bounds,
+  axis: ResizeNudgeAxis,
+  delta: number
+): Record<string, Partial<SquigNode>> {
+  if (!origNodes.length || !Number.isFinite(delta) || delta === 0) return {}
+  const next: Bounds =
+    axis === "width"
+      ? { ...orig, w: Math.max(MIN_SIZE, orig.w + delta) }
+      : { ...orig, h: Math.max(MIN_SIZE, orig.h + delta) }
+  if (next.w === orig.w && next.h === orig.h) return {}
+
+  const solo = origNodes.length === 1 ? origNodes[0] : null
+  if (solo?.type === "text") {
+    const patch = axis === "width" ? setTextWidth(solo, next.w) : setTextHeight(solo, next.h)
+    return { [solo.id]: patch as Partial<SquigNode> }
+  }
+  return scaleNodes(origNodes, orig, next)
 }
 
 /** Handle offsets within a bbox of the given size, for the overlay. */

@@ -68,7 +68,8 @@ Figma's, so your hands already know it. `?` opens the full list in the app.
 | `⇧H` / `⇧V` | flip horizontal / vertical |
 | `⌘B` `⌘I` `⌘U` | bold, italic, underline |
 | `⌘S` / `⇧⌘S` | save to this browser / export a copy |
-| arrows (`⇧` for 10px) | nudge |
+| arrows (`⇧` for the big nudge) | move by 1px / the custom big nudge (10px by default) |
+| `⌘`-arrows (`⇧` for the big nudge) | resize by 1px / the custom big nudge |
 | space-drag, middle-drag | pan |
 | `⌘+` / `⌘-`, `⌘`-scroll | zoom the canvas, never the browser |
 | `⇧0` `⇧1` `⇧2` | 100%, fit, selection |

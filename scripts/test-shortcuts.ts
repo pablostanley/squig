@@ -12,6 +12,7 @@ import { readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { SHORTCUT_GROUPS, kbd } from "../lib/shortcuts.ts"
+import { DEFAULT_BIG_NUDGE, MAX_BIG_NUDGE, normalizeBigNudge } from "../lib/nudge.ts"
 
 let passed = 0
 const failures: string[] = []
@@ -91,6 +92,14 @@ check("a PC joins with pluses", kbd("mod+shift+g") === "Ctrl+Shift+G", kbd("mod+
 check("a PC needs no extra air", kbd("alt+drag") === "Alt+drag", kbd("alt+drag"))
 check("far is Ctrl+Shift on a PC", kbd("far+]") === "Ctrl+Shift+]", kbd("far+]"))
 
+// -- the configurable large step --------------------------------------------
+
+check("the big nudge defaults to ten pixels", DEFAULT_BIG_NUDGE === 10)
+check("an absent big nudge falls back safely", normalizeBigNudge(undefined) === 10)
+check("a custom big nudge is rounded to whole pixels", normalizeBigNudge(12.6) === 13)
+check("the big nudge never drops below one pixel", normalizeBigNudge(-20) === 1)
+check("a corrupt giant big nudge is bounded", normalizeBigNudge(Infinity) === 10 && normalizeBigNudge(99999) === MAX_BIG_NUDGE)
+
 // -- the sheet isn't describing a canvas that stopped doing it ---------------
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -107,6 +116,8 @@ const CLAIMS: [string, string][] = [
   ["double-click a corner handle to restore a picture", "restoreAspect"],
   ["shift-drag draws a square", 'mods.shift && g.what === "shape"'],
   ["the modifier wheel zooms", "e.ctrlKey || e.metaKey"],
+  ["modifier arrows resize the selection", "resizeNodesBy"],
+  ["Shift uses the custom big nudge", "s.bigNudge"],
 ]
 for (const [claim, token] of CLAIMS) {
   check(`the canvas still does ${claim}`, canvas.includes(token), token)

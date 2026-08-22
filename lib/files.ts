@@ -17,6 +17,7 @@
 
 import type { SquigNode } from "./types"
 import { canWrite } from "./tabs"
+import { DEFAULT_BIG_NUDGE, normalizeBigNudge } from "./nudge"
 import { DEFAULT_FONT, DEFAULT_LOOK, DEFAULT_PAPER, DEFAULT_THEME, THEMES, type FontMode, type Look, type PaperShade, type ThemeName } from "./theme"
 
 export interface FileMeta {
@@ -40,6 +41,8 @@ export interface Prefs {
   /** the last look you set — what a new document starts from, nothing more */
   look: Look
   contextRow: boolean
+  /** Shift's step for both move and resize nudges. */
+  bigNudge: number
   activeId: string | null
 }
 
@@ -245,6 +248,7 @@ export function loadPrefs(): Prefs {
     // prefs used to keep the look's fields flat, so read them either way
     look: knownLook(p.look ?? p, DEFAULT_LOOK),
     contextRow: p.contextRow === true,
+    bigNudge: normalizeBigNudge(p.bigNudge),
     activeId: typeof p.activeId === "string" ? p.activeId : null,
   }
 }
@@ -281,6 +285,7 @@ export function migrateLegacyDoc(newId: () => string): { doc: StoredDoc; prefs: 
   const prefs: Prefs = {
     look,
     contextRow: old.contextRow === true,
+    bigNudge: DEFAULT_BIG_NUDGE,
     activeId: doc.id,
   }
   savePrefs(prefs)

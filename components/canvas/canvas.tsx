@@ -44,7 +44,7 @@ import { computeSnap, computeResizeSnap, makeSnapRect, type GuideLine, type Snap
 import { pinchViewport, type PinchStart, type Pt } from "@/lib/canvas/pinch"
 import { useSpacebarPan } from "@/lib/canvas/use-spacebar-pan"
 import { useFileDrop } from "@/lib/canvas/use-file-drop"
-import { HANDLES, HANDLE_CURSORS, handleOffset, resizeBounds, scaleNodes, type Handle } from "@/lib/canvas/transform"
+import { HANDLES, HANDLE_CURSORS, handleOffset, resizeBounds, resizeNodesBy, scaleNodes, type Handle } from "@/lib/canvas/transform"
 import { pickAt, pickInRect, pickSoftAt, type PickOpts } from "@/lib/canvas/hit-test"
 import { canvasOwnsKeyboard } from "@/lib/canvas/keyboard-owner"
 import { useClipboard } from "@/lib/canvas/use-clipboard"
@@ -61,6 +61,7 @@ import { ContextRow } from "./context-row"
 import { EmptyCanvas } from "./empty-canvas"
 import { TextEditOverlay } from "./text-edit-overlay"
 import { nodeVisualBounds, worldRouteHandle, type RouteHandle } from "@/lib/canvas/line-routing"
+import { SMALL_NUDGE } from "@/lib/nudge"
 
 /**
  * A gesture's zoom floor is not a constant: ⇧1 is allowed below MIN_ZOOM to
@@ -283,9 +284,15 @@ export function Canvas() {
   const containerRef = useRef<HTMLDivElement>(null)
   const gestureRef = useRef<Gesture | null>(null)
   const gestureAbort = useRef<AbortController | null>(null)
-  const nudgeRef = useRef<{ timer: ReturnType<typeof setTimeout> | null; sel: string; top: unknown }>({
+  const nudgeRef = useRef<{
+    timer: ReturnType<typeof setTimeout> | null
+    sel: string
+    kind: "move" | "resize"
+    top: unknown
+  }>({
     timer: null,
     sel: "",
+    kind: "move",
     top: null,
   })
   const modsRef = useRef<Mods>(NO_MODS)
@@ -1893,6 +1900,26 @@ export function Canvas() {
       // physical position, so on AZERTY it fires the tool printed elsewhere
       const key = e.key.length === 1 ? e.key.toLowerCase() : e.key
 
+      /** One held-key run is one undo step; changing command or selection is not. */
+      const beginNudge = (kind: "move" | "resize") => {
+        const sig = s.selection.join(",")
+        const nudge = nudgeRef.current
+        const separate =
+          nudge.timer === null ||
+          nudge.sel !== sig ||
+          nudge.kind !== kind ||
+          nudge.top !== s.past[s.past.length - 1]
+        if (nudge.timer !== null) clearTimeout(nudge.timer)
+        if (separate) {
+          s.checkpoint()
+          nudge.sel = sig
+          nudge.kind = kind
+          const after = st().past
+          nudge.top = after[after.length - 1]
+        }
+        nudge.timer = setTimeout(() => (nudge.timer = null), 900)
+      }
+
       // a gesture in flight owns the keyboard — including ⌘K, or the palette
       // opens over a drag that is still moving nodes underneath it, and the
       // Escape meant to close it gets eaten cancelling the drag instead
@@ -2007,13 +2034,28 @@ export function Canvas() {
             e.preventDefault()
             s.setUiHidden(!s.uiHidden)
             return
-          // the canvas ignores these, so stop the browser navigating away
           case "ArrowLeft":
           case "ArrowRight":
           case "ArrowUp":
-          case "ArrowDown":
+          case "ArrowDown": {
             e.preventDefault()
+            if (!s.selection.length) return
+            const selected = s.selection.map((id) => s.nodes[id]).filter(Boolean) as SquigNode[]
+            const bounds = unionBounds(selected.map(nodeVisualBounds))
+            if (!bounds) return
+            const amount = e.shiftKey ? s.bigNudge : SMALL_NUDGE
+            const axis = e.code === "ArrowLeft" || e.code === "ArrowRight" ? "width" : "height"
+            const delta = e.code === "ArrowLeft" || e.code === "ArrowUp" ? -amount : amount
+            const patches = resizeNodesBy(selected, bounds, axis, delta)
+            const changed = Object.entries(patches).some(([id, patch]) => {
+              const node = s.nodes[id] as unknown as Record<string, unknown> | undefined
+              return !!node && Object.entries(patch).some(([field, value]) => !Object.is(node[field], value))
+            })
+            if (!changed) return
+            beginNudge("resize")
+            s.updateNodes(patches)
             return
+          }
         }
         return // every other ⌘ combo is the browser's business
       }
@@ -2158,24 +2200,8 @@ export function Canvas() {
         case "ArrowDown": {
           if (!s.selection.length) break
           e.preventDefault()
-          // coalesce a burst of nudges into one undo step, but only while it's
-          // the same selection — otherwise ⌘Z reverts a move to another object
-          const sig = s.selection.join(",")
-          const nudge = nudgeRef.current
-          // the burst also has to still be writing against its own checkpoint.
-          // Compare the entry itself, not the stack depth: past is capped at
-          // MAX_HISTORY, so past a hundred edits the length stops changing and
-          // a count would happily coalesce onto someone else's entry.
-          if (nudge.timer === null || nudge.sel !== sig || nudge.top !== s.past[s.past.length - 1]) {
-            s.checkpoint()
-            nudge.sel = sig
-            const after = st().past
-            nudge.top = after[after.length - 1]
-          } else {
-            clearTimeout(nudge.timer)
-          }
-          nudge.timer = setTimeout(() => (nudge.timer = null), 900)
-          const d = e.shiftKey ? 10 : 1
+          beginNudge("move")
+          const d = e.shiftKey ? s.bigNudge : SMALL_NUDGE
           const dx = key === "ArrowLeft" ? -d : key === "ArrowRight" ? d : 0
           const dy = key === "ArrowUp" ? -d : key === "ArrowDown" ? d : 0
           const patches: Record<string, Partial<SquigNode>> = {}

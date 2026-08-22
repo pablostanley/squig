@@ -41,6 +41,7 @@ import {
   type FileMeta,
 } from "./files"
 import { planTabSync } from "./tabs"
+import { DEFAULT_BIG_NUDGE, normalizeBigNudge } from "./nudge"
 
 // ---------------------------------------------------------------------------
 // Store — flat node map + z-order, selection, viewport, tool, history.
@@ -97,6 +98,8 @@ interface SquigState {
   /** the picture whose crop window is being dragged — see lib/canvas/crop */
   croppingId: string | null
   contextRow: boolean
+  /** Shift's configurable step for canvas move and resize nudges. */
+  bigNudge: number
   /* --- the look, kept flat so a control can subscribe to just its own knob.
      It belongs to the open document: every setter writes it back to the file,
      and opening another one brings that file's look with it. */
@@ -156,6 +159,7 @@ interface SquigState {
   /** put a squashed picture back on the ratio its pixels actually have */
   restoreAspect: (ids?: string[]) => void
   setContextRow: (on: boolean) => void
+  setBigNudge: (n: number) => void
   setTheme: (t: ThemeName) => void
   setFont: (f: FontMode) => void
   setPaper: (s: PaperShade) => void
@@ -598,7 +602,7 @@ function flushSave(get: () => SquigState, force = false) {
   const s = get()
   // the look goes to prefs too, but only as the default a new file will start
   // from — the copy that matters travels inside the document below
-  savePrefs({ look: lookOf(s), contextRow: s.contextRow, activeId: s.docId })
+  savePrefs({ look: lookOf(s), contextRow: s.contextRow, bigNudge: s.bigNudge, activeId: s.docId })
   // This tab has been told its document moved on without it. Not one more
   // write goes out until it is pointed at another document — ⌘S included,
   // since nobody pressing it is asking to throw away work they can't see.
@@ -792,6 +796,7 @@ export const useSquig = create<SquigState>((set, get) => ({
   editingId: null,
   croppingId: null,
   contextRow: false,
+  bigNudge: DEFAULT_BIG_NUDGE,
   ...DEFAULT_LOOK,
   hydrated: false,
   commandOpen: false,
@@ -868,6 +873,10 @@ export const useSquig = create<SquigState>((set, get) => ({
 
   setContextRow: (on) => {
     set({ contextRow: on })
+    scheduleSave(get)
+  },
+  setBigNudge: (n) => {
+    set({ bigNudge: normalizeBigNudge(n) })
     scheduleSave(get)
   },
   // each of these edits the open document, so each schedules a save
@@ -1275,6 +1284,7 @@ export const useSquig = create<SquigState>((set, get) => ({
       order: clean.order,
       files,
       contextRow: prefs.contextRow,
+      bigNudge: prefs.bigNudge,
       hydrated: true,
     })
     // the document's own look, or — for one saved before looks existed — the

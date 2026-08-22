@@ -141,6 +141,8 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
       { keys: ["shift+v"], label: "Flip vertical" },
       { keys: ["←↑→↓"], label: "Nudge" },
       { keys: ["shift+←↑→↓"], label: "Nudge further" },
+      { keys: ["mod+←↑→↓"], label: "Resize by 1 px" },
+      { keys: ["mod+shift+←↑→↓"], label: "Resize by the big nudge" },
     ],
   },
   {

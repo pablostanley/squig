@@ -12,7 +12,18 @@
 // The one thing planSave can't answer is what happens when the *index* write
 // is the one refused, since planSave never sees it — so the last section drives
 // saveFile itself, over a localStorage that can be told to say no to one key.
-import { INDEX_KEY, MAX_FILES, listFiles, planSave, saveFile, type FileMeta, type StoredDoc } from "../lib/files.ts"
+import {
+  INDEX_KEY,
+  MAX_FILES,
+  listFiles,
+  loadPrefs,
+  planSave,
+  saveFile,
+  savePrefs,
+  type FileMeta,
+  type StoredDoc,
+} from "../lib/files.ts"
+import { DEFAULT_LOOK } from "../lib/theme.ts"
 
 let passed = 0
 const failures: string[] = []
@@ -149,6 +160,11 @@ function meta(id: string, updatedAt = 20_000, name = "in hand"): FileMeta {
     },
     removeItem: (k: string) => void store.delete(k),
   }
+
+  check("an older preference set gets the default big nudge", loadPrefs().bigNudge === 10)
+  savePrefs({ look: DEFAULT_LOOK, contextRow: false, bigNudge: 24, activeId: null })
+  check("a custom big nudge survives a preference round trip", loadPrefs().bigNudge === 24)
+  store.clear()
 
   const doc = (updatedAt: number, name = "d"): StoredDoc => ({ id: "d1", name, nodes: {}, order: [], updatedAt })
 

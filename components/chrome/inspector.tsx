@@ -56,6 +56,7 @@ import { kbd } from "@/lib/shortcuts"
 import { InkPicker } from "./ink-picker"
 import { bgOf, paletteOf, PAPER_SHADES, type FontMode, type PaperShade } from "@/lib/theme"
 import { LineStyleSegments } from "./line-style-controls"
+import { MAX_BIG_NUDGE, MIN_BIG_NUDGE } from "@/lib/nudge"
 
 // ---------------------------------------------------------------------------
 // Option sets. Declared out here so they aren't rebuilt on every keystroke.
@@ -220,6 +221,7 @@ function PageSettings() {
   const font = useSquig((s) => s.font)
   const theme = useSquig((s) => s.theme)
   const contextRow = useSquig((s) => s.contextRow)
+  const bigNudge = useSquig((s) => s.bigNudge)
   const nodes = useSquig((s) => s.nodes)
   const order = useSquig((s) => s.order)
   const st = useSquig.getState
@@ -289,6 +291,16 @@ function PageSettings() {
       </PanelSection>
 
       <PanelSection id="page-view" title="View">
+        <Row label="Big nudge">
+          <MixedNumberField
+            label="px"
+            min={MIN_BIG_NUDGE}
+            max={MAX_BIG_NUDGE}
+            className="w-[78px]"
+            shared={{ mixed: false, value: bigNudge }}
+            onCommit={(n) => st().setBigNudge(n)}
+          />
+        </Row>
         <Row spread label="Context menu">
           <Switch
             checked={contextRow}
@@ -297,7 +309,7 @@ function PageSettings() {
             className="scale-90"
           />
         </Row>
-        <PanelNote>quick controls float above the selection</PanelNote>
+        <PanelNote>Shift uses this step for move and resize nudges.</PanelNote>
       </PanelSection>
     </>
   )
