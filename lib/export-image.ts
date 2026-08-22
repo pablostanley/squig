@@ -2,9 +2,11 @@
 
 // ---------------------------------------------------------------------------
 // Getting a sketch out of squig: onto the clipboard with ⌘⇧C, or onto disk as
-// a PNG or an SVG. All three draw the same picture — the selection when there
-// is one, the whole canvas when there isn't — so the menu can never act on
-// something different from what the keystroke would have taken.
+// a PNG or an SVG. All three draw the same marks — the selection when there is
+// one, the whole canvas when there isn't — so the menu can never act on
+// something different from what the keystroke would have taken. A copied
+// selection leaves the paper out, which makes the PNG transparent around the
+// marks; a whole-canvas copy and saved files keep the document's paper.
 //
 // The picture is re-rendered from the same prims the canvas draws, into a
 // standalone SVG document. Standalone is the whole difficulty: an <img>
@@ -24,6 +26,7 @@
 // ---------------------------------------------------------------------------
 
 import { imagePlacement, mirrorBox, mirrorGlyphs, primsToPaths } from "@/components/canvas/sketch"
+import { copiedSurface, svgDocument, type ExportDrawing, type ExportSurface } from "./export-image-document"
 import { downloadBlob } from "./file-io"
 import { iconPathsReady, loadIconWeight, normalizeIconWeight } from "./sketch/icon-catalog"
 import { INK, resolveIconName } from "./sketch/kit"
@@ -300,22 +303,8 @@ export function pngTargets(): { nodes: SquigNode[]; whole: boolean } {
  * through here, so the file you save and the picture on your clipboard are the
  * same marks — only the frame around them differs.
  */
-interface Drawing {
-  /** every node as markup, in world coordinates, in draw order */
-  body: string
-  /** @font-face rules with their files inlined, or "" when there were none */
-  css: string
-  /** the world box the picture covers, padding included */
-  x: number
-  y: number
-  w: number
-  h: number
-  /** the paper it prints on */
-  paper: string
-}
-
 /** Draw a set of nodes, on the current theme's paper. */
-async function draw(list: SquigNode[]): Promise<Drawing> {
+async function draw(list: SquigNode[]): Promise<ExportDrawing> {
   // Routed connectors can bow or dogleg outside the endpoint box stored on
   // the node. Measure those visible paths so exports never crop a manual bend.
   const measured = list.map(nodeVisualBounds)
@@ -353,23 +342,6 @@ async function draw(list: SquigNode[]): Promise<Drawing> {
 }
 
 /**
- * A drawing, wrapped in an <svg>.
- *
- * `outW`/`outH` are only the document's nominal size — the viewBox is what
- * carries the coordinates — so the same body prints at twice life size for a
- * raster and at life size for a file, with nothing about the marks changing.
- */
-function svgDocument(d: Drawing, outW: number, outH: number): string {
-  return (
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${outW}" height="${outH}" viewBox="${d.x} ${d.y} ${d.w} ${d.h}">` +
-    (d.css ? `<defs><style type="text/css">${d.css}</style></defs>` : "") +
-    `<rect x="${d.x}" y="${d.y}" width="${d.w}" height="${d.h}" fill="${d.paper}"/>` +
-    d.body +
-    `</svg>`
-  )
-}
-
-/**
  * How big the raster is allowed to get: 2×, unless a wall-sized board won't fit
  * in a canvas, in which case less.
  *
@@ -384,12 +356,15 @@ function rasterScale(w: number, h: number): number {
 }
 
 /** Render a set of nodes to a PNG blob, and say how big it managed to be. */
-export async function renderPng(list: SquigNode[]): Promise<{ blob: Blob; scale: number }> {
+export async function renderPng(
+  list: SquigNode[],
+  options: { surface?: ExportSurface } = {}
+): Promise<{ blob: Blob; scale: number }> {
   const d = await draw(list)
   const scale = rasterScale(d.w, d.h)
   const outW = Math.max(1, Math.round(d.w * scale))
   const outH = Math.max(1, Math.round(d.h * scale))
-  return { blob: await rasterize(svgDocument(d, outW, outH), outW, outH), scale }
+  return { blob: await rasterize(svgDocument(d, outW, outH, options.surface), outW, outH), scale }
 }
 
 /**
@@ -415,7 +390,10 @@ export function copySelectionAsPng(): Promise<CopyOutcome> {
   const { nodes, whole } = pngTargets()
   if (!nodes.length) return Promise.resolve({ status: "empty", whole })
 
-  const render = renderPng(nodes)
+  // A selection should paste like an object, not like a screenshot of the
+  // sheet it was sitting on. The canvas command still carries the paper,
+  // because in that case the sheet is the thing being copied.
+  const render = renderPng(nodes, { surface: copiedSurface(whole) })
   // how far the raster got is only known once it has been made, and every
   // branch below reads it after the blob has landed — so a plain variable does
   // the job the ClipboardItem's promise won't let an await do
