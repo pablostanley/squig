@@ -175,20 +175,16 @@ function Library({ panel }: { panel: Exclude<PanelKind, null> }) {
             </div>
           ))}
           {!total && (
-            <p className="py-8 text-center text-row text-muted-foreground">
-              nothing called &ldquo;{query}&rdquo; in here
-            </p>
+            <p role="status" className="py-8 text-center text-row text-muted-foreground">No results.</p>
           )}
         </div>
       </ScrollArea>
 
-      <PanelFooter className="text-micro text-muted-foreground">
-        {placingDrag
-          ? "let go where you want it"
-          : placing
-            ? "now click the canvas to drop it"
-            : `${total} to choose from — click one or drag it out`}
-      </PanelFooter>
+      {(placingDrag || placing) && (
+        <PanelFooter role="status" className="text-micro text-muted-foreground">
+          {placingDrag ? "Release to place" : "Click canvas to place"}
+        </PanelFooter>
+      )}
     </Panel>
   )
 }

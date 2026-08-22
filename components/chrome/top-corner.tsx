@@ -188,7 +188,7 @@ export function CommandHint() {
       data-squig-chrome
       className="absolute bottom-4 left-1/2 z-30 flex h-ctl -translate-x-1/2 items-center gap-2 rounded-full border border-border/80 bg-background px-gutter text-label text-muted-foreground shadow-panel hover:text-foreground"
     >
-      search everything
+      Search
       <kbd className="inline-flex h-5 items-center rounded-chrome-xs border bg-muted px-1 font-sans text-micro">⌘K</kbd>
     </button>
   )

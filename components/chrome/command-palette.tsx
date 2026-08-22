@@ -300,14 +300,22 @@ function Palette() {
   sections.sort((a, b) => SECTION_ORDER.indexOf(a.title) - SECTION_ORDER.indexOf(b.title))
 
   return (
-    <>
-      <div data-squig-chrome
-      className="fixed inset-0 z-50 flex flex-col justify-end" onPointerDown={close}>
+    <div
+      data-squig-chrome
+      className="fixed inset-0 z-50 flex flex-col justify-end"
+      onPointerDown={close}
+    >
         <div className="absolute inset-0 bg-foreground/10 backdrop-blur-[2px]" />
         <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Search Squig"
           className="animate-in slide-in-from-bottom-4 fade-in relative mx-auto flex max-h-[62vh] w-full max-w-2xl flex-col overflow-hidden rounded-t-chrome-lg border border-b-0 border-border/80 bg-background shadow-popup duration-150"
           onPointerDown={(e) => e.stopPropagation()}
         >
+          <p id="command-palette-help" className="sr-only">
+            Use the arrow keys to move, Enter to choose, and Escape to close. Components are placed in the center of the view.
+          </p>
           <div className="relative shrink-0 border-b">
             <MagnifyingGlassIcon className="pointer-events-none absolute top-1/2 left-4 size-4 -translate-y-1/2 text-muted-foreground" />
             <input
@@ -317,7 +325,9 @@ function Palette() {
                 setQuery(e.target.value)
                 setActive(0)
               }}
-              placeholder="search anything — your screens, buttons, blocks, tools…"
+              aria-label="Search commands, layers, components, blocks, and icons"
+              aria-describedby="command-palette-help"
+              placeholder="Search anything…"
               className="w-full bg-transparent py-4 pr-4 pl-11 text-title outline-none placeholder:text-muted-foreground"
               onKeyDown={(e) => {
                 e.stopPropagation()
@@ -343,9 +353,7 @@ function Palette() {
 
           <div ref={listRef} className="flex-1 overflow-y-auto overscroll-contain p-2.5">
             {!rows.length && (
-              <p className="py-10 text-center text-row text-muted-foreground">
-                nothing matches &ldquo;{query}&rdquo;. try fewer letters.
-              </p>
+              <p role="status" className="py-10 text-center text-row text-muted-foreground">No results.</p>
             )}
             {sections.map((section) => (
               <div key={section.title} className="mb-2">
@@ -373,23 +381,8 @@ function Palette() {
             ))}
           </div>
 
-          <div className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-t border-border/70 px-4 py-3 text-micro text-muted-foreground">
-            <span><Kbd>↑</Kbd><Kbd>↓</Kbd> move</span>
-            <span><Kbd>↵</Kbd> pick</span>
-            <span><Kbd>esc</Kbd> close</span>
-            <span className="w-full sm:ml-auto sm:w-auto">components drop in the middle of your view</span>
-          </div>
         </div>
-      </div>
-    </>
-  )
-}
-
-function Kbd({ children }: { children: React.ReactNode }) {
-  return (
-    <kbd className="mr-1 inline-flex h-5 min-w-5 items-center justify-center rounded-chrome-xs border bg-muted px-1 font-sans text-micro">
-      {children}
-    </kbd>
+    </div>
   )
 }
 

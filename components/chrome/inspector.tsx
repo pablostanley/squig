@@ -174,6 +174,7 @@ export function Inspector() {
 
   const selected = selection.map((id) => nodes[id]).filter(Boolean) as SquigNode[]
   const empty = selected.length === 0
+  const grouped = selected.some((n) => n.groupIds?.length)
 
   // Nothing selected is not an absence — it's the page. So the panel keeps its
   // job and changes its subject rather than going blank.
@@ -187,11 +188,12 @@ export function Inspector() {
           ? "line"
           : selected[0].type
 
-  const subtitle = selected.length > 1 ? selectionSummary(selected) : undefined
+  const subtitle = selected.length > 1 ? selectionSummary(selected) : grouped ? "Grouped" : undefined
+  const headerHelp = grouped ? `${kbd("mod+click")} selects inside. ${kbd("mod+shift+g")} ungroups.` : undefined
 
   return (
     <Panel className="absolute top-16 right-4 z-30 max-h-[calc(100vh-5rem)] w-[296px] max-w-[calc(100vw-88px)]">
-      <PanelHeader title={heading} subtitle={subtitle} />
+      <PanelHeader title={heading} subtitle={subtitle} help={headerHelp} />
 
       <ScrollArea className="min-h-0">
         {/* remounting on a selection change drops any half-typed draft, which
@@ -243,25 +245,21 @@ function PageSettings() {
           you can't work out why a rectangle won't budge. Deselecting is one
           Escape away, which makes this panel the one place always in reach. */}
       {locked.length > 0 && (
-        <PanelSection id="page-locked" title="Locked">
+        <PanelSection id="page-locked" title="Locked" count={locked.length}>
           <Button
             variant="outline"
             size="sm"
+            aria-label={locked.length === 1 ? "Unlock locked layer" : `Unlock all ${locked.length} locked layers`}
             className="h-ctl w-full rounded-chrome-sm text-label"
             onClick={() => st().unlockAll()}
           >
-            <LockSimpleOpenIcon className="size-3" /> Unlock {locked.length === 1 ? "it" : `all ${locked.length}`}
+            <LockSimpleOpenIcon className="size-3" /> {locked.length === 1 ? "Unlock" : "Unlock all"}
           </Button>
-          <PanelNote>
-            {locked.length === 1
-              ? "one layer is held down and won't be selected. right-click it to let it go."
-              : `${locked.length} layers are held down and won't be selected. right-click one to let just that one go.`}
-          </PanelNote>
         </PanelSection>
       )}
 
       <PanelSection id="page-paper" title="Paper">
-        <Row label="Shade">
+        <Row label="Shade" help="Sets the canvas background.">
           <Segmented
             ariaLabel="Paper shade"
             options={paperOptions}
@@ -269,16 +267,16 @@ function PageSettings() {
             onChange={(s) => st().setPaper(s)}
           />
         </Row>
-        <Row spread label="Dot grid">
+        <Row spread label="Dot grid" help="Shows a dot grid on the canvas.">
           <Switch checked={grid} aria-label="Dot grid" onCheckedChange={(on) => st().setGrid(on)} className="scale-90" />
         </Row>
       </PanelSection>
 
       <PanelSection id="page-ink" title="Ink">
-        <Row label="Palette">
+        <Row label="Palette" help="Saved per drawing; reused for new drawings.">
           <InkPicker />
         </Row>
-        <Row label="Font">
+        <Row label="Font" help="Saved per drawing; reused for new drawings.">
           <Segmented
             ariaLabel="Font"
             options={FONT_OPTIONS}
@@ -286,11 +284,10 @@ function PageSettings() {
             onChange={(f) => st().setFont(f)}
           />
         </Row>
-        <PanelNote>saved with this drawing — a new file starts from whatever you set last</PanelNote>
       </PanelSection>
 
       <PanelSection id="page-view" title="View">
-        <Row label="Big nudge">
+        <Row label="Big nudge" help="Sets the move and resize step while holding Shift.">
           <MixedNumberField
             label="px"
             min={MIN_BIG_NUDGE}
@@ -300,15 +297,14 @@ function PageSettings() {
             onCommit={(n) => st().setBigNudge(n)}
           />
         </Row>
-        <Row spread label="Context menu">
+        <Row spread label="Quick controls" help="Shows a toolbar above the selection.">
           <Switch
             checked={contextRow}
-            aria-label="Context menu"
+            aria-label="Quick controls"
             onCheckedChange={(on) => st().setContextRow(on)}
             className="scale-90"
           />
         </Row>
-        <PanelNote>Shift uses this step for move and resize nudges.</PanelNote>
       </PanelSection>
     </>
   )
@@ -369,7 +365,6 @@ function SelectionEditor({ selected }: { selected: SquigNode[] }) {
   const live = (make: (n: SquigNode) => Partial<SquigNode> | null) => patch(make, { checkpoint: false })
   const startGesture = () => st().checkpoint()
 
-  const grouped = selected.some((n) => n.groupIds?.length)
   const components = selected.filter((n): n is ComponentNode => n.type === "component")
   const shapes = selected.filter((n): n is ShapeNode => n.type === "shape")
   const arrows = selected.filter((n): n is ArrowNode => n.type === "arrow")
@@ -408,14 +403,6 @@ function SelectionEditor({ selected }: { selected: SquigNode[] }) {
 
   return (
     <>
-      {grouped && (
-        <div className="border-b border-border/60 px-gutter py-3">
-          <PanelNote>
-            grouped — {kbd("mod+click")} to reach one piece, {kbd("mod+shift+g")} to undo the grouping.
-          </PanelNote>
-        </div>
-      )}
-
       {/* Position & size — a dash means they disagree; type to make them agree.
           Typing sets every node to that value (Figma does the same); scrubbing
           and arrow keys nudge each from its own, so a mixed field stays mixed. */}
@@ -519,7 +506,7 @@ function SelectionEditor({ selected }: { selected: SquigNode[] }) {
               the text actually points. Empty means it points nowhere, and
               clearing the field is how you unlink. ⌘K still opens the floating
               editor over the canvas for the same value. */}
-          <Row label="Link">
+          <Row label="Link" help="Opens this URL when the text is activated.">
             <MixedTextField
               ariaLabel="Link"
               placeholder="https://…"
@@ -528,7 +515,7 @@ function SelectionEditor({ selected }: { selected: SquigNode[] }) {
             />
           </Row>
 
-          <Row label="Size">
+          <Row label="Size" help="Sets the text size.">
             <MixedNumberField
               label=""
               min={4}
@@ -633,7 +620,7 @@ function SelectionEditor({ selected }: { selected: SquigNode[] }) {
               exists and let you back out of it — the window itself is dragged
               on the canvas. Stepping in needs one picture; giving the pixels
               back works on however many are selected. */}
-          <StackRow label="Crop">
+          <StackRow label="Crop" help="Choose the visible part of a picture.">
             <div className="flex gap-1.5">
               <Button
                 variant="outline"
@@ -661,7 +648,7 @@ function SelectionEditor({ selected }: { selected: SquigNode[] }) {
               button under Crop. It runs over every picture selected — each one
               knows its own ratio — and the ones already true sit it out, which
               is also why the button greys out when there's nothing to fix. */}
-          <StackRow label="Proportions">
+          <StackRow label="Proportions" help="Restores the picture’s original aspect ratio.">
             <Button
               variant="outline"
               size="sm"
@@ -678,7 +665,7 @@ function SelectionEditor({ selected }: { selected: SquigNode[] }) {
       {/* --- contextual: fill ------------------------------------------- */}
       {shapes.length > 0 && (
         <PanelSection id="fill" title="Fill" count={partial(shapes.length)}>
-          <Row label="Tone">
+          <Row label="Tone" help="Paper fill hides layers behind the shape.">
             <Segmented
               ariaLabel="Fill tone"
               options={FILL_OPTIONS}
@@ -692,7 +679,7 @@ function SelectionEditor({ selected }: { selected: SquigNode[] }) {
       {/* --- contextual: outline ---------------------------------------- */}
       {outlined.length > 0 && (
         <PanelSection id="outline" title="Outline" count={partial(outlined.length)}>
-          <Row label="Pen">
+          <Row label="Pen" help="Sets the outline weight.">
             <Segmented
               ariaLabel="Pen weight"
               options={STROKE_OPTIONS}
@@ -721,7 +708,7 @@ function SelectionEditor({ selected }: { selected: SquigNode[] }) {
       {/* --- contextual: arrows ------------------------------------------ */}
       {arrows.length > 0 && (
         <PanelSection id="arrow" title="Line" count={partial(arrows.length)}>
-          <Row label="Path">
+          <Row label="Path" help="Chooses straight, curved, or elbow routing.">
             <LineStyleSegments
               arrows={arrows}
               onChange={(style: LineStyle) =>
@@ -733,14 +720,14 @@ function SelectionEditor({ selected }: { selected: SquigNode[] }) {
               }
             />
           </Row>
-          <Row spread label="Head">
+          <Row spread label="Head" help="Shows an arrowhead at the line’s end.">
             <MixedSwitch
               ariaLabel="Arrowhead"
               shared={shared(arrows.map((n) => n.head))}
               onChange={(on) => patch((n) => (n.type === "arrow" ? ({ head: on } as Partial<SquigNode>) : null))}
             />
           </Row>
-          <Row spread label="Snap">
+          <Row spread label="Snap" help="Connects endpoints to nearby layers.">
             <MixedSwitch
               ariaLabel="Snap to objects"
               shared={shared(arrows.map((n) => n.snap !== false))}
@@ -783,9 +770,7 @@ function SelectionEditor({ selected }: { selected: SquigNode[] }) {
           )}
           {multi && !controls.length && (
             <div className="p-gutter">
-              <PanelNote>
-                these components don&apos;t share any settings. select fewer kinds at once to tweak them.
-              </PanelNote>
+              <PanelNote>No shared settings.</PanelNote>
             </div>
           )}
         </>

@@ -19,6 +19,7 @@ import { LinkEditor } from "@/components/chrome/link-editor"
 import { Notice } from "@/components/chrome/notice"
 import { SmallScreenNote } from "@/components/chrome/small-screen-note"
 import { kbd } from "@/lib/shortcuts"
+import { TooltipProvider } from "@/components/ui/tooltip"
 
 export default function Home() {
   const [sidebarVisible, setSidebarVisible] = useState(true)
@@ -47,37 +48,38 @@ export default function Home() {
   }
 
   return (
-    <main className="relative h-full">
-      <Canvas />
-          <Panel style={{ display: uiHidden ? "none" : undefined }} className="absolute top-4 right-4 z-40 flex-row items-center gap-1 p-1">
-            {process.env.NEXT_PUBLIC_SQUIG_OFFLINE !== "1" && <AgentBridge hidden={uiHidden} />}
-            <button className="canvas-action" aria-label={sidebarVisible ? "Hide sidebar" : "Show sidebar"} aria-pressed={sidebarVisible} title={sidebarVisible ? "Hide sidebar" : "Show sidebar"} onClick={() => setSidebarVisible(v => !v)}><SidebarSimpleIcon size={18} /></button>
-          </Panel>
-      {/* ⌘\ clears the room — the canvas and what you've selected, nothing else */}
-      {!uiHidden && (
-        <>
-          <TopCorner />
-
-          <FileName />
-          <LeftRail />
-          <LibraryPanel />
-          {sidebarVisible && <Inspector />}
-          <ZoomPill />
-          <CommandHint />
-          <SmallScreenNote />
-        </>
-      )}
-      {uiHidden && (
-        <p className="pointer-events-none absolute right-4 bottom-4 z-30 font-sans text-micro text-muted-foreground">
-          {kbd("mod+\\")}
-        </p>
-      )}
-      {/* the flash outlives ⌘\ — a copy still has to say it happened */}
-      <Notice />
-      <LinkEditor />
-      <CanvasContextMenu />
-      <CommandPalette />
-      <ShortcutsSheet />
-    </main>
+    <TooltipProvider closeDelay={100}>
+      <main className="relative h-full">
+        <Canvas />
+        <Panel style={{ display: uiHidden ? "none" : undefined }} className="absolute top-4 right-4 z-40 flex-row items-center gap-1 p-1">
+          {process.env.NEXT_PUBLIC_SQUIG_OFFLINE !== "1" && <AgentBridge hidden={uiHidden} />}
+          <button className="canvas-action" aria-label={sidebarVisible ? "Hide sidebar" : "Show sidebar"} aria-pressed={sidebarVisible} title={sidebarVisible ? "Hide sidebar" : "Show sidebar"} onClick={() => setSidebarVisible(v => !v)}><SidebarSimpleIcon size={18} /></button>
+        </Panel>
+        {/* ⌘\ clears the room — the canvas and what you've selected, nothing else */}
+        {!uiHidden && (
+          <>
+            <TopCorner />
+            <FileName />
+            <LeftRail />
+            <LibraryPanel />
+            {sidebarVisible && <Inspector />}
+            <ZoomPill />
+            <CommandHint />
+            <SmallScreenNote />
+          </>
+        )}
+        {uiHidden && (
+          <p className="pointer-events-none absolute right-4 bottom-4 z-30 font-sans text-micro text-muted-foreground">
+            {kbd("mod+\\")}
+          </p>
+        )}
+        {/* the flash outlives ⌘\ — a copy still has to say it happened */}
+        <Notice />
+        <LinkEditor />
+        <CanvasContextMenu />
+        <CommandPalette />
+        <ShortcutsSheet />
+      </main>
+    </TooltipProvider>
   )
 }

@@ -82,8 +82,7 @@ export default function CanvasError({
           squig lost its place
         </h1>
         <p className="mt-3 text-row leading-relaxed text-muted-foreground">
-          something on this page stopped it drawing. nothing has been thrown away — every drawing is still saved in
-          this browser, this one included. try it again, or go and sit with another one for a bit.
+          Drawing failed. Nothing was deleted. Try again, start fresh, or open another drawing.
         </p>
 
         <div className="mt-5 flex flex-wrap gap-2">

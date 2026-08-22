@@ -67,6 +67,11 @@ conventions worth knowing:
 - Geometry and selection logic lives in `lib/` and is testable without React.
   If you're writing math, add a case to `scripts/test-geometry.ts` or
   `scripts/test-selection.ts`.
+- Keep the top-level UI concise. Show actions, values, live status, failures,
+  recovery, and consequences directly. Put non-essential explanation behind a
+  delayed tooltip on the relevant label or row, keep it to one precise
+  sentence, and make the same help available from the keyboard and to assistive
+  technology. Never hide critical information in a tooltip.
 
 ## Reporting bugs
 

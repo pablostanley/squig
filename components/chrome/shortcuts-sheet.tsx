@@ -20,18 +20,22 @@ export function ShortcutsSheet() {
     >
       <div className="absolute inset-0 bg-foreground/10 backdrop-blur-[2px]" />
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="keyboard-shortcuts-title"
         className="animate-in fade-in zoom-in-95 relative flex max-h-full w-full max-w-3xl flex-col overflow-hidden rounded-chrome-lg border border-border/80 bg-background shadow-popup duration-150"
         onPointerDown={(e) => e.stopPropagation()}
       >
         <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-border/70 px-5 py-4">
-          <h2 className="text-title font-semibold">Keyboard</h2>
-          <p className="order-3 w-full text-label text-muted-foreground sm:order-none sm:w-auto">mostly Figma&apos;s, so your hands already know it</p>
+          <h2 id="keyboard-shortcuts-title" className="text-title font-semibold">Keyboard</h2>
           <button
             type="button"
+            autoFocus
+            aria-label="Close keyboard shortcuts"
             className="ml-auto h-ctl rounded-chrome-sm px-2.5 text-label text-muted-foreground hover:bg-accent"
             onClick={() => st().setShortcutsOpen(false)}
           >
-            close
+            Close
           </button>
         </div>
 

@@ -43,16 +43,19 @@ function Editor({ node: first }: { node: TextNode }) {
 
   return (
     <div
+      role="dialog"
+      aria-label="Edit link"
       className="absolute z-40 flex items-center gap-2 rounded-chrome-lg border border-border/80 bg-background p-2 pl-3 shadow-popup"
       style={{ left: Math.max(8, left), top: Math.max(8, top) }}
       onPointerDown={(e) => e.stopPropagation()}
     >
-      <span className="text-label text-muted-foreground">link</span>
+      <label htmlFor="squig-link-url" className="text-label text-muted-foreground">Link</label>
       <input
+        id="squig-link-url"
         ref={inputRef}
         value={value}
         onChange={(e) => setValue(e.target.value)}
-        placeholder="where does this go?"
+        placeholder="https://…"
         className="h-ctl w-56 bg-transparent px-1 text-label outline-none placeholder:text-muted-foreground"
         onKeyDown={(e) => {
           e.stopPropagation()
@@ -65,7 +68,7 @@ function Editor({ node: first }: { node: TextNode }) {
         onClick={commit}
         className="h-ctl rounded-chrome-sm px-2.5 text-label text-muted-foreground hover:bg-accent hover:text-foreground"
       >
-        apply
+        Apply
       </button>
       {first.link && (
         <button
@@ -76,7 +79,7 @@ function Editor({ node: first }: { node: TextNode }) {
           }}
           className="h-ctl rounded-chrome-sm px-2.5 text-label text-muted-foreground hover:bg-accent hover:text-destructive"
         >
-          remove
+          Remove
         </button>
       )}
     </div>

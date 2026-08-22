@@ -19,6 +19,7 @@ import { Collapsible } from "@base-ui/react/collapsible"
 import { CaretRightIcon } from "@phosphor-icons/react"
 
 import { cn } from "@/lib/utils"
+import { HelpTooltip } from "@/components/ui/tooltip"
 
 // ---------------------------------------------------------------------------
 
@@ -53,11 +54,14 @@ export function Panel({
 export function PanelHeader({
   title,
   subtitle,
+  help,
   right,
   className,
 }: {
   title: React.ReactNode
   subtitle?: React.ReactNode
+  /** concise, non-essential context revealed from the title after a delay */
+  help?: React.ReactNode
   right?: React.ReactNode
   className?: string
 }) {
@@ -69,7 +73,9 @@ export function PanelHeader({
       )}
     >
       <div className="min-w-0">
-        <h2 className="truncate text-row font-semibold">{title}</h2>
+        <h2 className="truncate text-row font-semibold">
+          {help ? <HelpTooltip label={title} help={help} /> : title}
+        </h2>
         {subtitle && <p className="mt-1 text-micro text-muted-foreground">{subtitle}</p>}
       </div>
       {right && <div className="flex shrink-0 items-center gap-0.5">{right}</div>}
@@ -77,9 +83,11 @@ export function PanelHeader({
   )
 }
 
-export function PanelFooter({ className, children }: { className?: string; children: React.ReactNode }) {
+export function PanelFooter({ className, children, ...props }: React.ComponentProps<"div">) {
   return (
-    <div className={cn("flex shrink-0 items-center gap-2 border-t border-border/70 px-gutter py-3", className)}>{children}</div>
+    <div className={cn("flex shrink-0 items-center gap-2 border-t border-border/70 px-gutter py-3", className)} {...props}>
+      {children}
+    </div>
   )
 }
 
@@ -187,6 +195,7 @@ export function PanelSection({
  */
 export function Row({
   label,
+  help,
   htmlFor,
   children,
   align = "center",
@@ -194,6 +203,8 @@ export function Row({
   className,
 }: {
   label?: React.ReactNode
+  /** concise, non-essential context revealed from the label after a delay */
+  help?: React.ReactNode
   htmlFor?: string
   children: React.ReactNode
   /** "start" lets a tall control (a wrapping toggle grid) sit against the label */
@@ -210,16 +221,28 @@ export function Row({
   return (
     <div className={cn("flex gap-3", align === "center" ? "items-center" : "items-start", className)}>
       {label !== undefined && (
-        <label
-          htmlFor={htmlFor}
-          className={cn(
-            "shrink-0 text-label text-pretty wrap-anywhere text-muted-foreground select-none",
-            spread ? "flex-1" : "w-label",
-            align === "start" && "pt-2"
-          )}
-        >
-          {label}
-        </label>
+        help ? (
+          <HelpTooltip
+            label={label}
+            help={help}
+            className={cn(
+              "shrink-0 text-label text-pretty wrap-anywhere text-muted-foreground select-none",
+              spread ? "flex-1" : "w-label",
+              align === "start" && "mt-2"
+            )}
+          />
+        ) : (
+          <label
+            htmlFor={htmlFor}
+            className={cn(
+              "shrink-0 text-label text-pretty wrap-anywhere text-muted-foreground select-none",
+              spread ? "flex-1" : "w-label",
+              align === "start" && "pt-2"
+            )}
+          >
+            {label}
+          </label>
+        )
       )}
       <div className={cn("flex items-center gap-1.5", spread ? "shrink-0" : "min-w-0 flex-1")}>{children}</div>
     </div>
@@ -229,22 +252,30 @@ export function Row({
 /** A row whose control needs the full width — long text, a grid of previews. */
 export function StackRow({
   label,
+  help,
   children,
   className,
 }: {
   label?: React.ReactNode
+  /** concise, non-essential context revealed from the label after a delay */
+  help?: React.ReactNode
   children: React.ReactNode
   className?: string
 }) {
   return (
     <div className={cn("flex flex-col gap-1.5", className)}>
-      {label !== undefined && <span className="text-label text-muted-foreground select-none">{label}</span>}
+      {label !== undefined &&
+        (help ? (
+          <HelpTooltip label={label} help={help} side="top" className="self-start text-label text-muted-foreground select-none" />
+        ) : (
+          <span className="text-label text-muted-foreground select-none">{label}</span>
+        ))}
       {children}
     </div>
   )
 }
 
-/** Explanatory aside — grouping hints, empty states, "these don't share knobs". */
+/** A compact status or empty state. Explanations belong on delayed label help. */
 export function PanelNote({ children, className }: { children: React.ReactNode; className?: string }) {
   return <p className={cn("text-label text-pretty text-muted-foreground", className)}>{children}</p>
 }

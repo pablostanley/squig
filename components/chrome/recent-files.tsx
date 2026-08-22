@@ -40,9 +40,8 @@ export function RecentFiles() {
             because this is the list you're looking at when you go to make
             room — and the trash to do it with is on the row above. */}
         {full && (
-          <p className="mt-1 border-t px-2.5 pt-2 pb-1 text-label text-muted-foreground">
-            this browser is out of room, so nothing new is being saved. pictures fill it fastest, and a cropped one
-            still carries the parts it hides. export what you want to keep, then let a drawing go here.
+          <p role="alert" className="mt-1 border-t px-2.5 pt-2 pb-1 text-label leading-relaxed text-muted-foreground">
+            Saving paused: storage full. Export a backup, then delete a drawing to free space.
           </p>
         )}
       </DropdownMenuSubContent>
