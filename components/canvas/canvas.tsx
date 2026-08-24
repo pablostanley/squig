@@ -40,7 +40,14 @@ import {
   setTextHeight,
   setTextWidth,
 } from "@/lib/canvas/text-reflow"
-import { computeSnap, computeResizeSnap, makeSnapRect, type GuideLine, type SnapRect } from "@/lib/canvas/snap-engine"
+import {
+  computeSnap,
+  computeResizeSnap,
+  makeSnapRect,
+  type DistanceIndicator,
+  type GuideLine,
+  type SnapRect,
+} from "@/lib/canvas/snap-engine"
 import { pinchViewport, type PinchStart, type Pt } from "@/lib/canvas/pinch"
 import { useSpacebarPan } from "@/lib/canvas/use-spacebar-pan"
 import { useFileDrop } from "@/lib/canvas/use-file-drop"
@@ -72,6 +79,8 @@ import { SMALL_NUDGE } from "@/lib/nudge"
  */
 const zoomRange = (zoom: number) => ({ min: zoomFloor(zoom), max: MAX_ZOOM })
 const SNAP_THRESHOLD = 6
+/** Once caught, keep the relationship through a slightly wider exit zone. */
+const SNAP_RELEASE_THRESHOLD = 9
 /** screen px of travel before a press stops being a click */
 const DRAG_THRESHOLD = 3
 /** how close to the viewport edge a drag has to get before the canvas follows */
@@ -147,10 +156,15 @@ type Gesture =
       sourceGroupId: string | null
       /** positions at gesture start, keyed by source id */
       sourcePos: Record<string, { x: number; y: number }>
+      /** visual boxes at gesture start — routed arrows can extend past x/y/w/h */
+      sourceBounds: Record<string, Bounds>
       /** ids of the alt-drag copies, while alt is held */
       cloneIds: string[] | null
       /** whether a checkpoint has been taken for this gesture */
       dirty: boolean
+      /** snapped visual-box origins in world units; the wider release zone
+       *  keeps a caught relationship from flickering at its boundary */
+      snapLock: { x: number | null; y: number | null }
       /** set when the press landed inside a bigger selection: a click with no
        *  drag narrows to exactly this set. Carries the set rather than the id
        *  because ⌘-click means "just this piece" while a plain click means
@@ -355,6 +369,7 @@ export function Canvas() {
   /** marquee box in WORLD units — screen conversion happens at render time */
   const [marquee, setMarquee] = useState<Bounds | null>(null)
   const [guides, setGuides] = useState<GuideLine[]>([])
+  const [snapDistances, setSnapDistances] = useState<DistanceIndicator[]>([])
   const [cursor, setCursor] = useState<[number, number] | null>(null)
   const [livePoints, setLivePoints] = useState<[number, number][] | null>(null)
   /** soft: the pointer is over a hollow shape's middle — a click would select
@@ -524,7 +539,8 @@ export function Canvas() {
         if (skip.has(id)) continue
         const n = all[id]
         if (!n) continue
-        out.push(makeSnapRect(id, n.x * v.zoom + v.x, n.y * v.zoom + v.y, n.w * v.zoom, n.h * v.zoom))
+        const b = nodeVisualBounds(n)
+        out.push(makeSnapRect(id, b.x * v.zoom + v.x, b.y * v.zoom + v.y, b.w * v.zoom, b.h * v.zoom))
       }
       return out
     },
@@ -636,11 +652,12 @@ export function Canvas() {
         for (let i = 0; i < ids.length; i++) {
           const n = live.nodes[ids[i]]
           const o = startPos(i)
-          if (!n || !o) continue
-          if (o.x + dx < minX) minX = o.x + dx
-          if (o.y + dy < minY) minY = o.y + dy
-          if (o.x + dx + n.w > maxX) maxX = o.x + dx + n.w
-          if (o.y + dy + n.h > maxY) maxY = o.y + dy + n.h
+          const b = g.sourceBounds[g.sourceIds[i]]
+          if (!n || !o || !b) continue
+          if (b.x + dx < minX) minX = b.x + dx
+          if (b.y + dy < minY) minY = b.y + dy
+          if (b.x + dx + b.w > maxX) maxX = b.x + dx + b.w
+          if (b.y + dy + b.h > maxY) maxY = b.y + dy + b.h
         }
         if (!Number.isFinite(minX)) return
 
@@ -648,22 +665,81 @@ export function Canvas() {
         let sdx = 0
         let sdy = 0
         if (!mods.toggle) {
-          const dragged = makeSnapRect(
+          const candidates = collectCandidates(ids)
+          const rawLeft = minX * v.zoom + v.x
+          const rawTop = minY * v.zoom + v.y
+          let holdX =
+            lockedAxis !== "x" &&
+            g.snapLock.x !== null &&
+            Math.abs((minX - g.snapLock.x) * v.zoom) <= SNAP_RELEASE_THRESHOLD
+          let holdY =
+            lockedAxis !== "y" &&
+            g.snapLock.y !== null &&
+            Math.abs((minY - g.snapLock.y) * v.zoom) <= SNAP_RELEASE_THRESHOLD
+
+          const probe = () => makeSnapRect(
             "__drag__",
-            minX * v.zoom + v.x,
-            minY * v.zoom + v.y,
+            holdX && g.snapLock.x !== null ? g.snapLock.x * v.zoom + v.x : rawLeft,
+            holdY && g.snapLock.y !== null ? g.snapLock.y * v.zoom + v.y : rawTop,
             (maxX - minX) * v.zoom,
             (maxY - minY) * v.zoom
           )
-          const snap = computeSnap(dragged, collectCandidates(ids), SNAP_THRESHOLD)
+          let snap = computeSnap(probe(), candidates, SNAP_THRESHOLD, undefined, v.zoom)
+          const hasFeedback = (axis: "x" | "y") =>
+            snap.guides.some((guide) => guide.axis === axis) || snap.distances.some((distance) => distance.axis === axis)
+
+          // A lock normally recomputes as an exact zero-delta snap. If its
+          // target disappeared as another relationship changed, drop only
+          // that axis and give the raw pointer position a fresh chance.
+          if ((holdX && !hasFeedback("x")) || (holdY && !hasFeedback("y"))) {
+            if (holdX && !hasFeedback("x")) {
+              holdX = false
+              g.snapLock.x = null
+            }
+            if (holdY && !hasFeedback("y")) {
+              holdY = false
+              g.snapLock.y = null
+            }
+            snap = computeSnap(probe(), candidates, SNAP_THRESHOLD, undefined, v.zoom)
+          }
+
           // a locked axis stays locked; only the free one may be nudged
-          sdx = lockedAxis === "x" ? 0 : snap.dx
-          sdy = lockedAxis === "y" ? 0 : snap.dy
+          sdx = lockedAxis === "x"
+            ? 0
+            : holdX && g.snapLock.x !== null
+              ? (g.snapLock.x - minX) * v.zoom
+              : snap.dx
+          sdy = lockedAxis === "y"
+            ? 0
+            : holdY && g.snapLock.y !== null
+              ? (g.snapLock.y - minY) * v.zoom
+              : snap.dy
+
+          g.snapLock.x = lockedAxis === "x"
+            ? null
+            : holdX
+              ? g.snapLock.x
+              : hasFeedback("x")
+                ? minX + snap.dx / v.zoom
+                : null
+          g.snapLock.y = lockedAxis === "y"
+            ? null
+            : holdY
+              ? g.snapLock.y
+              : hasFeedback("y")
+                ? minY + snap.dy / v.zoom
+                : null
           setGuides(
             snap.guides.filter((gl) => (lockedAxis === "x" ? gl.axis !== "x" : lockedAxis === "y" ? gl.axis !== "y" : true))
           )
+          setSnapDistances(
+            snap.distances.filter((d) => (lockedAxis === "x" ? d.axis !== "x" : lockedAxis === "y" ? d.axis !== "y" : true))
+          )
         } else {
+          g.snapLock.x = null
+          g.snapLock.y = null
           setGuides([])
+          setSnapDistances([])
         }
 
         const patches: Record<string, Partial<SquigNode>> = {}
@@ -751,6 +827,7 @@ export function Canvas() {
           const rectS = makeSnapRect("__bbox__", raw.x * v.zoom + v.x, raw.y * v.zoom + v.y, raw.w * v.zoom, raw.h * v.zoom)
           const snap = computeResizeSnap(rectS, g.handle, collectCandidates(g.ids), SNAP_THRESHOLD)
           setGuides(snap.guides)
+          setSnapDistances([])
           next = resizeBounds(g.origBounds, g.handle, dx + snap.dx / v.zoom, dy + snap.dy / v.zoom, {
             aspect: false,
             fromCenter: mods.alt,
@@ -758,6 +835,7 @@ export function Canvas() {
         } else {
           // snapping an edge would break the ratio, so aspect lock wins
           setGuides([])
+          setSnapDistances([])
         }
 
         if (soloText && (g.handle === "e" || g.handle === "w")) {
@@ -999,6 +1077,7 @@ export function Canvas() {
     st().setTransforming(false)
     setGestureKind(null)
     setGuides([])
+    setSnapDistances([])
     setLivePoints(null)
     setMarquee(null)
     setBindHint(null)
@@ -1666,6 +1745,7 @@ export function Canvas() {
         }
 
         const sourcePos: Record<string, { x: number; y: number }> = {}
+        const sourceBounds: Record<string, Bounds> = {}
         const sourceIds: string[] = []
         // document order, matching what cloneSelectionInPlace returns
         for (const id of s.order) {
@@ -1673,6 +1753,7 @@ export function Canvas() {
           const n = s.nodes[id]
           if (n) {
             sourcePos[id] = { x: n.x, y: n.y }
+            sourceBounds[id] = nodeVisualBounds(n)
             sourceIds.push(id)
           }
         }
@@ -1685,8 +1766,10 @@ export function Canvas() {
           sourceIds,
           sourceGroupId,
           sourcePos,
+          sourceBounds,
           cloneIds: null,
           dirty: false,
+          snapLock: { x: null, y: null },
           collapseTo,
         }, e)
         return
@@ -2463,17 +2546,9 @@ export function Canvas() {
         />
       )}
 
-      {/* smart guides */}
-      {guides.length > 0 && (
-        <svg className="pointer-events-none absolute inset-0 h-full w-full">
-          {guides.map((g, i) =>
-            g.axis === "x" ? (
-              <line key={i} x1={g.position} y1={g.start} x2={g.position} y2={g.end} stroke="var(--sq-select)" strokeWidth={1} />
-            ) : (
-              <line key={i} x1={g.start} y1={g.position} x2={g.end} y2={g.position} stroke="var(--sq-select)" strokeWidth={1} />
-            )
-          )}
-        </svg>
+      {/* smart guides — transient alignment hairlines and equal-gap measures */}
+      {(guides.length > 0 || snapDistances.length > 0) && (
+        <SmartGuides guides={guides} distances={snapDistances} />
       )}
 
       {/* marquee */}
@@ -2529,6 +2604,92 @@ export function Canvas() {
         />
       )}
     </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+
+/**
+ * Screen-space feedback for the snap engine.
+ *
+ * Alignment uses a light dashed hairline so it reads as a temporary
+ * relationship, not another selected object. Equal spacing gets the warmer
+ * measuring colour and a compact numeric chip; both disappear with the
+ * gesture rather than leaving measurement chrome behind on the canvas.
+ */
+function SmartGuides({ guides, distances }: { guides: GuideLine[]; distances: DistanceIndicator[] }) {
+  const guidePad = 6
+  const tick = 3
+  return (
+    <svg aria-hidden="true" className="pointer-events-none absolute inset-0 h-full w-full overflow-visible">
+      {guides.map((g, i) =>
+        g.axis === "x" ? (
+          <line
+            key={`guide-x-${i}`}
+            x1={g.position}
+            y1={g.start - guidePad}
+            x2={g.position}
+            y2={g.end + guidePad}
+            stroke="var(--sq-select)"
+            strokeWidth={1}
+            strokeDasharray="3 3"
+          />
+        ) : (
+          <line
+            key={`guide-y-${i}`}
+            x1={g.start - guidePad}
+            y1={g.position}
+            x2={g.end + guidePad}
+            y2={g.position}
+            stroke="var(--sq-select)"
+            strokeWidth={1}
+            strokeDasharray="3 3"
+          />
+        )
+      )}
+      {distances.map((d, i) => {
+        const label = String(d.distance)
+        const labelW = Math.max(18, label.length * 6 + 8)
+        const labelH = 16
+        return (
+          <g key={`distance-${d.axis}-${i}`}>
+            <line x1={d.x1} y1={d.y1} x2={d.x2} y2={d.y2} stroke="var(--sq-measure)" strokeWidth={1} />
+            {d.axis === "x" ? (
+              <>
+                <line x1={d.x1} y1={d.y1 - tick} x2={d.x1} y2={d.y1 + tick} stroke="var(--sq-measure)" />
+                <line x1={d.x2} y1={d.y2 - tick} x2={d.x2} y2={d.y2 + tick} stroke="var(--sq-measure)" />
+              </>
+            ) : (
+              <>
+                <line x1={d.x1 - tick} y1={d.y1} x2={d.x1 + tick} y2={d.y1} stroke="var(--sq-measure)" />
+                <line x1={d.x2 - tick} y1={d.y2} x2={d.x2 + tick} y2={d.y2} stroke="var(--sq-measure)" />
+              </>
+            )}
+            <rect
+              x={d.labelX - labelW / 2}
+              y={d.labelY - labelH / 2}
+              width={labelW}
+              height={labelH}
+              rx={4}
+              fill="var(--sq-measure)"
+            />
+            <text
+              x={d.labelX}
+              y={d.labelY}
+              dy="0.34em"
+              fill="white"
+              fontFamily="var(--font-sans), ui-sans-serif, sans-serif"
+              fontSize={10}
+              fontWeight={650}
+              style={{ fontVariantNumeric: "tabular-nums" }}
+              textAnchor="middle"
+            >
+              {label}
+            </text>
+          </g>
+        )
+      })}
+    </svg>
   )
 }
 

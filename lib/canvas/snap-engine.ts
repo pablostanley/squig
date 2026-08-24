@@ -1,7 +1,8 @@
 // ---------------------------------------------------------------------------
 // Smart Guides — Snap Engine
 // ---------------------------------------------------------------------------
-// Pure calculation engine for alignment snapping. No React, no store.
+// Pure calculation engine for alignment and equal-spacing snapping. No React,
+// no store.
 // All calculations in screen space (overlay-relative pixels) so the snap
 // threshold feels consistent regardless of zoom level.
 // ---------------------------------------------------------------------------
@@ -37,7 +38,7 @@ export interface GuideLine {
 /** A distance indicator between two edges. */
 export interface DistanceIndicator {
   axis: "x" | "y"
-  /** Pixel distance */
+  /** Distance in design-space units (the number shown in the label). */
   distance: number
   /** Line start */
   x1: number
@@ -83,6 +84,219 @@ function getEdges(r: SnapRect): { x: number[]; y: number[] } {
   }
 }
 
+type SnapAxis = "x" | "y"
+
+interface AlignmentMatch {
+  pos: number
+  rects: SnapRect[]
+}
+
+interface AlignmentResult {
+  delta: number
+  matches: AlignmentMatch[]
+}
+
+interface SpacingResult {
+  delta: number
+  distances: DistanceIndicator[]
+  /** Prefer the most local equal-spacing relationship when several coincide. */
+  span: number
+}
+
+const EPSILON = 1e-6
+
+function axisStart(r: SnapRect, axis: SnapAxis): number {
+  return axis === "x" ? r.left : r.top
+}
+
+function axisSize(r: SnapRect, axis: SnapAxis): number {
+  return axis === "x" ? r.width : r.height
+}
+
+function axisEnd(r: SnapRect, axis: SnapAxis): number {
+  return axisStart(r, axis) + axisSize(r, axis)
+}
+
+function crossStart(r: SnapRect, axis: SnapAxis): number {
+  return axis === "x" ? r.top : r.left
+}
+
+function crossEnd(r: SnapRect, axis: SnapAxis): number {
+  return crossStart(r, axis) + (axis === "x" ? r.height : r.width)
+}
+
+function laneOverlap(a: SnapRect, b: SnapRect, axis: SnapAxis, padding = 0): boolean {
+  return (
+    Math.min(crossEnd(a, axis), crossEnd(b, axis)) + padding >=
+    Math.max(crossStart(a, axis), crossStart(b, axis))
+  )
+}
+
+function translated(r: SnapRect, axis: SnapAxis, delta: number): SnapRect {
+  return makeSnapRect(
+    r.id,
+    r.left + (axis === "x" ? delta : 0),
+    r.top + (axis === "y" ? delta : 0),
+    r.width,
+    r.height
+  )
+}
+
+/** One dimension of ordinary edge / centre alignment. */
+function computeAlignment(
+  dragged: SnapRect,
+  candidates: SnapRect[],
+  axis: SnapAxis,
+  threshold: number
+): AlignmentResult | null {
+  const dragEdges = getEdges(dragged)[axis]
+  let best = Infinity
+  const matches: AlignmentMatch[] = []
+
+  for (const dragPos of dragEdges) {
+    for (const cand of candidates) {
+      if (cand.id === dragged.id) continue
+      for (const candPos of getEdges(cand)[axis]) {
+        const delta = candPos - dragPos
+        const absDelta = Math.abs(delta)
+        if (absDelta > threshold) continue
+        if (absDelta < Math.abs(best) - EPSILON) {
+          best = delta
+          matches.length = 0
+        }
+        if (Math.abs(delta - best) > EPSILON) continue
+
+        const existing = matches.find((match) => Math.abs(match.pos - candPos) <= EPSILON)
+        if (existing) {
+          if (!existing.rects.some((r) => r.id === cand.id)) existing.rects.push(cand)
+        } else {
+          matches.push({ pos: candPos, rects: [cand] })
+        }
+      }
+    }
+  }
+
+  return Number.isFinite(best) ? { delta: best, matches } : null
+}
+
+function spacingIndicator(
+  axis: SnapAxis,
+  before: SnapRect,
+  after: SnapRect,
+  cross: number,
+  scale: number
+): DistanceIndicator {
+  const start = axisEnd(before, axis)
+  const end = axisStart(after, axis)
+  const gap = Math.max(0, end - start)
+  if (axis === "x") {
+    return {
+      axis,
+      distance: Math.round(gap / scale),
+      x1: start,
+      y1: cross,
+      x2: end,
+      y2: cross,
+      labelX: (start + end) / 2,
+      labelY: cross,
+    }
+  }
+  return {
+    axis,
+    distance: Math.round(gap / scale),
+    x1: cross,
+    y1: start,
+    x2: cross,
+    y2: end,
+    labelX: cross,
+    labelY: (start + end) / 2,
+  }
+}
+
+/** The two matching gaps around a three-item equal-spacing sequence. */
+function spacingIndicators(axis: SnapAxis, rects: SnapRect[], scale: number): DistanceIndicator[] {
+  const ordered = [...rects].sort((a, b) => axisStart(a, axis) - axisStart(b, axis))
+  const overlapStart = Math.max(...ordered.map((r) => crossStart(r, axis)))
+  const overlapEnd = Math.min(...ordered.map((r) => crossEnd(r, axis)))
+  const cross = overlapEnd >= overlapStart
+    ? (overlapStart + overlapEnd) / 2
+    : ordered.reduce((sum, r) => sum + (crossStart(r, axis) + crossEnd(r, axis)) / 2, 0) / ordered.length
+  return [
+    spacingIndicator(axis, ordered[0], ordered[1], cross, scale),
+    spacingIndicator(axis, ordered[1], ordered[2], cross, scale),
+  ]
+}
+
+/**
+ * Find a three-item equal-spacing placement on one axis.
+ *
+ * This covers both Figma-style cases: dropping an item between two neighbours
+ * and extending an existing two-item rhythm before or after the pair. Only
+ * items sharing the same perpendicular lane participate, which keeps a busy
+ * board from inventing spacing relationships across unrelated rows/columns.
+ */
+function computeEqualSpacing(
+  dragged: SnapRect,
+  candidates: SnapRect[],
+  axis: SnapAxis,
+  threshold: number,
+  scale: number
+): SpacingResult | null {
+  let best: SpacingResult | null = null
+  const dragSize = axisSize(dragged, axis)
+  const dragStart = axisStart(dragged, axis)
+
+  const consider = (a: SnapRect, b: SnapRect, desiredStart: number, span: number) => {
+    const delta = desiredStart - dragStart
+    if (Math.abs(delta) > threshold) return
+    const snapped = translated(dragged, axis, delta)
+    const next: SpacingResult = {
+      delta,
+      distances: spacingIndicators(axis, [a, b, snapped], scale),
+      span,
+    }
+    if (
+      !best ||
+      Math.abs(next.delta) < Math.abs(best.delta) - EPSILON ||
+      (Math.abs(Math.abs(next.delta) - Math.abs(best.delta)) <= EPSILON && next.span < best.span)
+    ) {
+      best = next
+    }
+  }
+
+  // Only neighbours that share the dragged item's lane can be part of its
+  // spacing rhythm. Sorting once and testing adjacent neighbours keeps this
+  // pass O(n log n), rather than comparing every pair on every pointer frame.
+  const lane = candidates
+    .filter((candidate) => laneOverlap(dragged, candidate, axis, threshold))
+    .sort((a, b) => axisStart(a, axis) - axisStart(b, axis))
+
+  for (let i = 0; i < lane.length - 1; i++) {
+    const a = lane[i]
+    const b = lane[i + 1]
+
+    // A spacing rhythm needs two separate neighbours in one visible lane.
+    if (axisEnd(a, axis) > axisStart(b, axis) || !laneOverlap(a, b, axis)) continue
+
+    const pairGap = axisStart(b, axis) - axisEnd(a, axis)
+    const pairSpan = axisEnd(b, axis) - axisStart(a, axis)
+
+    // Extend the pair on either side using its existing gap. A zero gap is
+    // edge snapping, not a spacing rhythm, and already has a clearer guide.
+    if (pairGap > EPSILON) {
+      consider(a, b, axisStart(a, axis) - pairGap - dragSize, pairSpan + pairGap + dragSize)
+      consider(a, b, axisEnd(b, axis) + pairGap, pairSpan + pairGap + dragSize)
+    }
+
+    // Or fit the dragged box into the available space with an equal gap on
+    // both sides. The pair did not have to be evenly spaced beforehand.
+    const free = pairGap - dragSize
+    if (free > EPSILON) consider(a, b, axisEnd(a, axis) + free / 2, pairSpan)
+  }
+
+  return best
+}
+
 // ---------------------------------------------------------------------------
 // computeSnap — Core snapping algorithm
 // ---------------------------------------------------------------------------
@@ -96,72 +310,27 @@ export function computeSnap(
   dragged: SnapRect,
   candidates: SnapRect[],
   threshold: number,
-  parent?: SnapRect
+  parent?: SnapRect,
+  scale: number = 1
 ): SnapResult {
   const allCandidates = parent ? [parent, ...candidates] : candidates
-  const dragEdges = getEdges(dragged)
+  const xAlign = computeAlignment(dragged, allCandidates, "x", threshold)
+  const yAlign = computeAlignment(dragged, allCandidates, "y", threshold)
+  // A parent/frame is a useful alignment target but not one item in a sibling
+  // spacing rhythm, so equal spacing deliberately considers siblings only.
+  const xSpacing = computeEqualSpacing(dragged, candidates, "x", threshold, scale)
+  const ySpacing = computeEqualSpacing(dragged, candidates, "y", threshold, scale)
+
+  const chooseDelta = (align: AlignmentResult | null, spacing: SpacingResult | null) => {
+    if (!align) return spacing?.delta ?? 0
+    if (!spacing) return align.delta
+    return Math.abs(spacing.delta) < Math.abs(align.delta) - EPSILON ? spacing.delta : align.delta
+  }
+
+  const dx = chooseDelta(xAlign, xSpacing)
+  const dy = chooseDelta(yAlign, ySpacing)
   const guides: GuideLine[] = []
-
-  let bestDx = Infinity
-  let bestDy = Infinity
-  const xMatches: { pos: number; rects: SnapRect[]; dragEdgeIdx: number }[] = []
-  const yMatches: { pos: number; rects: SnapRect[]; dragEdgeIdx: number }[] = []
-
-  // Check X axis (vertical guide lines)
-  for (let di = 0; di < dragEdges.x.length; di++) {
-    const dragPos = dragEdges.x[di]
-    for (const cand of allCandidates) {
-      if (cand.id === dragged.id) continue
-      const candEdges = getEdges(cand)
-      for (const candPos of candEdges.x) {
-        const delta = candPos - dragPos
-        const absDelta = Math.abs(delta)
-        if (absDelta > threshold) continue
-        if (absDelta < Math.abs(bestDx)) {
-          bestDx = delta
-          xMatches.length = 0
-          xMatches.push({ pos: candPos, rects: [cand], dragEdgeIdx: di })
-        } else if (absDelta === Math.abs(bestDx) && delta === bestDx) {
-          // Same delta — collect for multi-element guides
-          const existing = xMatches.find((m) => m.pos === candPos)
-          if (existing) {
-            existing.rects.push(cand)
-          } else {
-            xMatches.push({ pos: candPos, rects: [cand], dragEdgeIdx: di })
-          }
-        }
-      }
-    }
-  }
-
-  // Check Y axis (horizontal guide lines)
-  for (let di = 0; di < dragEdges.y.length; di++) {
-    const dragPos = dragEdges.y[di]
-    for (const cand of allCandidates) {
-      if (cand.id === dragged.id) continue
-      const candEdges = getEdges(cand)
-      for (const candPos of candEdges.y) {
-        const delta = candPos - dragPos
-        const absDelta = Math.abs(delta)
-        if (absDelta > threshold) continue
-        if (absDelta < Math.abs(bestDy)) {
-          bestDy = delta
-          yMatches.length = 0
-          yMatches.push({ pos: candPos, rects: [cand], dragEdgeIdx: di })
-        } else if (absDelta === Math.abs(bestDy) && delta === bestDy) {
-          const existing = yMatches.find((m) => m.pos === candPos)
-          if (existing) {
-            existing.rects.push(cand)
-          } else {
-            yMatches.push({ pos: candPos, rects: [cand], dragEdgeIdx: di })
-          }
-        }
-      }
-    }
-  }
-
-  const dx = isFinite(bestDx) ? bestDx : 0
-  const dy = isFinite(bestDy) ? bestDy : 0
+  const distances: DistanceIndicator[] = []
 
   // Build guide lines for X matches (vertical lines)
   const snappedDragged = makeSnapRect(
@@ -172,7 +341,7 @@ export function computeSnap(
     dragged.height
   )
 
-  for (const match of xMatches) {
+  for (const match of xAlign && Math.abs(xAlign.delta - dx) <= EPSILON ? xAlign.matches : []) {
     // Compute the vertical extent of the guide line
     const allRects = [...match.rects, snappedDragged]
     let minY = Infinity
@@ -190,7 +359,7 @@ export function computeSnap(
   }
 
   // Build guide lines for Y matches (horizontal lines)
-  for (const match of yMatches) {
+  for (const match of yAlign && Math.abs(yAlign.delta - dy) <= EPSILON ? yAlign.matches : []) {
     const allRects = [...match.rects, snappedDragged]
     let minX = Infinity
     let maxX = -Infinity
@@ -206,7 +375,13 @@ export function computeSnap(
     })
   }
 
-  return { dx, dy, guides, distances: [] }
+  // Alignment and equal spacing can both be true on the same frame. Keep the
+  // hairline and the paired measurements in that case instead of arbitrarily
+  // hiding one piece of useful feedback.
+  if (xSpacing && Math.abs(xSpacing.delta - dx) <= EPSILON) distances.push(...xSpacing.distances)
+  if (ySpacing && Math.abs(ySpacing.delta - dy) <= EPSILON) distances.push(...ySpacing.distances)
+
+  return { dx, dy, guides, distances }
 }
 
 // ---------------------------------------------------------------------------

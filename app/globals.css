@@ -111,6 +111,9 @@
   --sq-shade-strong: #d3d7ff;
   --sq-grid: #e6e1d3;
   --sq-select: #a200ff;
+  /* Measurement is functional chrome rather than document ink. Keeping it
+     stable across themes makes an equal-gap number recognizable at a glance. */
+  --sq-measure: #c25500;
   --sq-font: var(--font-sketch);
 }
 
