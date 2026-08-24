@@ -63,6 +63,7 @@ import { EmptyCanvas } from "./empty-canvas"
 import { TextEditOverlay } from "./text-edit-overlay"
 import { nodeVisualBounds, worldRouteHandle, type RouteHandle } from "@/lib/canvas/line-routing"
 import { SMALL_NUDGE } from "@/lib/nudge"
+import { constrainMoveTo45, constrainSnapToDirection, type DragDirection } from "@/lib/canvas/move"
 
 /**
  * A gesture's zoom floor is not a constant: ⇧1 is allowed below MIN_ZOOM to
@@ -617,16 +618,15 @@ export function Canvas() {
 
         let dx = wx - g.wx
         let dy = wy - g.wy
-        let lockedAxis: "x" | "y" | null = null
+        let lockedDirection: DragDirection | null = null
         if (mods.shift) {
-          // axis lock, on whichever direction you committed to
-          if (Math.abs(dx) > Math.abs(dy)) {
-            dy = 0
-            lockedAxis = "y"
-          } else {
-            dx = 0
-            lockedAxis = "x"
-          }
+          // Eight-way lock: horizontal, vertical, or either 45-degree diagonal.
+          // Recompute from the gesture origin so releasing Shift returns to
+          // the pointer without accumulated drift.
+          const constrained = constrainMoveTo45(dx, dy)
+          dx = constrained.dx
+          dy = constrained.dy
+          lockedDirection = constrained.direction
         }
 
         let minX = Infinity
@@ -656,12 +656,29 @@ export function Canvas() {
             (maxY - minY) * v.zoom
           )
           const snap = computeSnap(dragged, collectCandidates(ids), SNAP_THRESHOLD)
-          // a locked axis stays locked; only the free one may be nudged
-          sdx = lockedAxis === "x" ? 0 : snap.dx
-          sdy = lockedAxis === "y" ? 0 : snap.dy
-          setGuides(
-            snap.guides.filter((gl) => (lockedAxis === "x" ? gl.axis !== "x" : lockedAxis === "y" ? gl.axis !== "y" : true))
-          )
+          if (lockedDirection) {
+            // A guide may move a constrained drag, but only along its locked
+            // line. Independent x/y corrections would turn 45° into 44.8°.
+            let hasXGuide = false
+            let hasYGuide = false
+            for (const guide of snap.guides) {
+              if (guide.axis === "x") hasXGuide = true
+              else hasYGuide = true
+            }
+            const constrainedSnap = constrainSnapToDirection(lockedDirection, snap, {
+              x: hasXGuide,
+              y: hasYGuide,
+            })
+            sdx = constrainedSnap.dx
+            sdy = constrainedSnap.dy
+            setGuides(
+              snap.guides.filter((guide) => (guide.axis === "x" ? constrainedSnap.useX : constrainedSnap.useY))
+            )
+          } else {
+            sdx = snap.dx
+            sdy = snap.dy
+            setGuides(snap.guides)
+          }
         } else {
           setGuides([])
         }
@@ -1237,7 +1254,7 @@ export function Canvas() {
       // a lost window means we'll never see the release; keep the work
       window.addEventListener("blur", finishGesture, opts)
 
-      // modifiers are live: pressing Shift mid-drag locks the axis now, not on
+      // modifiers are live: pressing Shift mid-drag locks the direction now, not on
       // the next pixel of mouse movement
       const onModKey = (ev: KeyboardEvent) => {
         if (ev.key === "Escape") {

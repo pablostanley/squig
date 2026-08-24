@@ -36,7 +36,7 @@ Legend: **[new]** to build, **[has]** already works, **[fix]** exists but wrong.
 | B3 | **Shift+click** on a selected node removes it | [has] |
 | B4 | **Ctrl+click and Cmd+click behave as Shift+click** (toggle). squig has no nesting, so "deep select" is meaningless. | [new] |
 | B5 | On macOS this deliberately diverges from Figma, where Ctrl+click is the OS right-click: it was asked for explicitly, and a two-finger tap or a real right-click still opens the context menu, so nothing is lost. Ctrl+click therefore suppresses the menu under the select tool. | [new] |
-| B5b | **Shift+drag axis-locks a move** to whichever axis you committed to. Composes with B6 (a shift-click that adds, then drags, is locked) and with Alt (axis-locked duplicate) | [new] |
+| B5b | **Shift+drag locks a move to the nearest 45-degree direction**: horizontal, vertical, or diagonal. Composes with B6 (a shift-click that adds, then drags, is locked), Alt (constrained duplicate), and smart guides without letting a snap pull the move off-angle. | [has] |
 | B5c | **Cmd/Ctrl held during a move or resize bypasses snapping** — the escape hatch from a magnetised board | [new] |
 | B6 | **Additive click can immediately drag.** After a shift/ctrl-click that *adds* a node, the pointer is already in a move gesture for the whole selection. A shift-click that *removes* does not drag. | [fix] |
 | B7 | **Click on an already-multi-selected node does not collapse the selection on pointer-down** — it starts a drag of the whole selection. Only a pointer-*up* with no movement collapses to that single node. (Classic Figma/Sketch behaviour.) | [new] |
