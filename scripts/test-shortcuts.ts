@@ -107,7 +107,7 @@ const canvas = readFileSync(join(here, "../components/canvas/canvas.tsx"), "utf8
 
 // each claim, and the thing in the canvas that has to be there for it to hold
 const CLAIMS: [string, string][] = [
-  ["shift-drag axis lock", "lockedAxis"],
+  ["shift-drag 45-degree lock", "constrainMoveTo45"],
   ["shift-resize proportion lock", "aspect: lockAspect"],
   ["alt-resize from the middle", "fromCenter: mods.alt"],
   ["the modifier that skips snapping", "!mods.toggle"],

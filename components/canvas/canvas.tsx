@@ -70,6 +70,7 @@ import { EmptyCanvas } from "./empty-canvas"
 import { TextEditOverlay } from "./text-edit-overlay"
 import { nodeVisualBounds, worldRouteHandle, type RouteHandle } from "@/lib/canvas/line-routing"
 import { SMALL_NUDGE } from "@/lib/nudge"
+import { constrainMoveTo45, constrainSnapToDirection, type DragDirection } from "@/lib/canvas/move"
 
 /**
  * A gesture's zoom floor is not a constant: ⇧1 is allowed below MIN_ZOOM to
@@ -633,16 +634,15 @@ export function Canvas() {
 
         let dx = wx - g.wx
         let dy = wy - g.wy
-        let lockedAxis: "x" | "y" | null = null
+        let lockedDirection: DragDirection | null = null
         if (mods.shift) {
-          // axis lock, on whichever direction you committed to
-          if (Math.abs(dx) > Math.abs(dy)) {
-            dy = 0
-            lockedAxis = "y"
-          } else {
-            dx = 0
-            lockedAxis = "x"
-          }
+          // Eight-way lock: horizontal, vertical, or either 45-degree diagonal.
+          // Recompute from the gesture origin so releasing Shift returns to
+          // the pointer without accumulated drift.
+          const constrained = constrainMoveTo45(dx, dy)
+          dx = constrained.dx
+          dy = constrained.dy
+          lockedDirection = constrained.direction
         }
 
         let minX = Infinity
@@ -668,12 +668,18 @@ export function Canvas() {
           const candidates = collectCandidates(ids)
           const rawLeft = minX * v.zoom + v.x
           const rawTop = minY * v.zoom + v.y
+          // A directional move must stay on its projected line, so do not
+          // reuse independent per-axis locks captured by a free move.
+          if (lockedDirection) {
+            g.snapLock.x = null
+            g.snapLock.y = null
+          }
           let holdX =
-            lockedAxis !== "x" &&
+            lockedDirection === null &&
             g.snapLock.x !== null &&
             Math.abs((minX - g.snapLock.x) * v.zoom) <= SNAP_RELEASE_THRESHOLD
           let holdY =
-            lockedAxis !== "y" &&
+            lockedDirection === null &&
             g.snapLock.y !== null &&
             Math.abs((minY - g.snapLock.y) * v.zoom) <= SNAP_RELEASE_THRESHOLD
 
@@ -703,38 +709,45 @@ export function Canvas() {
             snap = computeSnap(probe(), candidates, SNAP_THRESHOLD, undefined, v.zoom)
           }
 
-          // a locked axis stays locked; only the free one may be nudged
-          sdx = lockedAxis === "x"
-            ? 0
-            : holdX && g.snapLock.x !== null
+          if (lockedDirection) {
+            // A guide or equal-gap target may move a constrained drag, but
+            // only along its locked line. Independent x/y corrections would
+            // turn an exact 45-degree move into an almost-diagonal one.
+            const constrainedSnap = constrainSnapToDirection(lockedDirection, snap, {
+              x: hasFeedback("x"),
+              y: hasFeedback("y"),
+            })
+            sdx = constrainedSnap.dx
+            sdy = constrainedSnap.dy
+            setGuides(
+              snap.guides.filter((guide) => (guide.axis === "x" ? constrainedSnap.useX : constrainedSnap.useY))
+            )
+            setSnapDistances(
+              snap.distances.filter((distance) =>
+                distance.axis === "x" ? constrainedSnap.useX : constrainedSnap.useY
+              )
+            )
+          } else {
+            sdx = holdX && g.snapLock.x !== null
               ? (g.snapLock.x - minX) * v.zoom
               : snap.dx
-          sdy = lockedAxis === "y"
-            ? 0
-            : holdY && g.snapLock.y !== null
+            sdy = holdY && g.snapLock.y !== null
               ? (g.snapLock.y - minY) * v.zoom
               : snap.dy
 
-          g.snapLock.x = lockedAxis === "x"
-            ? null
-            : holdX
+            g.snapLock.x = holdX
               ? g.snapLock.x
               : hasFeedback("x")
                 ? minX + snap.dx / v.zoom
                 : null
-          g.snapLock.y = lockedAxis === "y"
-            ? null
-            : holdY
+            g.snapLock.y = holdY
               ? g.snapLock.y
               : hasFeedback("y")
                 ? minY + snap.dy / v.zoom
                 : null
-          setGuides(
-            snap.guides.filter((gl) => (lockedAxis === "x" ? gl.axis !== "x" : lockedAxis === "y" ? gl.axis !== "y" : true))
-          )
-          setSnapDistances(
-            snap.distances.filter((d) => (lockedAxis === "x" ? d.axis !== "x" : lockedAxis === "y" ? d.axis !== "y" : true))
-          )
+            setGuides(snap.guides)
+            setSnapDistances(snap.distances)
+          }
         } else {
           g.snapLock.x = null
           g.snapLock.y = null
@@ -1316,7 +1329,7 @@ export function Canvas() {
       // a lost window means we'll never see the release; keep the work
       window.addEventListener("blur", finishGesture, opts)
 
-      // modifiers are live: pressing Shift mid-drag locks the axis now, not on
+      // modifiers are live: pressing Shift mid-drag locks the direction now, not on
       // the next pixel of mouse movement
       const onModKey = (ev: KeyboardEvent) => {
         if (ev.key === "Escape") {

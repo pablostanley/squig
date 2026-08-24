@@ -112,7 +112,7 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
     // does shift do while I drag?" has one place to look.
     title: "While you drag",
     rows: [
-      { keys: ["shift+drag"], label: "Keep the move to one axis" },
+      { keys: ["shift+drag"], label: "Move in 45° directions" },
       { keys: ["alt+drag"], label: "Drag off a copy" },
       { keys: ["mod+drag"], label: "Ignore the snapping" },
       { keys: ["shift+drag"], label: "Resize in proportion" },

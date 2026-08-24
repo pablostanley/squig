@@ -10,6 +10,7 @@
 import { resizeBounds, resizeNodesBy, scaleNodes, MIN_SIZE, type Handle } from "../lib/canvas/transform.ts"
 import { hitsInterior, hitsPoint, hitsRect, pickAt, pickInRect, pickSoftAt, pickTolerance } from "../lib/canvas/hit-test.ts"
 import { repeatStep } from "../lib/canvas/duplicate.ts"
+import { constrainMoveTo45, constrainSnapToDirection } from "../lib/canvas/move.ts"
 import type { SquigNode } from "../lib/types.ts"
 
 let passed = 0
@@ -99,6 +100,66 @@ const bounds = (ns: SquigNode[]) => {
 
 const apply = (ns: SquigNode[], patches: Record<string, Partial<SquigNode>>): SquigNode[] =>
   ns.map((n) => ({ ...n, ...patches[n.id] }) as SquigNode)
+
+// -- move constraints -------------------------------------------------------
+
+{
+  const still = constrainMoveTo45(0, 0)
+  check(
+    "shift-move at the origin stays finite and still",
+    still.dx === 0 && still.dy === 0 && still.direction.x === 0 && still.direction.y === 0,
+    JSON.stringify(still)
+  )
+
+  const horizontal = constrainMoveTo45(100, 20)
+  check(
+    "shift-move locks a near-horizontal drag to 0 degrees",
+    close(horizontal.dx, 100) && close(horizontal.dy, 0) && horizontal.direction.x === 1 && horizontal.direction.y === 0,
+    JSON.stringify(horizontal)
+  )
+
+  const vertical = constrainMoveTo45(-10, -80)
+  check(
+    "shift-move locks a near-vertical drag to 90 degrees",
+    close(vertical.dx, 0) && close(vertical.dy, -80) && vertical.direction.x === 0 && vertical.direction.y === -1,
+    JSON.stringify(vertical)
+  )
+
+  const diagonal = constrainMoveTo45(50, 40)
+  check(
+    "shift-move projects onto the nearest 45-degree diagonal",
+    close(diagonal.dx, 45) && close(diagonal.dy, 45) && diagonal.direction.x === 1 && diagonal.direction.y === 1,
+    JSON.stringify(diagonal)
+  )
+
+  const reverseDiagonal = constrainMoveTo45(-60, 40)
+  check(
+    "all diagonal quadrants keep equal absolute deltas",
+    close(reverseDiagonal.dx, -50) && close(reverseDiagonal.dy, 50) && reverseDiagonal.direction.x === -1 && reverseDiagonal.direction.y === 1,
+    JSON.stringify(reverseDiagonal)
+  )
+
+  const snapped = constrainSnapToDirection(diagonal.direction, { dx: 2, dy: -5 }, { x: true, y: true })
+  check(
+    "smart guides cannot pull a diagonal move off 45 degrees",
+    close(snapped.dx, 2) && close(snapped.dy, 2) && snapped.useX && !snapped.useY,
+    JSON.stringify(snapped)
+  )
+
+  const verticalSnap = constrainSnapToDirection(vertical.direction, { dx: 1, dy: 3 }, { x: true, y: true })
+  check(
+    "a vertical lock only accepts vertical travel from smart guides",
+    close(verticalSnap.dx, 0) && close(verticalSnap.dy, 3) && !verticalSnap.useX && verticalSnap.useY,
+    JSON.stringify(verticalSnap)
+  )
+
+  const cornerSnap = constrainSnapToDirection(diagonal.direction, { dx: 3, dy: 3 }, { x: true, y: true })
+  check(
+    "one diagonal correction can satisfy both smart guides",
+    close(cornerSnap.dx, 3) && close(cornerSnap.dy, 3) && cornerSnap.useX && cornerSnap.useY,
+    JSON.stringify(cornerSnap)
+  )
+}
 
 // -- resizeBounds -----------------------------------------------------------
 
