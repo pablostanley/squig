@@ -23,6 +23,7 @@ import { kbd } from "@/lib/shortcuts"
 import { isCropped } from "@/lib/canvas/crop"
 import { lockedIds } from "@/lib/selection"
 import { canGroupSelection } from "@/lib/canvas/groups"
+import { trapFocus } from "@/components/ui/focus-trap"
 import {
   ArrowCounterClockwiseIcon,
   CropIcon,
@@ -126,7 +127,13 @@ function Palette() {
   const close = useCallback(() => st().setCommandOpen(false), [st])
 
   useEffect(() => {
+    const returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
     inputRef.current?.focus()
+    return () => {
+      const fallback = document.querySelector<HTMLElement>("[data-command-trigger]")
+      const target = returnFocus && returnFocus !== document.body && returnFocus.isConnected ? returnFocus : fallback
+      target?.focus()
+    }
   }, [])
 
   // the icon chunks ride along with the sheet, not the app; searches run
@@ -312,6 +319,15 @@ function Palette() {
           aria-label="Search Squig"
           className="animate-in slide-in-from-bottom-4 fade-in relative mx-auto flex max-h-[62vh] w-full max-w-2xl flex-col overflow-hidden rounded-t-chrome-lg border border-b-0 border-border/80 bg-background shadow-popup duration-150"
           onPointerDown={(e) => e.stopPropagation()}
+          onKeyDownCapture={(e) => {
+            if (e.key === "Escape") {
+              e.preventDefault()
+              e.stopPropagation()
+              close()
+              return
+            }
+            trapFocus(e)
+          }}
         >
           <p id="command-palette-help" className="sr-only">
             Use the arrow keys to move, Enter to choose, and Escape to close. Components are placed in the center of the view.

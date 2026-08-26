@@ -186,6 +186,7 @@ export function CommandHint() {
       onPointerDown={(e) => e.stopPropagation()}
       onClick={() => st().setCommandOpen(true)}
       data-squig-chrome
+      data-command-trigger
       className="absolute bottom-4 left-1/2 z-30 flex h-ctl -translate-x-1/2 items-center gap-2 rounded-full border border-border/80 bg-background px-gutter text-label text-muted-foreground shadow-panel hover:text-foreground"
     >
       Search

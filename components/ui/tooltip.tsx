@@ -31,6 +31,7 @@ function TooltipContent({
     <TooltipPrimitive.Portal>
       <TooltipPrimitive.Positioner side={side} sideOffset={sideOffset} className="z-50">
         <TooltipPrimitive.Popup
+          role="tooltip"
           data-slot="tooltip-content"
           className={cn(
             "inline-flex w-fit max-w-xs origin-(--transform-origin) items-center gap-1.5 rounded-chrome-sm bg-foreground px-2.5 py-1.5 text-label text-background transition-[transform,opacity] duration-100 motion-reduce:transition-none",
@@ -63,6 +64,7 @@ function HelpTooltip({
   className?: string
   side?: React.ComponentProps<typeof TooltipPrimitive.Positioner>["side"]
 }) {
+  const descriptionId = React.useId()
   const accessibleLabel = typeof label === "string" ? `About ${label}` : "More information"
 
   return (
@@ -70,6 +72,7 @@ function HelpTooltip({
       <TooltipTrigger
         type="button"
         aria-label={accessibleLabel}
+        aria-describedby={descriptionId}
         className={cn(
           "cursor-help rounded-chrome-xs text-left decoration-dotted underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-[var(--sq-ink)]/40",
           className
@@ -80,6 +83,9 @@ function HelpTooltip({
       <TooltipContent side={side} className="max-w-56 text-pretty leading-snug">
         {help}
       </TooltipContent>
+      <span id={descriptionId} className="sr-only">
+        {help}
+      </span>
     </Tooltip>
   )
 }
