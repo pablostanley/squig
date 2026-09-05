@@ -22,7 +22,7 @@ export const pages: DocPage[] = [
       },
       {
         title: "Connect once",
-        text: "Open your canvas, click Connect agent, then click Copy for your agent. That copies a short invitation: the canvas link, a key scoped to this canvas, the MCP and REST addresses, and a first instruction. Paste it into your agent's chat — Codex, Claude Code, Cursor, or anything that can call HTTP. An agent that can make HTTP requests starts immediately over REST with the key as its bearer token; nothing to install. An agent with MCP support can add the server itself, or you set it up once with the manual configuration in the same popover (see /docs/mcp). Workspace keys at /connect remain for agents that need to create canvases.",
+        text: "Open your canvas, click Connect agent, then click Copy for your agent. That copies a short invitation: the canvas link, a key scoped to this canvas, the MCP and REST addresses, and a first instruction. Paste it into your agent's chat: Codex, Claude Code, Cursor, or anything that can call HTTP. An agent that can make HTTP requests starts immediately over REST with the key as its bearer token; nothing to install. An agent with MCP support can add the server itself, or you set it up once with the manual configuration in the same popover (see /docs/mcp). Workspace keys at /connect remain for agents that need to create canvases.",
       },
       {
         title: "Ask for distinct directions",

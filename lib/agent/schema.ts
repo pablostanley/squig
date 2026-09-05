@@ -296,7 +296,7 @@ export const tools = {
   },
   render_document: {
     description:
-      "Render the full canvas or one variation as SVG, or a PNG image for visual inspection. Uses the canvas drawing paths; server fonts may differ from browser fonts. Inspect spacing, clipping and hierarchy before sharing.",
+      "Render the full canvas or one variation as SVG, or a PNG image for visual inspection. Uses the canvas drawing paths and the editor's fonts. Inspect spacing, clipping and hierarchy before sharing.",
     schema: z.object({
       documentId: id,
       variationId: id.optional(),
