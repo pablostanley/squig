@@ -9,11 +9,20 @@ const webxdc = process.env.WEBXDC === "1";
 const nextConfig: NextConfig = {
   env: { NEXT_PUBLIC_SQUIG_OFFLINE: webxdc ? "1" : "0" },
   ...(webxdc ? { pageExtensions: ["tsx"] } : {}),
-  // Sharp loads libvips via dlopen, which Next's import tracer cannot see.
-  // Include the installed platform's native libraries in both agent functions.
+  // resvg's rasteriser is a native .node binding loaded at runtime, and the
+  // vendored fonts are read from disk — neither is an import Next's tracer can
+  // follow. Include both in the two agent functions that render PNGs.
   outputFileTracingIncludes: {
-    "/mcp": ["./node_modules/.pnpm/@img+sharp-libvips-*/node_modules/@img/**/lib/*.so*"],
-    "/api/v1/**": ["./node_modules/.pnpm/@img+sharp-libvips-*/node_modules/@img/**/lib/*.so*"],
+    "/mcp": [
+      "./lib/agent/fonts/*",
+      "./node_modules/.pnpm/@resvg+resvg-js-*/node_modules/@resvg/**/*.node",
+      "./node_modules/@resvg/**",
+    ],
+    "/api/v1/**": [
+      "./lib/agent/fonts/*",
+      "./node_modules/.pnpm/@resvg+resvg-js-*/node_modules/@resvg/**/*.node",
+      "./node_modules/@resvg/**",
+    ],
   },
   // Pin the workspace root to this repo.
   //

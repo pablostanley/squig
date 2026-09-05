@@ -1,4 +1,4 @@
-import { renderSvg } from "../lib/agent/render.ts"
+import { renderPng, renderSvg } from "../lib/agent/render.ts"
 import assert from "node:assert/strict"
 import {
   applyOperations,
@@ -218,6 +218,31 @@ check(() => {
   const svg = renderSvg(escaped).svg
   assert.ok(svg.includes("&lt;script&gt;"))
   assert.ok(!svg.includes("<script>"))
+})
+const typeset = applyOperations(
+  emptyDocument("Typeset"),
+  operation.array().parse([
+    {
+      op: "add",
+      nodes: [
+        { id: "t", type: "text", x: 0, y: 0, text: "Legible", fontSize: 24 },
+      ],
+    },
+  ]),
+).document
+// Vercel functions carry no system fonts: the rasteriser only has the faces
+// render.ts vendors, so the SVG has to ask for them by name or every glyph
+// comes back a tofu box.
+check(() => {
+  const { svg } = renderSvg(typeset)
+  const family = /font-family="([^"]*)"/.exec(svg)?.[1]
+  assert.ok(family, "text node should carry a font-family")
+  assert.ok(family.includes("Patrick Hand"))
+})
+const png = await renderPng(renderSvg(typeset).svg)
+check(() => {
+  assert.ok(Buffer.isBuffer(png))
+  assert.deepEqual([...png.subarray(0, 4)], [0x89, 0x50, 0x4e, 0x47])
 })
 check(() => assert.equal(renderSvg(escaped).svg, renderSvg(escaped).svg))
 check(() => assert.throws(() => renderSvg(escaped, "missing")))

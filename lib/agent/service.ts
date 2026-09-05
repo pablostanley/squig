@@ -195,7 +195,7 @@ export async function execute(
     case "render_document": {
       const a = tools.render_document.schema.parse(args),
         row = await owned(workspace, a.documentId)
-      const { renderSvg } = await import("./render")
+      const { renderSvg, renderPng } = await import("./render")
       const rendered = renderSvg(row.document, a.variationId)
       if (a.format === "svg")
         return {
@@ -203,12 +203,7 @@ export async function execute(
           mimeType: "image/svg+xml",
           revision: row.revision,
         }
-      const { default: sharp } = await import("sharp")
-      const png = await sharp(Buffer.from(rendered.svg), {
-        limitInputPixels: 2400 * 2400,
-      })
-        .png()
-        .toBuffer()
+      const png = await renderPng(rendered.svg)
       return {
         mimeType: "image/png",
         base64: png.toString("base64"),

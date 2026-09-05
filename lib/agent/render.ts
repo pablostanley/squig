@@ -5,6 +5,7 @@ import { paletteOf, bgOf } from "@/lib/theme"
 import { cropOf } from "@/lib/types"
 import { nodeVisualBounds } from "@/lib/canvas/line-routing"
 import { AgentError, type CanvasDocument } from "./engine"
+import path from "node:path"
 const escape = (value: unknown) =>
   String(value).replace(
     /[&<>"']/g,
@@ -49,10 +50,10 @@ export function renderSvg(document: CanvasDocument, variationId?: string) {
     v.replace(/var\((--[a-z-]+)\)/g, (_, key) => colors[key] ?? palette.ink)
   const family =
     document.look.font === "serif"
-      ? "Georgia, serif"
+      ? '"Source Serif 4", Georgia, serif'
       : document.look.font === "hand"
-        ? "Comic Sans MS, cursive"
-        : "Arial, sans-serif"
+        ? '"Patrick Hand", "Comic Sans MS", cursive'
+        : "Geist, Arial, sans-serif"
   const body = nodes
     .map((node) => {
       const { paths, texts, crisp } = primsToPaths(nodePrims(node), node.seed)
@@ -71,7 +72,7 @@ export function renderSvg(document: CanvasDocument, variationId?: string) {
       content += texts
         .map(
           (t) =>
-            `<text x="${t.x}" y="${t.y}" font-size="${t.size}" font-family="${family}" font-weight="${t.bold ? 700 : 400}" font-style="${t.italic ? "italic" : "normal"}" text-decoration="${t.underline ? "underline" : "none"}" fill="${color(INK[t.color ?? "ink"])}" text-anchor="${t.align === "center" ? "middle" : t.align === "right" ? "end" : "start"}"${mirrorGlyphs(t) ? ` transform="${mirrorGlyphs(t)}"` : ""}>${escape(t.text)}</text>`,
+            `<text x="${t.x}" y="${t.y}" font-size="${t.size}" font-family="${escape(family)}" font-weight="${t.bold ? 700 : 400}" font-style="${t.italic ? "italic" : "normal"}" text-decoration="${t.underline ? "underline" : "none"}" fill="${color(INK[t.color ?? "ink"])}" text-anchor="${t.align === "center" ? "middle" : t.align === "right" ? "end" : "start"}"${mirrorGlyphs(t) ? ` transform="${mirrorGlyphs(t)}"` : ""}>${escape(t.text)}</text>`,
         )
         .join("")
       if (node.type === "image") {
@@ -90,4 +91,31 @@ export function renderSvg(document: CanvasDocument, variationId?: string) {
     svg: `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.max(1, Math.round(w * scale))}" height="${Math.max(1, Math.round(h * scale))}" viewBox="${x} ${y} ${w} ${h}"><title>${escape(variation?.title ?? document.fileName)}</title><rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${bgOf(palette, document.look.paper)}"/>${body}</svg>`,
     bounds: { x, y, w, h },
   }
+}
+
+// Vercel functions have no system fonts, so a PNG rasterised there renders
+// every glyph as a tofu box. Ship the editor's own faces next to the code and
+// hand resvg their absolute paths; resolving from cwd is what lets Next's file
+// tracer see them and bundle them into the function.
+const FONT_FILES = [
+  "PatrickHand-Regular.ttf",
+  "Geist-Regular.ttf",
+  "Geist-Bold.ttf",
+  "SourceSerif4-Regular.ttf",
+  "SourceSerif4-Bold.ttf",
+].map((file) => path.join(process.cwd(), "lib/agent/fonts", file))
+
+export async function renderPng(svg: string): Promise<Buffer> {
+  const { Resvg } = await import("@resvg/resvg-js")
+  // renderSvg already caps the SVG at 2400px on its long edge, so rasterise
+  // it at its own size rather than scaling twice.
+  const resvg = new Resvg(svg, {
+    fitTo: { mode: "original" },
+    font: {
+      loadSystemFonts: false,
+      fontFiles: FONT_FILES,
+      defaultFontFamily: "Patrick Hand",
+    },
+  })
+  return Buffer.from(resvg.render().asPng())
 }
