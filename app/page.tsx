@@ -1,7 +1,9 @@
 "use client"
 
+import { SidebarSimpleIcon } from "@phosphor-icons/react"
+import { Panel } from "@/components/ui/panel"
 import { AgentBridge } from "@/components/agent/bridge"
-import { useEffect } from "react"
+import { useEffect, useState } from "react"
 import { useSquig } from "@/lib/store"
 import { Canvas } from "@/components/canvas/canvas"
 import { LeftRail } from "@/components/chrome/left-rail"
@@ -18,6 +20,7 @@ import { SmallScreenNote } from "@/components/chrome/small-screen-note"
 import { kbd } from "@/lib/shortcuts"
 
 export default function Home() {
+  const [sidebarVisible, setSidebarVisible] = useState(true)
   const hydrated = useSquig((s) => s.hydrated)
   const hydrate = useSquig((s) => s.hydrate)
   const uiHidden = useSquig((s) => s.uiHidden)
@@ -43,11 +46,14 @@ export default function Home() {
       {!uiHidden && (
         <>
           <TopCorner />
-          {process.env.NEXT_PUBLIC_SQUIG_OFFLINE !== "1" && <AgentBridge />}
+          <Panel className="absolute top-4 right-4 z-40 flex-row items-center gap-1 p-1">
+            {process.env.NEXT_PUBLIC_SQUIG_OFFLINE !== "1" && <AgentBridge />}
+            <button className="canvas-action" aria-label={sidebarVisible ? "Hide sidebar" : "Show sidebar"} aria-pressed={sidebarVisible} title={sidebarVisible ? "Hide sidebar" : "Show sidebar"} onClick={() => setSidebarVisible(v => !v)}><SidebarSimpleIcon size={18} /></button>
+          </Panel>
           <FileName />
           <LeftRail />
           <LibraryPanel />
-          <Inspector />
+          {sidebarVisible && <Inspector />}
           <ZoomPill />
           <CommandHint />
           <SmallScreenNote />

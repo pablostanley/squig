@@ -5,6 +5,13 @@ import { agentRequest, KEY_STORAGE } from "@/lib/agent/client"
 import { unionBox } from "@/lib/types"
 import { nodeVisualBounds } from "@/lib/canvas/line-routing"
 import { fitViewport } from "@/lib/canvas/navigate"
+import { Popover } from "@base-ui/react/popover"
+import {
+  CopyIcon,
+  CheckIcon,
+  ShareNetworkIcon,
+  PlugsConnectedIcon,
+} from "@phosphor-icons/react"
 import { applyLook } from "@/lib/theme"
 import { mergeCanvas, canvasEqual } from "@/lib/agent/merge"
 import "./agent.css"
@@ -33,7 +40,7 @@ export function AgentBridge() {
   const [status, setStatus] = useState("")
   const [connected, setConnected] = useState(false)
   const [conflict, setConflict] = useState(false)
-  const [panel, setPanel] = useState(false)
+  const [panel, setPanel] = useState<"share" | "agent" | null>(null)
   const [credentials, setCredentials] = useState({
     key: "",
     url: "",
@@ -146,7 +153,7 @@ export function AgentBridge() {
           stopped = true
           setConnected(false)
           setCredentials({ key: "", url: "", id: "" })
-          setPanel(false)
+          setPanel(null)
           history.replaceState(null, "", "/")
           setStatus("Opened a local canvas")
           return
@@ -236,9 +243,10 @@ export function AgentBridge() {
     }
   }, [reload])
 
+  const connecting = useRef(false)
   async function connect() {
-    setPanel(true)
-    if (credentials.key) return
+    if (credentials.key || connecting.current) return
+    connecting.current = true
     try {
       let key = localStorage.getItem(KEY_STORAGE)
       if (!key) {
@@ -286,6 +294,8 @@ export function AgentBridge() {
       setReload((v) => v + 1)
     } catch (e) {
       setStatus((e as Error).message)
+    } finally {
+      connecting.current = false
     }
   }
   function preserve() {
@@ -300,103 +310,175 @@ export function AgentBridge() {
     a.click()
     URL.revokeObjectURL(url)
   }
-  async function copy(value: string) {
-    try {
-      await navigator.clipboard.writeText(value)
-      setStatus("Copied")
-    } catch {
-      setStatus("Select and copy the text below")
-    }
-  }
   return (
     <div className="agent-sync">
-      <span role="status">{status || ""}</span>
-      {conflict ? (
+      <span className="agent-sync-status" role="status">
+        {status}
+      </span>
+      {conflict && (
         <>
           <button onClick={preserve}>Download my draft</button>
           <button onClick={() => setReload((v) => v + 1)}>
             Load latest canvas
           </button>
         </>
-      ) : (
-        <button onClick={() => (panel ? setPanel(false) : void connect())}>
-          {connected ? "Connect agent / Share" : "Connect agent"}
-        </button>
       )}
-      {panel && (
-        <div className="agent-connect-panel">
-          <strong>Work together on this canvas</strong>
-          <p>
-            Connect any MCP client or use the API. Changes appear here as
-            you and the agent draw.
-          </p>
-          {credentials.key && (
-            <>
-              <label>
-                Editable canvas link
-                <input
-                  readOnly
-                  value={credentials.url}
-                  onFocus={(e) => e.target.select()}
-                />
-              </label>
-              <button onClick={() => void copy(credentials.url)}>
-                Copy canvas link
-              </button>
-              <label>
-                MCP connection
-                <input
-                  readOnly
-                  value={`${location.origin}/mcp`}
-                  onFocus={(e) => e.target.select()}
-                />
-              </label>
-              <label>
-                Canvas key
-                <input
-                  readOnly
-                  type="password"
-                  value={credentials.key}
-                  onFocus={(e) => e.target.select()}
-                />
-              </label>
-              <button onClick={() => void copy(credentials.key)}>
-                Copy canvas key
-              </button>
-              <button
-                onClick={() =>
-                  void copy(
-                    JSON.stringify(
-                      {
-                        mcpServers: {
-                          squig: {
-                            url: `${location.origin}/mcp`,
-                            headers: {
-                              Authorization: `Bearer ${credentials.key}`,
+      {(["agent", "share"] as const).map((kind) => (
+        <Popover.Root
+          key={kind}
+          open={panel === kind}
+          onOpenChange={(open) => {
+            setPanel(open ? kind : null)
+            if (open) void connect()
+          }}
+        >
+          <Popover.Trigger
+            className="canvas-action"
+            aria-label={kind === "share" ? "Share" : "Connect agent"}
+          >
+            {kind === "share" ? (
+              <ShareNetworkIcon size={16} />
+            ) : (
+              <PlugsConnectedIcon size={16} />
+            )}
+            {kind === "share" ? "Share" : "Connect agent"}
+          </Popover.Trigger>
+          <Popover.Portal>
+            <Popover.Positioner
+              side="bottom"
+              align="end"
+              sideOffset={8}
+              className="z-50"
+            >
+              <Popover.Popup className="agent-connect-panel">
+                <Popover.Title className="font-medium">
+                  {kind === "share" ? "Share canvas" : "Connect an agent"}
+                </Popover.Title>
+                <Popover.Description>
+                  {kind === "share"
+                    ? "Anyone with this link can view and edit this canvas."
+                    : "Let your agent draw alongside you using MCP or the API."}
+                </Popover.Description>
+                {credentials.key ? (
+                  kind === "share" ? (
+                    <CopyField
+                      label="Editable canvas link"
+                      value={credentials.url}
+                    />
+                  ) : (
+                    <>
+                      <CopyField
+                        label="MCP connection"
+                        value={`${location.origin}/mcp`}
+                      />
+                      <CopyField
+                        label="Canvas key"
+                        value={credentials.key}
+                        secret
+                      />
+                      <CopyField
+                        label="MCP config"
+                        value={JSON.stringify(
+                          {
+                            mcpServers: {
+                              squig: {
+                                url: `${location.origin}/mcp`,
+                                headers: {
+                                  Authorization: `Bearer ${credentials.key}`,
+                                },
+                              },
                             },
                           },
-                        },
-                      },
-                      null,
-                      2,
-                    ),
+                          null,
+                          2,
+                        )}
+                        secret
+                      />
+                      <p>
+                        This key gives your agent editing access to this
+                        canvas only.
+                      </p>
+                      <a href="/docs/mcp" target="_blank" rel="noreferrer">
+                        Setup instructions ↗
+                      </a>
+                    </>
                   )
-                }
-              >
-                Copy MCP config
-              </button>
-              <p>
-                This key grants editing access to this canvas only. Share it
-                with people and agents you trust.
-              </p>
-            </>
-          )}
-          <a href="/docs/mcp" target="_blank" rel="noreferrer">
-            Setup instructions
-          </a>
-          <button onClick={() => setPanel(false)}>Close</button>
-        </div>
-      )}
+                ) : (
+                  <p role="status">{status || "Preparing canvas…"}</p>
+                )}
+              </Popover.Popup>
+            </Popover.Positioner>
+          </Popover.Portal>
+        </Popover.Root>
+      ))}
+    </div>
+  )
+}
+
+function CopyField({
+  label,
+  value,
+  secret = false,
+}: {
+  label: string
+  value: string
+  secret?: boolean
+}) {
+  const [copied, setCopied] = useState(false)
+  const [error, setError] = useState(false)
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(
+    () => () => {
+      if (timer.current) clearTimeout(timer.current)
+    },
+    [],
+  )
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(value)
+      setCopied(true)
+      setError(false)
+      if (timer.current) clearTimeout(timer.current)
+      timer.current = setTimeout(() => setCopied(false), 1600)
+    } catch {
+      setError(true)
+    }
+  }
+  return (
+    <div className="agent-copy-field">
+      <label>
+        <span>{label}</span>
+        <input
+          readOnly
+          type={secret ? "password" : "text"}
+          value={value}
+          onFocus={(e) => e.target.select()}
+        />
+      </label>
+      <button
+        type="button"
+        className="agent-copy-button"
+        aria-label={`${copied ? "Copied" : "Copy"} ${label.toLowerCase()}`}
+        onClick={() => void copy()}
+      >
+        {copied ? (
+          <CheckIcon
+            key="check"
+            className="copy-check"
+            size={16}
+            weight="bold"
+          />
+        ) : (
+          <CopyIcon size={16} />
+        )}
+      </button>
+      <span className="sr-only" role="status">
+        {copied
+          ? `${label} copied`
+          : error
+            ? "Copy failed. Select and copy the field manually."
+            : ""}
+      </span>
     </div>
   )
 }

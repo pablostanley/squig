@@ -12,7 +12,7 @@ A workspace bearer key can create canvases. `create_document` returns a
 canvas. Agents should send the link before drawing, then work in small,
 coherent batches. An existing local drawing becomes shared through **Connect
 agent** in the editor, retaining its objects and the user's current view.
-The connection panel provides the editable invitation, key and MCP config.
+Share provides the editable invitation. Connect agent provides the key and MCP config. Both are popovers in the top-right toolbar, beside the sidebar toggle.
 
 Any Streamable HTTP MCP client can connect to `/mcp`; any HTTP agent can use
 `/api/v1/tools/{name}` with identical inputs. The catalog is Squig’s actual

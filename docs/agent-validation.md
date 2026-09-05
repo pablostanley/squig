@@ -19,7 +19,9 @@ page and approval API were removed.
   and a second browser sees both. An injected concurrent write on a different
   node merges. A competing filename edit preserves a downloadable draft.
   An existing local drawing can be connected in place. Also checks docs SEO,
-  mobile overflow and browser errors.
+  mobile overflow and browser errors. Sharing and agent setup have separate
+  popovers; browser checks cover outside-click and Escape dismissal, clipboard
+  contents, temporary copy checkmarks and sidebar visibility.
 
 The tests use isolated workspaces and delete their fixtures. Run the browser
 suite with a running server and DATABASE_URL in .env.local. Install Chromium

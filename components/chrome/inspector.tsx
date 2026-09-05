@@ -191,7 +191,7 @@ export function Inspector() {
   const subtitle = selected.length > 1 ? selectionSummary(selected) : undefined
 
   return (
-    <Panel className="absolute top-4 right-4 z-30 max-h-[calc(100vh-2rem)] w-[272px]">
+    <Panel className="absolute top-16 right-4 z-30 max-h-[calc(100vh-5rem)] w-[272px]">
       <PanelHeader title={heading} subtitle={subtitle} />
 
       <ScrollArea className="min-h-0">

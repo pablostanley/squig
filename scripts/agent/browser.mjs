@@ -9,6 +9,7 @@ const workspace = `browser_${randomBytes(10).toString("hex")}`,
 const browser = await chromium.launch()
 const context = await browser.newContext({
   viewport: { width: 1440, height: 1000 },
+  permissions: ["clipboard-read", "clipboard-write"],
 })
 const page = await context.newPage()
 const errors = []
@@ -86,11 +87,58 @@ try {
     await page.evaluate(() => localStorage.getItem("squig:agent-key")),
   ).toBeNull()
   expect(new URL(page.url()).hash).toBe("")
-  await page.getByRole("button", { name: "Connect agent / Share" }).click()
-  await expect(page.getByLabel("Editable canvas link")).toHaveValue(
+  await page.getByRole("button", { name: "Share" }).click()
+  await expect(
+    page.getByLabel("Editable canvas link", { exact: true }),
+  ).toHaveValue(doc.canvasUrl.replace(new URL(doc.canvasUrl).origin, base))
+  await expect(page.getByLabel("Canvas key", { exact: true })).toHaveCount(
+    0,
+  )
+  await page
+    .getByRole("button", { name: "Copy editable canvas link", exact: true })
+    .click()
+  await expect(
+    page.getByRole("button", {
+      name: "Copied editable canvas link",
+      exact: true,
+    }),
+  ).toBeVisible()
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
     doc.canvasUrl.replace(new URL(doc.canvasUrl).origin, base),
   )
-  await page.getByRole("button", { name: "Close", exact: true }).click()
+  await expect(
+    page.getByRole("button", {
+      name: "Copy editable canvas link",
+      exact: true,
+    }),
+  ).toBeVisible({ timeout: 4000 })
+  await page.mouse.click(700, 800)
+  await expect(
+    page.getByLabel("Editable canvas link", { exact: true }),
+  ).toHaveCount(0)
+  await page
+    .getByRole("button", { name: "Connect agent", exact: true })
+    .click()
+  await expect(page.getByLabel("Canvas key", { exact: true })).toBeVisible()
+  await expect(
+    page.getByLabel("Editable canvas link", { exact: true }),
+  ).toHaveCount(0)
+  await page.keyboard.press("Escape")
+  await expect(page.getByLabel("Canvas key", { exact: true })).toHaveCount(
+    0,
+  )
+  await page
+    .getByRole("button", { name: "Hide sidebar", exact: true })
+    .click()
+  await expect(
+    page.getByRole("button", { name: "Sans serif", exact: true }),
+  ).toHaveCount(0)
+  await page
+    .getByRole("button", { name: "Show sidebar", exact: true })
+    .click()
+  await expect(
+    page.getByRole("button", { name: "Sans serif", exact: true }),
+  ).toBeVisible()
   await page
     .getByRole("button", { name: "Browser test canvas", exact: true })
     .click()
@@ -274,7 +322,14 @@ try {
   await local
     .getByRole("button", { name: "Connect agent", exact: true })
     .click()
-  await expect(local.getByLabel("Editable canvas link")).not.toHaveValue("")
+  await expect(
+    local.getByLabel("Canvas key", { exact: true }),
+  ).not.toHaveValue("")
+  await local.keyboard.press("Escape")
+  await local.getByRole("button", { name: "Share", exact: true }).click()
+  await expect(
+    local.getByLabel("Editable canvas link", { exact: true }),
+  ).not.toHaveValue("")
   const attachedId = new URL(local.url()).searchParams.get("agent")
   expect(attachedId).toBeTruthy()
   expect(

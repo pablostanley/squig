@@ -168,28 +168,44 @@
   gap: 16px;
 }
 .agent-sync {
-  position: absolute;
-  left: 50%;
-  top: auto;
-  bottom: 64px;
-  transform: translateX(-50%);
-  z-index: 45;
-  background: white;
-  border: 1px solid #cbd5ee;
-  border-radius: 7px;
-  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.agent-sync-status {
+  max-width: 160px;
+  font:
+    11px var(--font-sans),
+    sans-serif;
+  color: var(--muted-foreground);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.canvas-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 9px;
+  border-radius: var(--radius-chrome-sm);
   font:
     12px var(--font-sans),
     sans-serif;
-  color: #2547aa;
-  box-shadow: 0 2px 8px #152d6d12;
-  max-width: calc(100% - 32px);
-}
-.agent-sync button,
-.agent-sync a {
-  text-decoration: underline;
   cursor: pointer;
-  margin-left: 12px;
+}
+.canvas-action:hover {
+  background: var(--accent);
+}
+.canvas-action:focus-visible,
+.agent-copy-button:focus-visible {
+  outline: 2px solid var(--sq-ink);
+  outline-offset: 2px;
+}
+@media (max-width: 800px) {
+  .agent-sync-status {
+    display: none;
+  }
 }
 .docs-layout {
   display: grid;
@@ -245,32 +261,89 @@
 }
 
 .agent-connect-panel {
-  position: absolute;
-  bottom: 44px;
-  right: 0;
   width: min(360px, calc(100vw - 32px));
   padding: 20px;
-  background: var(--bg, #fff);
-  color: var(--text, #222);
-  border: 1px solid #ccc;
-  border-radius: 12px;
+  background: var(--popover);
+  color: var(--popover-foreground);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-chrome-md);
   box-shadow: 0 8px 30px #0002;
   text-align: left;
-  font: 13px/1.5 system-ui;
+  font:
+    13px/1.5 var(--font-sans),
+    sans-serif;
+  transform-origin: var(--transform-origin);
+  transition:
+    opacity 120ms,
+    transform 120ms;
 }
-.agent-connect-panel label {
-  display: block;
-  margin-top: 12px;
-}
-.agent-connect-panel input {
-  display: block;
-  width: 100%;
-  box-sizing: border-box;
-  padding: 6px;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-  font: 12px monospace;
+.agent-connect-panel[data-starting-style],
+.agent-connect-panel[data-ending-style] {
+  opacity: 0;
+  transform: translateY(-4px);
 }
 .agent-connect-panel p {
   margin: 8px 0;
+  color: var(--muted-foreground);
+}
+.agent-connect-panel a {
+  text-decoration: underline;
+}
+.agent-copy-field {
+  position: relative;
+  margin-top: 16px;
+}
+.agent-copy-field label {
+  display: block;
+}
+.agent-copy-field label > span {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 12px;
+}
+.agent-copy-field input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 9px 40px 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-chrome-sm);
+  background: var(--background);
+  font: 12px monospace;
+}
+.agent-copy-button {
+  position: absolute;
+  right: 5px;
+  bottom: 5px;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.agent-copy-button:hover {
+  background: var(--accent);
+}
+.copy-check {
+  color: var(--sq-ink);
+  animation: copy-check-in 160ms ease-out;
+}
+@keyframes copy-check-in {
+  from {
+    opacity: 0;
+    transform: scale(0.65);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .copy-check {
+    animation: none;
+  }
+  .agent-connect-panel {
+    transition: none;
+  }
 }
