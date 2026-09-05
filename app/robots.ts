@@ -4,7 +4,7 @@ export default function robots(): MetadataRoute.Robots {
     rules: {
       userAgent: "*",
       allow: ["/", "/docs/", "/llms.txt", "/llms-full.txt", "/openapi.json"],
-      disallow: ["/api/", "/review", "/mcp"],
+      disallow: ["/api/", "/mcp"],
     },
     sitemap: "https://squig.sh/sitemap.xml",
   }

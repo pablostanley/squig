@@ -39,13 +39,43 @@ try {
   await request("documents", "bad-key", undefined, 401)
   const doc = await request("documents", key, { name: "Agent smoke" }, 201)
   await request(`documents/${doc.id}`, other, undefined, 404)
+  const sibling = await request(
+    "documents",
+    key,
+    { name: "Another canvas" },
+    201,
+  )
+  const scoped = doc.canvasKey
+  assert.equal(new URL(doc.canvasUrl).pathname, "/")
+  assert.equal(new URL(doc.canvasUrl).hash.slice(1), scoped)
+  const visible = await request("documents", scoped)
+  assert.deepEqual(
+    visible.documents.map((d) => d.id),
+    [doc.id],
+  )
+  await request(`documents/${doc.id}`, scoped)
+  await request(`documents/${sibling.id}`, scoped, undefined, 404)
+  await request("documents", scoped, { name: "Forbidden" }, 403)
+  await request("workspace/rotate-key", scoped, {}, 403)
+  await request(
+    "tools/delete_document",
+    scoped,
+    { documentId: doc.id, revision: 1 },
+    403,
+  )
+  await request(
+    "tools/rotate_canvas_link",
+    scoped,
+    { documentId: doc.id },
+    403,
+  )
   const client = new Client({
     name: "squig-integration-test",
     version: "1.0.0",
   })
   await client.connect(
     new StreamableHTTPClientTransport(new URL(`${base}/mcp`), {
-      requestInit: { headers: { Authorization: `Bearer ${key}` } },
+      requestInit: { headers: { Authorization: `Bearer ${scoped}` } },
     }),
   )
   const tools = await client.listTools()
@@ -117,30 +147,6 @@ try {
   current = await request(`documents/${doc.id}`, key)
   assert.equal(current.document.fileName, "Agent smoke")
   checks++
-  const reviewKey = new URL(doc.reviewUrl).hash.slice(1)
-  await request(`review/${doc.id}`, reviewKey)
-  await request(`documents/${doc.id}`, reviewKey, undefined, 401)
-  await request(
-    `review/${doc.id}`,
-    reviewKey,
-    { action: "comment", text: "Bring the meeting first", variationId: "one" },
-    201,
-  )
-  await request(
-    `review/${doc.id}`,
-    reviewKey,
-    { action: "approve", variationId: "one", revision: 1 },
-    409,
-  )
-  await request(`review/${doc.id}`, reviewKey, {
-    action: "approve",
-    variationId: "one",
-    revision: 2,
-  })
-  current = await request(`documents/${doc.id}`, key)
-  assert.equal(current.approval.revision, 2)
-  assert.equal(current.comments.length, 1)
-  checks += 2
   const concurrent = await Promise.all(
     [0, 1].map((i) =>
       fetch(`${base}/api/v1/tools/edit_document`, {
@@ -160,9 +166,9 @@ try {
   assert.deepEqual(concurrent.map((r) => r.status).sort(), [200, 409])
   checks++
   current = await request(`documents/${doc.id}`, key)
-  assert.equal(current.approval, null)
-  checks++
-  const history = await request("tools/history", key, { documentId: doc.id })
+  const history = await request("tools/history", key, {
+    documentId: doc.id,
+  })
   assert.deepEqual(
     history.revisions.map((r) => r.revision),
     [3, 2, 1],
@@ -178,11 +184,6 @@ try {
   })
   assert.equal(exported.file.nodes.title.text, "A real wireframe")
   checks++
-  const rotated = await request("tools/rotate_review_link", key, {
-    documentId: doc.id,
-  })
-  await request(`review/${doc.id}`, reviewKey, undefined, 404)
-  await request(`review/${doc.id}`, new URL(rotated.reviewUrl).hash.slice(1))
   const malformed = await fetch(`${base}/api/v1/documents`, {
     method: "POST",
     headers: {
@@ -207,7 +208,10 @@ try {
       documentId: doc.id,
       revision: 4,
       operations: [
-        { op: "add", nodes: [{ type: "component", kind: "fake", x: 0, y: 0 }] },
+        {
+          op: "add",
+          nodes: [{ type: "component", kind: "fake", x: 0, y: 0 }],
+        },
       ],
     },
   })
@@ -226,6 +230,11 @@ try {
   assert.ok(!png.isError, JSON.stringify(png))
   assert.equal(png.content[0].type, "image")
   checks += 2
+  const canvasRotation = await request("tools/rotate_canvas_link", key, {
+    documentId: doc.id,
+  })
+  await request(`documents/${doc.id}`, scoped, undefined, 401)
+  await request(`documents/${doc.id}`, canvasRotation.canvasKey)
   const newKey = await request("workspace/rotate-key", key, {})
   await request(`documents/${doc.id}`, key, undefined, 401)
   await request(
@@ -241,7 +250,7 @@ try {
   await request(`documents/${doc.id}`, newKey.key, undefined, 404)
   await client.close()
   console.log(
-    `✓ ${checks} REST/MCP integration checks passed; real database, isolation, atomicity, review and concurrency`,
+    `✓ ${checks} REST/MCP integration checks passed; real database, isolation, atomicity, canvas key scopes, rotation and concurrency`,
   )
 } finally {
   for (const id of workspaces) {

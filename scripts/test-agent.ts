@@ -27,7 +27,14 @@ const batch = operation.array().parse([
     nodes: [
       { id: "a", type: "component", kind: "button", x: 0, y: 0 },
       { id: "b", type: "shape", x: 200, y: 20, w: 100, h: 80 },
-      { id: "c", type: "text", x: 400, y: 100, text: "Hello", fontSize: 20 },
+      {
+        id: "c",
+        type: "text",
+        x: 400,
+        y: 100,
+        text: "Hello",
+        fontSize: 20,
+      },
       {
         id: "line",
         type: "arrow",
@@ -129,7 +136,9 @@ let locked = applyOperations(
   d,
   operation
     .array()
-    .parse([{ op: "update", patches: [{ id: "a", patch: { locked: true } }] }]),
+    .parse([
+      { op: "update", patches: [{ id: "a", patch: { locked: true } }] },
+    ]),
 ).document
 check(() =>
   assert.throws(() =>
@@ -240,7 +249,9 @@ const cropped = applyOperations(
   operation.array().parse([
     {
       op: "update",
-      patches: [{ id: "img", patch: { crop: { x: 0, y: 0, w: 0.5, h: 0.5 } } }],
+      patches: [
+        { id: "img", patch: { crop: { x: 0, y: 0, w: 0.5, h: 0.5 } } },
+      ],
     },
   ]),
 ).document
@@ -254,7 +265,9 @@ const uncropped = applyOperations(
     .parse([{ op: "update", patches: [{ id: "img", unset: ["crop"] }] }]),
 ).document
 check(() =>
-  assert.ok(uncropped.nodes.img.type === "image" && !uncropped.nodes.img.crop),
+  assert.ok(
+    uncropped.nodes.img.type === "image" && !uncropped.nodes.img.crop,
+  ),
 )
 check(() =>
   assert.equal(
@@ -273,6 +286,66 @@ check(() =>
 check(() =>
   assert.throws(() =>
     cleanNode({ type: "component", kind: "__proto__", x: 0, y: 0 }),
+  ),
+)
+// Shared canvas merging must preserve concurrent human and agent changes.
+const { mergeCanvas, canvasEqual } = await import("../lib/agent/merge")
+check(() => assert.ok(canvasEqual({ a: 1, b: 2 }, { b: 2, a: 1 })))
+const baseCanvas = { nodes: { a: { x: 0, text: "hello" } }, order: ["a"] }
+check(() =>
+  assert.deepEqual(
+    mergeCanvas(
+      baseCanvas,
+      { nodes: { a: { x: 10, text: "hello" } }, order: ["a"] },
+      { nodes: { a: { x: 0, text: "world" } }, order: ["a"] },
+    ),
+    {
+      value: { nodes: { a: { x: 10, text: "world" } }, order: ["a"] },
+      conflicts: [],
+    },
+  ),
+)
+check(() =>
+  assert.deepEqual(
+    mergeCanvas(
+      baseCanvas,
+      { nodes: { a: { x: 10, text: "hello" } }, order: ["a"] },
+      { nodes: { a: { x: 20, text: "hello" } }, order: ["a"] },
+    ).conflicts,
+    ["nodes.a.x"],
+  ),
+)
+check(() =>
+  assert.deepEqual(
+    mergeCanvas<Record<string, unknown>>(
+      baseCanvas,
+      { nodes: { ...baseCanvas.nodes, b: { x: 20 } }, order: ["a", "b"] },
+      { nodes: { ...baseCanvas.nodes, c: { x: 30 } }, order: ["a", "c"] },
+    ).value,
+    {
+      nodes: { ...baseCanvas.nodes, b: { x: 20 }, c: { x: 30 } },
+      order: ["a", "c", "b"],
+    },
+  ),
+)
+check(() =>
+  assert.deepEqual(
+    mergeCanvas<Record<string, unknown>>(
+      baseCanvas,
+      { nodes: {}, order: [] },
+      { nodes: { a: { x: 20, text: "hello" } }, order: ["a"] },
+    ).conflicts,
+    ["nodes.a"],
+  ),
+)
+check(() =>
+  assert.deepEqual(
+    mergeCanvas(
+      { order: ["a", "b", "c"] },
+      { order: ["b", "a", "c"] },
+      { order: ["a", "c", "b"] },
+    ).conflicts,
+    ["order"],
   ),
 )
 console.log(

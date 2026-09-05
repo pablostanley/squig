@@ -71,33 +71,26 @@ try {
       },
     ],
   })
-  await page.goto(`${base}/connect`)
-  await page.getByLabel("Workspace key", { exact: true }).fill(key)
-  await page.getByRole("button", { name: "Connect this browser" }).click()
-  await expect(page.getByText("You’re connected.")).toBeVisible()
-  await expect(
-    page.getByRole("link", { name: /Browser test canvas/ }),
-  ).toBeVisible()
-  await page.goto(doc.reviewUrl.replace(new URL(doc.reviewUrl).origin, base))
-  await expect(
-    page.getByRole("heading", { name: "Browser test canvas" }),
-  ).toBeVisible()
-  await page.getByRole("button", { name: "Meeting first", exact: true }).click()
-  await expect(page.locator(".review-sheet")).toContainText("Meeting first")
-  await expect(page.locator(".review-sheet")).not.toContainText("Book first")
-  await page
-    .getByLabel("Note on Meeting first")
-    .fill("Keep this direction, with more room for the invitation.")
-  await page.getByRole("button", { name: "Add note", exact: true }).click()
-  await expect(page.locator(".review-comments")).toContainText(
-    "Keep this direction",
+  // A clean browser opens a document-scoped invitation directly into the editor.
+  await page.goto(
+    doc.canvasUrl.replace(new URL(doc.canvasUrl).origin, base),
   )
-  await page
-    .getByRole("button", { name: "Choose Meeting first", exact: true })
-    .click()
-  await expect(page.getByText("Chosen: Meeting first")).toBeVisible()
-  await page.goto(`${base}/?agent=${doc.id}`)
-  await expect(page.locator(".agent-sync")).toContainText("revision 2")
+  await expect(page.locator(".agent-sync")).toContainText("Live canvas")
+  await expect(
+    page.getByText("Meeting first", { exact: true }).first(),
+  ).toBeVisible()
+  await expect(
+    page.getByText("Book first", { exact: true }).first(),
+  ).toBeVisible()
+  expect(
+    await page.evaluate(() => localStorage.getItem("squig:agent-key")),
+  ).toBeNull()
+  expect(new URL(page.url()).hash).toBe("")
+  await page.getByRole("button", { name: "Connect agent / Share" }).click()
+  await expect(page.getByLabel("Editable canvas link")).toHaveValue(
+    doc.canvasUrl.replace(new URL(doc.canvasUrl).origin, base),
+  )
+  await page.getByRole("button", { name: "Close", exact: true }).click()
   await page
     .getByRole("button", { name: "Browser test canvas", exact: true })
     .click()
@@ -107,28 +100,89 @@ try {
   await page
     .getByRole("textbox", { name: "file name", exact: true })
     .press("Enter")
-  await expect(page.locator(".agent-sync")).toContainText("revision 3", {
-    timeout: 15000,
-  })
+  await expect
+    .poll(async () => (await api(`documents/${doc.id}`)).document.fileName)
+    .toBe("A human edited this")
   let current = await api(`documents/${doc.id}`)
   expect(current.document.fileName).toBe("A human edited this")
-  expect(current.approval).toBeNull()
-  await page.getByRole("button", { name: "Sans serif", exact: true }).click()
-  await expect(page.locator(".agent-sync")).toContainText("revision 4", {
-    timeout: 15000,
-  })
+  await page
+    .getByRole("button", { name: "Sans serif", exact: true })
+    .click()
+  await expect
+    .poll(async () => (await api(`documents/${doc.id}`)).document.look.font)
+    .toBe("sans")
   current = await api(`documents/${doc.id}`)
   expect(current.document.look.font).toBe("sans")
   await api("tools/edit_document", {
     documentId: doc.id,
-    revision: 4,
-    operations: [{ op: "rename", name: "The agent replied" }, { op: "look", font: "hand" }],
+    revision: current.revision,
+    operations: [
+      { op: "rename", name: "The agent replied" },
+      { op: "look", font: "hand" },
+    ],
   })
   await expect(
     page.getByRole("button", { name: "The agent replied", exact: true }),
   ).toBeVisible({ timeout: 15000 })
-  await expect.poll(async()=> (await api(`documents/${doc.id}`)).document.look.font).toBe("hand")
-  await expect(page.getByRole("button",{name:"Hand-drawn",exact:true})).toBeVisible()
+  await expect
+    .poll(async () => (await api(`documents/${doc.id}`)).document.look.font)
+    .toBe("hand")
+  await expect(
+    page.getByRole("button", { name: "Hand-drawn", exact: true }),
+  ).toBeVisible()
+  // A second browser sees the same objects. A racing edit on a different node
+  // merges with the human's filename change instead of pausing collaboration.
+  const viewer = await browser.newPage()
+  await viewer.goto(
+    doc.canvasUrl.replace(new URL(doc.canvasUrl).origin, base),
+  )
+  await expect(viewer.locator(".agent-sync")).toContainText("Live canvas")
+  let independentRace = false
+  await page.route("**/api/v1/tools/replace_document", async (route) => {
+    if (!independentRace) {
+      independentRace = true
+      const data = route.request().postDataJSON()
+      await api("tools/edit_document", {
+        documentId: doc.id,
+        revision: data.revision,
+        operations: [
+          {
+            op: "update",
+            patches: [
+              { id: "a", patch: { text: "Agent drew this beside you" } },
+            ],
+          },
+        ],
+      })
+    }
+    await route.continue()
+  })
+  await page
+    .getByRole("button", { name: "The agent replied", exact: true })
+    .click()
+  await page
+    .getByRole("textbox", { name: "file name", exact: true })
+    .fill("Working together")
+  await page
+    .getByRole("textbox", { name: "file name", exact: true })
+    .press("Enter")
+  await expect
+    .poll(async () => (await api(`documents/${doc.id}`)).document.fileName)
+    .toBe("Working together")
+  await expect(
+    page.getByText("Agent drew this beside you", { exact: true }).first(),
+  ).toBeVisible()
+  await expect(
+    viewer.getByRole("button", { name: "Working together", exact: true }),
+  ).toBeVisible()
+  await expect(
+    viewer.getByText("Agent drew this beside you", { exact: true }).first(),
+  ).toBeVisible()
+  await expect(
+    page.getByRole("button", { name: "Download my draft" }),
+  ).toHaveCount(0)
+  await page.unroute("**/api/v1/tools/replace_document")
+  await viewer.close()
   // Force a real concurrent server edit between the browser's snapshot and save.
   let raced = false
   await page.route("**/api/v1/tools/replace_document", async (route) => {
@@ -144,7 +198,7 @@ try {
     await route.continue()
   })
   await page
-    .getByRole("button", { name: "The agent replied", exact: true })
+    .getByRole("button", { name: "Working together", exact: true })
     .click()
   await page
     .getByRole("textbox", { name: "file name", exact: true })
@@ -156,12 +210,17 @@ try {
     page.getByRole("button", { name: "Download my draft" }),
   ).toBeVisible({ timeout: 15000 })
   await expect(
-    page.getByRole("button", { name: "My unsaved local draft", exact: true }),
+    page.getByRole("button", {
+      name: "My unsaved local draft",
+      exact: true,
+    }),
   ).toBeVisible()
   const downloadPromise = page.waitForEvent("download")
   await page.getByRole("button", { name: "Download my draft" }).click()
   const download = await downloadPromise
-  const downloaded = JSON.parse(await readFile(await download.path(), "utf8"))
+  const downloaded = JSON.parse(
+    await readFile(await download.path(), "utf8"),
+  )
   expect(downloaded.fileName).toBe("My unsaved local draft")
   await page.getByRole("button", { name: "Load latest canvas" }).click()
   await expect(
@@ -170,11 +229,68 @@ try {
   await expect(
     page.getByRole("button", { name: "Download my draft" }),
   ).toHaveCount(0)
-  await page.goto(`${base}/docs/mcp`)
-  await expect(page.locator("h1")).toHaveText("Install the Squig MCP server")
-  expect(await page.locator('link[rel="canonical"]').getAttribute("href")).toBe(
-    "https://squig.sh/docs/mcp",
+  // Start with a user's local .squig file and attach the agent in place.
+  const localContext = await browser.newContext()
+  await localContext.addInitScript(
+    (value) => localStorage.setItem("squig:agent-key", value),
+    key,
   )
+  const local = await localContext.newPage()
+  await local.goto(base)
+  await local.getByTitle("file menu", { exact: true }).click()
+  const chooserPromise = local.waitForEvent("filechooser")
+  await local
+    .getByRole("menuitem", { name: "Open from disk…", exact: true })
+    .click()
+  const chooser = await chooserPromise
+  await chooser.setFiles({
+    name: "existing.squig.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(
+      JSON.stringify({
+        app: "squig",
+        version: 1,
+        fileName: "My existing drawing",
+        nodes: {
+          existing: {
+            id: "existing",
+            type: "text",
+            x: 0,
+            y: 0,
+            w: 500,
+            h: 100,
+            seed: 42,
+            fontSize: 32,
+            text: "Already on my canvas",
+          },
+        },
+        order: ["existing"],
+      }),
+    ),
+  })
+  await expect(
+    local.getByText("Already on my canvas", { exact: true }).first(),
+  ).toBeVisible()
+  await local
+    .getByRole("button", { name: "Connect agent", exact: true })
+    .click()
+  await expect(local.getByLabel("Editable canvas link")).not.toHaveValue("")
+  const attachedId = new URL(local.url()).searchParams.get("agent")
+  expect(attachedId).toBeTruthy()
+  expect(
+    (await api(`documents/${attachedId}`)).document.nodes.existing.text,
+  ).toBe("Already on my canvas")
+  await expect(
+    local.getByText("Already on my canvas", { exact: true }).first(),
+  ).toBeVisible()
+  await localContext.close()
+  await page.goto(`${base}/docs/mcp`)
+  await expect(page.locator("h1")).toHaveText(
+    "Install the Squig MCP server",
+  )
+  expect(
+    await page.locator('link[rel="canonical"]').getAttribute("href"),
+  ).toBe("https://squig.sh/docs/mcp")
   await page.setViewportSize({ width: 390, height: 844 })
   for (const path of ["/docs", "/docs/api", "/connect"]) {
     await page.goto(`${base}${path}`)
@@ -188,7 +304,7 @@ try {
   await mkdir("test-results", { recursive: true })
   await page.screenshot({ path: "test-results/agent-connect-mobile.png" })
   console.log(
-    "✓ Browser workflow passed: connect, compare, comment, approve, human edits, remote sync, genuine conflict, draft recovery, SEO and mobile layouts; no page errors.",
+    "✓ Browser workflow passed: direct canvas invitation, scoped connection, visible editable wireframes, human edits, remote sync, genuine conflict, draft recovery, SEO and mobile layouts; no page errors.",
   )
 } finally {
   await browser.close()

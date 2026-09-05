@@ -30,7 +30,7 @@ export default function Page() {
           <Link className="agent-button" href="/docs/getting-started">
             Make your first wireframe
           </Link>
-          <Link className="agent-button secondary" href="/connect">
+          <Link className="agent-button secondary" href="/">
             Connect an agent
           </Link>
         </div>

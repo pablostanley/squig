@@ -6,7 +6,15 @@ import {
   applyOperations,
   validateDocument,
 } from "./engine"
-import { db, hash, token, owned, save, type StoredDocument } from "./db"
+import {
+  db,
+  hash,
+  token,
+  owned,
+  save,
+  type StoredDocument,
+  type AgentPrincipal,
+} from "./db"
 import { ALL_DEFS, getDef, searchAll } from "@/lib/library/registry"
 
 export const origin = () =>
@@ -18,7 +26,6 @@ export const publicDoc = (row: StoredDocument) => ({
   id: row.id,
   revision: row.revision,
   document: row.document,
-  approval: row.approval,
   updatedAt: row.updated_at,
   editorUrl: `${origin()}/?agent=${row.id}`,
 })
@@ -28,9 +35,20 @@ export async function comments(id: string) {
 export async function execute(
   name: ToolName,
   input: unknown,
-  workspace: string,
+  principal: AgentPrincipal,
 ) {
+  const workspace = principal.workspaceId
   const args = tools[name].schema.parse(input)
+  if (principal.documentId) {
+    if (
+      name === "create_document" ||
+      name === "delete_document" ||
+      name === "rotate_canvas_link"
+    )
+      throw new AgentError(403, "This action requires a workspace key")
+    if ("documentId" in args && args.documentId !== principal.documentId)
+      throw new AgentError(404, "Document not found")
+  }
   // Each branch parses its own schema to preserve discriminated input types.
   switch (name) {
     case "catalog": {
@@ -49,17 +67,17 @@ export async function execute(
     }
     case "documents": {
       const rows =
-        await db()`SELECT id, document->>'fileName' AS name, revision, updated_at AS "updatedAt" FROM agent_documents WHERE workspace_id = ${workspace} ORDER BY updated_at DESC LIMIT 100`
+        await db()`SELECT id, document->>'fileName' AS name, revision, updated_at AS "updatedAt" FROM agent_documents WHERE workspace_id = ${workspace} AND (${principal.documentId ?? null}::text IS NULL OR id = ${principal.documentId ?? null}) ORDER BY updated_at DESC LIMIT 100`
       return { documents: rows }
     }
     case "create_document": {
       const a = tools.create_document.schema.parse(args),
         id = nanoid(20),
-        reviewToken = token(),
+        canvasKey = `sq_canvas_${token()}`,
         document = emptyDocument(a.name)
       const rows = await db()`WITH inserted AS (
-        INSERT INTO agent_documents (id, workspace_id, document, review_hash)
-        SELECT ${id}, ${workspace}, ${JSON.stringify(document)}::jsonb, ${hash(reviewToken)}
+        INSERT INTO agent_documents (id, workspace_id, document, canvas_hash)
+        SELECT ${id}, ${workspace}, ${JSON.stringify(document)}::jsonb, ${hash(canvasKey)}
         WHERE (SELECT count(*) FROM agent_documents WHERE workspace_id = ${workspace}) < 100 RETURNING *
       ), recorded AS (INSERT INTO agent_revisions (document_id, revision, document) SELECT id, revision, document FROM inserted RETURNING document_id)
       SELECT inserted.* FROM inserted JOIN recorded ON recorded.document_id = inserted.id`
@@ -67,7 +85,8 @@ export async function execute(
         throw new AgentError(429, "Workspace document limit reached (100)")
       return {
         ...publicDoc(rows[0] as StoredDocument),
-        reviewUrl: `${origin()}/review?id=${id}#${reviewToken}`,
+        canvasUrl: `${origin()}/?agent=${id}#${canvasKey}`,
+        canvasKey,
       }
     }
     case "get_document": {
@@ -139,11 +158,10 @@ export async function execute(
         ...publicDoc(row),
         file: { app: "squig", version: 1, ...row.document },
         handoff: {
-          approved: row.approval,
           variations: row.document.variations,
           comments: await comments(row.id),
           instruction:
-            "Build only the direction explicitly chosen by the user. An approval applies to its exact revision. Preserve content, hierarchy and layout; choose production styling separately.",
+            "Build only the direction explicitly chosen by the user. Preserve content, hierarchy and layout; choose production styling separately.",
         },
       }
     }
@@ -180,13 +198,14 @@ export async function execute(
         throw new AgentError(409, "Revision conflict; read latest first")
       return { deleted: a.documentId }
     }
-    case "rotate_review_link": {
-      const a = tools.rotate_review_link.schema.parse(args)
+    case "rotate_canvas_link": {
+      const a = tools.rotate_canvas_link.schema.parse(args)
       await owned(workspace, a.documentId)
-      const reviewToken = token()
-      await db()`UPDATE agent_documents SET review_hash = ${hash(reviewToken)} WHERE id = ${a.documentId} AND workspace_id = ${workspace}`
+      const canvasKey = `sq_canvas_${token()}`
+      await db()`UPDATE agent_documents SET canvas_hash = ${hash(canvasKey)} WHERE id = ${a.documentId} AND workspace_id = ${workspace}`
       return {
-        reviewUrl: `${origin()}/review?id=${a.documentId}#${reviewToken}`,
+        canvasKey,
+        canvasUrl: `${origin()}/?agent=${a.documentId}#${canvasKey}`,
       }
     }
   }

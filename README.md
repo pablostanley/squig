@@ -136,14 +136,16 @@ an issue first.
 
 ## Squig for agents
 
-![A shared Squig wireframe with variation tabs and human feedback](docs/agent-review.png)
+![Three editable wireframes on the shared Squig canvas](docs/agent-canvas.png)
 
-An external agent can create a wireframe, explore three layouts, send you a
-private review link, and revise the same canvas from your feedback. You can
-also edit it directly. Choosing a variation records the exact revision for the
-agent's implementation handoff.
+External agents draw on the same Squig canvas as the user. Open a canvas and
+click **Connect agent** to connect any compatible MCP client or HTTP agent.
+Watch it add real editable wireframes and notes, and edit alongside it.
+An agent with a workspace key can also create a new canvas and send its
+editable link before drawing. Keep variations side by side on that canvas.
 
-- **[Connect an agent](https://squig.sh/connect)** — create a workspace key.
+- **[Open a canvas](https://squig.sh)** — connect an agent to your current drawing.
+- **[Workspace keys](https://squig.sh/connect)** — let an agent create canvases.
 - **[MCP setup](https://squig.sh/docs/mcp)** — Codex, Claude Code, Cursor, and
   other Streamable HTTP clients. Endpoint: `https://squig.sh/mcp`.
 - **[API documentation](https://squig.sh/docs/api)** and
@@ -154,8 +156,8 @@ agent's implementation handoff.
 
 Agent workspaces are saved in Postgres. Ordinary local drawings still work
 without a key or database. Sharing a local canvas creates an online copy.
-Workspace keys grant read/write access to the workspace; private review links
-grant read/comment/choose access to one document. Treat both as secrets.
+Workspace keys grant access to the workspace. Canvas keys and editable links
+grant access to one canvas. Treat keys and invitation links as secrets.
 
 For a self-hosted agent server, set `DATABASE_URL` to your Neon database and
 `SQUIG_PUBLIC_URL` to your instance origin, then run:

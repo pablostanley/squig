@@ -1,92 +1,76 @@
-# Agent workspace architecture
+# Shared canvas architecture
 
-Squig's existing browser store remains the local canvas editor. Hosted agent
-workspaces introduce a server-side document contract with independent access
-control and durable revision history. There is no model running inside Squig.
+Squig’s normal browser editor is the shared workspace. External agents use
+MCP or REST to read and mutate that same document; no model runs inside Squig.
+The user watches real editable nodes arrive and can draw alongside the agent.
+There is no separate review application.
 
-## Entry points
+## Connections
 
-- `app/mcp/route.ts`: official MCP SDK, stateless Streamable HTTP, JSON replies,
-  tools, a workflow resource, and a wireframe-first prompt.
-- `app/api/v1/[...path]/route.ts`: REST commands, key creation/rotation and the
-  document-scoped review API.
-- `lib/agent/schema.ts`: shared command schemas and node field validation.
-- `lib/agent/engine.ts`: pure, atomic canvas operations. Every batch operates
-  on a clone and validates the whole result before a write can occur.
-- `lib/agent/service.ts`: ownership checks, command dispatch and handoff.
-- `lib/agent/db.ts`: Neon queries, hashed capabilities, quotas and CAS saves.
+A workspace bearer key can create canvases. `create_document` returns a
+`canvasUrl` opening the normal editor, plus a `canvasKey` scoped to that one
+canvas. Agents should send the link before drawing, then work in small,
+coherent batches. An existing local drawing becomes shared through **Connect
+agent** in the editor, retaining its objects and the user's current view.
+The connection panel provides the editable invitation, key and MCP config.
 
-The catalog reads the actual component registry. The renderer uses
-`lib/sketch/paths.ts`, extracted unchanged from the browser renderer, plus the
-same node primitives. Server PNG typography can differ because browser fonts
-are not embedded; final visual verification should include the browser.
+Any Streamable HTTP MCP client can connect to `/mcp`; any HTTP agent can use
+`/api/v1/tools/{name}` with identical inputs. The catalog is Squig’s actual
+component registry. All six node types and canvas operations use the same
+validated, atomic command engine.
 
-## Access model
+Canvas keys can inspect and edit only their document. They cannot create or
+delete canvases, rotate keys, or access siblings in the workspace. Workspace
+keys can manage those actions. Keys are random and stored as SHA-256 hashes.
+The invitation secret is in the URL fragment; the editor stores it locally
+and removes it from the address bar. The server receives it as a bearer header.
+`rotate_canvas_link` revokes the previous canvas key without rotating the
+workspace key. Treat invitations as editing credentials.
 
-A workspace key controls only documents belonging to its workspace. The raw
-key is returned once; the server stores its SHA-256 hash. The browser keeps
-its key in localStorage so subsequent visits reconnect. Rotating a key revokes
-all clients using the old key. There is no account recovery or OAuth in this
-release.
+## Synchronization and concurrent editing
 
-A review URL carries a random document capability in its fragment. Browsers
-send it only as a bearer header to the review API; it is never in the request
-URL, referrer, metadata, sitemap or HTML. Reviewers can read, comment and choose
-a variation. They cannot mutate the canvas or list the workspace. Reviewer
-identity is intentionally described as “Reviewer,” not an authenticated person.
+The browser checks for changes every second while connected. It preserves
+pan, zoom and surviving selections. Saves wait until a text edit or transform
+finishes. Each mutation uses an expected revision; a single PostgreSQL CTE
+updates the JSON and inserts its immutable history record. A stale writer
+receives 409 and must reconcile with the latest document.
 
-Review links are returned once on creation/rotation. The agent should retain
-the link; a browser that has no cached link offers an explicit replacement
-flow explaining that the old link will stop working. A partial URL is never
-returned as a usable review link.
+The editor uses a three-way merge between its last synchronized document,
+local changes and the remote document. Independent objects and fields merge;
+concurrent additions keep both sets of nodes. Competing edits to the same
+field preserve the local draft and offer download and explicit reload.
+Edits made during a save remain pending. Undo snapshots are rebased for
+independent remote changes; snapshots that would overwrite remote edits are
+discarded. Unsaved changes trigger the browser’s leave-page warning.
 
-## Persistence and concurrency
+This is revision-based collaboration, not a character-level CRDT. Incoming
+changes are deferred during active text editing and transforms. There are no
+remote cursor avatars or named presence identities. The canvas status reports
+connection, saves, incoming changes and errors.
 
-Each canvas mutation includes its expected revision. A single PostgreSQL CTE
-updates the document only at that revision and inserts its immutable history
-row. A mismatch returns 409. The JSON is never written if any batch operation
-fails. Restoring history creates a new revision and retains feedback.
+## Modules
 
-The browser polls at two-second intervals while a shared document is open.
-It uploads changes only outside active text edits and geometry gestures. If
-local changes happen during a request, they stay dirty for the next save. It
-never replaces dirty local state with a remote response. Conflicts stop sync
-and offer a local draft download and explicit reload. Leaving with an unsaved
-shared draft triggers the browser's standard leave-page warning.
+- `app/mcp/route.ts`: official MCP SDK, tools, guide resource and workflow prompt.
+- `app/api/v1/[...path]/route.ts`: REST commands and workspace key management.
+- `lib/agent/schema.ts`, `engine.ts`: schemas and atomic canvas operations.
+- `lib/agent/service.ts`, `db.ts`: capability scopes, storage, quotas and CAS.
+- `lib/agent/merge.ts`: browser-independent concurrent edit merging.
+- `components/agent/bridge.tsx`: in-canvas connection and synchronization.
 
-Approval names a variation at a particular revision. Every canvas save clears
-approval; comment changes do not. Approval uses the same revision predicate
-so a stale review cannot approve unseen content.
+Render tools use the canvas drawing paths and primitives. Server fonts can
+differ from browser fonts; use a browser screenshot for final typography.
+No arbitrary code or external URL fetching is exposed. Images are embedded
+raster data. Requests, geometry, node counts and batches are bounded.
 
-## Operations and limits
+The migration is additive and rerunnable. Existing unused review columns are
+retained for migration compatibility; no review interface or endpoint is
+exposed. Database backups, retention and operating budgets belong to the host.
+The Webxdc package keeps the offline canvas and excludes hosted connections.
 
-No arbitrary execution, URL fetching or cross-origin browser API is exposed.
-Nodes have finite bounded geometry; images use embedded raster data, never
-remote URLs or SVG payloads. Input, document and operation sizes are bounded.
-Quota state is stored in Postgres so server instances share counters.
+## Verification
 
-The migration is additive and rerunnable. Workspace deletion cascades to its
-canvases, history and comments. There is no automatic retention or account
-billing. Operators should set database backups, storage budgets and signup
-limits for their audience before broad public rollout.
-
-Webxdc uses only TSX pages and omits server route handlers. The offline canvas
-hides the agent bridge. Hosted docs and interfaces are independent of local
-file storage.
-
-## Validation
-
-- `pnpm test`: existing canvas regression suite.
-- `pnpm test:agent`: pure engine, catalog, validation and SVG checks.
-- `node --env-file=.env.local scripts/agent/smoke.mjs`: real database and MCP
-  client; isolation, CAS races, atomic rollback, feedback, approval, restore,
-  image rendering, key rotation, review revocation and deletion.
-- `pnpm test:agent:browser`: reproducible Chromium workflow and mobile checks.
-- `pnpm lint`, `pnpm build`, `make build-xdc`.
-- Browser review: compare variations, add feedback, choose a direction,
-  connect a workspace, edit through the normal inspector, and observe both
-  remote-to-local updates and local-to-remote saves.
-
-The smoke test deletes its workspace fixtures even on failure. The optional
-`demo.mjs` creates a retained, three-direction book-club canvas for visual
-inspection; its credentials go to a private file, not stdout.
+Run `pnpm test`, `pnpm test:agent`, `pnpm lint`, `pnpm build` and `make build-xdc`.
+With the app running and DATABASE_URL loaded, run the real REST/MCP integration
+suite and `pnpm test:agent:browser`. These create isolated fixtures and clean
+them up. Browser coverage includes direct invitations, existing local files,
+two live editors, independent concurrent writes and conflicting draft recovery.

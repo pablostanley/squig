@@ -35,7 +35,9 @@ export const nodeFields = z
     boxInk: z.enum(["ink", "muted", "faint"]).optional(),
     points: z.array(point).max(10000).optional(),
     head: z.boolean().optional(),
-    bind: z.tuple([z.string().nullable(), z.string().nullable()]).optional(),
+    bind: z
+      .tuple([z.string().nullable(), z.string().nullable()])
+      .optional(),
     anchors: z
       .tuple([
         z.enum(["top", "right", "bottom", "left", "center"]).nullable(),
@@ -224,12 +226,12 @@ export const tools = {
   },
   create_document: {
     description:
-      "Create a persistent editable wireframe. Returns its ID, revision, editor URL and private review URL. Compose variations using edit_document.",
+      "Create a persistent editable wireframe. Returns its ID, revision, canvasUrl and document-scoped canvasKey. Share canvasUrl immediately so the user can watch you draw in the actual editor. Requires a workspace key. Compose side-by-side variations using edit_document.",
     schema: z.object({ name: z.string().min(1).max(160) }),
   },
   get_document: {
     description:
-      "Read the complete canvas, variations, comments, approval and current revision before editing or implementing.",
+      "Read the complete canvas, variations, comments and current revision before editing or implementing.",
     schema: z.object({ documentId: id }),
   },
   edit_document: {
@@ -262,7 +264,7 @@ export const tools = {
   },
   restore: {
     description:
-      "Restore a prior canvas revision, clearing approval and retaining current feedback.",
+      "Restore a prior canvas revision, retaining current feedback.",
     schema: z.object({
       documentId: id,
       revision: z.number().int().positive(),
@@ -281,11 +283,15 @@ export const tools = {
   },
   resolve_comment: {
     description: "Mark a review comment resolved or reopen it.",
-    schema: z.object({ documentId: id, commentId: id, resolved: z.boolean() }),
+    schema: z.object({
+      documentId: id,
+      commentId: id,
+      resolved: z.boolean(),
+    }),
   },
   export_document: {
     description:
-      "Export a portable .squig.json document and implementation handoff containing geometry, component props, variations, notes and approval. No code is deployed by this tool.",
+      "Export a portable .squig.json document and implementation handoff containing geometry, component props, variations and notes. No code is deployed by this tool.",
     schema: z.object({ documentId: id }),
   },
   render_document: {
@@ -299,13 +305,16 @@ export const tools = {
   },
   delete_document: {
     description:
-      "Permanently delete a document, its review link, comments and revision history at an expected revision. This cannot be undone.",
-    schema: z.object({ documentId: id, revision: z.number().int().positive() }),
+      "Permanently delete a document, its canvas link, comments and revision history at an expected revision. This cannot be undone.",
+    schema: z.object({
+      documentId: id,
+      revision: z.number().int().positive(),
+    }),
   },
-  rotate_review_link: {
+  rotate_canvas_link: {
     description:
-      "Revoke the previous review capability and issue a fresh review URL.",
-    schema: z.object({ documentId: id }),
+      "Create a new editable canvas link and document-scoped MCP/API key. Revokes the previous canvas key. Workspace key required.",
+    schema: z.object({ documentId: z.string().min(1) }),
   },
 } as const
 export type ToolName = keyof typeof tools

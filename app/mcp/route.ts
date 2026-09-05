@@ -36,7 +36,7 @@ export async function POST(request: Request) {
               "edit_document",
               "replace_document",
               "restore",
-              "rotate_review_link",
+              "rotate_canvas_link",
               "delete_document",
             ].includes(name),
             idempotentHint: [

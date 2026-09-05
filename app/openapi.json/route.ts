@@ -2,7 +2,9 @@ import { z } from "zod"
 import { tools } from "@/lib/agent/schema"
 export const dynamic = "force-static"
 export function GET() {
-  const jsonContent = (schema: object) => ({ "application/json": { schema } })
+  const jsonContent = (schema: object) => ({
+    "application/json": { schema },
+  })
   const requestBody = (schema: object) => ({
     required: true,
     content: jsonContent(schema),
@@ -21,7 +23,7 @@ export function GET() {
   const responses = {
     "200": {
       description:
-        "Command result. Canvas mutations return id, revision, document and editorUrl. Create and rotate_review_link also return a full private reviewUrl.",
+        "Command result. Canvas mutations return id, revision, document and editorUrl. Create and rotate_canvas_link also return canvasUrl and canvasKey for the normal editable canvas.",
       content: jsonContent({ type: "object", additionalProperties: true }),
     },
     ...Object.fromEntries(
@@ -49,7 +51,9 @@ export function GET() {
         post: {
           operationId: name,
           description: t.description,
-          requestBody: requestBody(z.toJSONSchema(t.schema, { io: "input" })),
+          requestBody: requestBody(
+            z.toJSONSchema(t.schema, { io: "input" }),
+          ),
           responses,
         },
       },
@@ -107,43 +111,10 @@ export function GET() {
     },
   }
   paths["/documents/{id}"] = {
-    get: { operationId: "read_document", parameters: [idParameter], responses },
-  }
-  paths["/review/{id}"] = {
     get: {
-      operationId: "read_review",
-      security: [{ reviewCapability: [] }],
+      operationId: "read_document",
       parameters: [idParameter],
       responses,
-    },
-    post: {
-      operationId: "review_document",
-      security: [{ reviewCapability: [] }],
-      parameters: [idParameter],
-      requestBody: requestBody({
-        oneOf: [
-          {
-            type: "object",
-            required: ["action", "text"],
-            properties: {
-              action: { const: "comment" },
-              text: { type: "string", minLength: 1, maxLength: 4000 },
-              nodeId: { type: "string" },
-              variationId: { type: "string" },
-            },
-          },
-          {
-            type: "object",
-            required: ["action", "variationId", "revision"],
-            properties: {
-              action: { const: "approve" },
-              variationId: { type: "string" },
-              revision: { type: "integer", minimum: 1 },
-            },
-          },
-        ],
-      }),
-      responses: { ...responses, "201": { description: "Comment created" } },
     },
   }
   return Response.json({
@@ -152,7 +123,7 @@ export function GET() {
       title: "Squig Agent API",
       version: "1.0.0",
       description:
-        "Persistent wireframes, variations and human review. MCP tools use squig_ plus the command operationId.",
+        "Shared editable canvases for humans and any compatible agent. MCP tools use squig_ plus the command operationId.",
     },
     servers: [{ url: "/api/v1" }],
     security: [{ workspaceKey: [] }],
@@ -161,13 +132,8 @@ export function GET() {
         workspaceKey: {
           type: "http",
           scheme: "bearer",
-          description: "Workspace key created at /connect. Keep it private.",
-        },
-        reviewCapability: {
-          type: "http",
-          scheme: "bearer",
           description:
-            "Document-scoped token from the private review URL fragment. Grants read, comment and approve, never canvas editing.",
+            "Canvas key from Connect agent in the editor, or workspace key from /connect to create canvases. Keep it private.",
         },
       },
     },

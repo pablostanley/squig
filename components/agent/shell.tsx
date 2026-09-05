@@ -9,7 +9,7 @@ export function AgentShell({ children }: { children: React.ReactNode }) {
         </Link>
         <div className="agent-nav-links">
           <Link href="/docs">Docs</Link>
-          <Link href="/connect">Connect an agent</Link>
+          <Link href="/connect">Workspace keys</Link>
           <Link href="/">Open canvas</Link>
         </div>
       </nav>

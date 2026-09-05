@@ -6,10 +6,9 @@ import {
   hash,
   token,
   rateLimit,
-  type StoredDocument,
 } from "@/lib/agent/db"
 import { tools, type ToolName } from "@/lib/agent/schema"
-import { execute, comments, publicDoc, addComment } from "@/lib/agent/service"
+import { execute } from "@/lib/agent/service"
 import { AgentError } from "@/lib/agent/engine"
 import { body, checkOrigin, failure, json } from "@/lib/agent/http"
 export const runtime = "nodejs"
@@ -44,63 +43,14 @@ async function handle(
         201,
       )
     }
-    if (path[0] === "review" && path.length === 2) {
-      const capability =
-        request.headers.get("authorization")?.replace(/^Bearer /i, "") ?? ""
-      if (!capability) throw new AgentError(401, "Review link required")
-      const reviewIp = process.env.VERCEL
-        ? (request.headers.get("x-vercel-forwarded-for") ?? "unknown")
-        : "self-host"
-      await rateLimit(`review-ip:${reviewIp}`, 300)
-      const rows =
-        await db()`SELECT * FROM agent_documents WHERE id = ${path[1]} AND review_hash = ${hash(capability)}`
-      if (!rows.length)
-        throw new AgentError(404, "Review link is invalid or revoked")
-      const row = rows[0] as StoredDocument
-      if (request.method === "GET")
-        return json({ ...publicDoc(row), comments: await comments(row.id) })
-      if (request.method !== "POST")
-        throw new AgentError(405, "Method not allowed")
-      const a = z
-        .discriminatedUnion("action", [
-          z.object({
-            action: z.literal("comment"),
-            text: z.string().min(1).max(4000),
-            variationId: z.string().optional(),
-            nodeId: z.string().optional(),
-          }),
-          z.object({
-            action: z.literal("approve"),
-            variationId: z.string(),
-            revision: z.number().int().positive(),
-          }),
-        ])
-        .parse(await body(request))
-      if (a.action === "comment")
-        return json(await addComment(row, a, "reviewer"), 201)
-      if (!row.document.variations.some((v) => v.id === a.variationId))
-        throw new AgentError(400, "Choose an existing variation")
-      const approval = {
-        variationId: a.variationId,
-        revision: a.revision,
-        at: new Date().toISOString(),
-      }
-      const result =
-        await db()`UPDATE agent_documents SET approval = ${JSON.stringify(approval)}::jsonb WHERE id = ${row.id} AND revision = ${a.revision} AND review_hash = ${hash(capability)} RETURNING id`
-      if (!result.length)
-        throw new AgentError(
-          409,
-          "This canvas changed. Reload before approving.",
-        )
-      return json({ approval })
-    }
     const workspace = await authenticate(request)
     if (
       path.join("/") === "workspace/rotate-key" &&
       request.method === "POST"
     ) {
+      if (workspace.documentId) throw new AgentError(403, "Workspace key required")
       const key = `sq_${token()}`
-      await db()`UPDATE agent_workspaces SET key_hash = ${hash(key)} WHERE id = ${workspace}`
+      await db()`UPDATE agent_workspaces SET key_hash = ${hash(key)} WHERE id = ${workspace.workspaceId}`
       return json({ key })
     }
     if (

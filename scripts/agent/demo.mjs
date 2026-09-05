@@ -73,6 +73,8 @@ for (let i = 0; i < variations.length; i++) {
   const [id, title, description] = variations[i],
     x = i * 880,
     start = nodes.length
+  text(`${id}-direction`, x, -90, 780, 60, title, 32)
+  text(`${id}-rationale`, x, 1020, 780, 120, description, 24)
   shape(`${id}-page`, x, 0, 780, 980)
   text(`${id}-brand`, x + 40, 32, 320, 40, "The Sunday Chapter", 26)
   text(
@@ -282,7 +284,7 @@ await writeFile(
     workspace,
     key,
     id: doc.id,
-    reviewUrl: doc.reviewUrl,
+    canvasUrl: doc.canvasUrl,
     base,
   }),
   { mode: 0o600 },

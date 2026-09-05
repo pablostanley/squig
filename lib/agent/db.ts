@@ -18,25 +18,40 @@ export interface StoredDocument {
   workspace_id: string
   revision: number
   document: CanvasDocument
-  review_hash: string
-  approval: { variationId: string; revision: number; at: string } | null
   updated_at: string
 }
-export async function authenticate(request: Request): Promise<string> {
+export interface AgentPrincipal {
+  workspaceId: string
+  documentId?: string
+}
+export async function authenticate(
+  request: Request,
+): Promise<AgentPrincipal> {
   const bearer = request.headers
     .get("authorization")
     ?.match(/^Bearer (.+)$/i)?.[1]
   if (!bearer)
     throw new AgentError(
       401,
-      "Supply Authorization: Bearer <workspace key>. Create a key at /connect.",
+      "Supply Authorization: Bearer <key>. Get a canvas key from Connect agent in the editor, or a workspace key at /connect.",
     )
+  if (bearer.startsWith("sq_canvas_")) {
+    const rows =
+      await db()`SELECT id, workspace_id FROM agent_documents WHERE canvas_hash = ${hash(bearer)}`
+    if (!rows.length)
+      throw new AgentError(401, "Invalid or revoked canvas key")
+    await rateLimit(`canvas:${rows[0].id}`, 600)
+    return {
+      workspaceId: rows[0].workspace_id as string,
+      documentId: rows[0].id as string,
+    }
+  }
   const rows =
     await db()`SELECT id FROM agent_workspaces WHERE key_hash = ${hash(bearer)}`
   if (!rows.length)
     throw new AgentError(401, "Invalid or revoked workspace key")
   await rateLimit(`workspace:${rows[0].id}`, 240)
-  return rows[0].id as string
+  return { workspaceId: rows[0].id as string }
 }
 export async function rateLimit(key: string, limit: number, seconds = 60) {
   const bucket = Math.floor(Date.now() / (seconds * 1000))
@@ -63,7 +78,7 @@ export async function save(
   document: CanvasDocument,
 ) {
   const rows = await db()`WITH changed AS (
-    UPDATE agent_documents SET document = ${JSON.stringify(document)}::jsonb, revision = revision + 1, approval = NULL, updated_at = now()
+    UPDATE agent_documents SET document = ${JSON.stringify(document)}::jsonb, revision = revision + 1, updated_at = now()
     WHERE id = ${id} AND workspace_id = ${workspace} AND revision = ${revision} RETURNING *
   ), recorded AS (
     INSERT INTO agent_revisions (document_id, revision, document) SELECT id, revision, document FROM changed RETURNING revision
