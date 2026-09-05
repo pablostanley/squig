@@ -83,11 +83,11 @@ export const ALL_DEFS: ComponentDef[] = (() => {
 export const REGISTRY: Record<string, ComponentDef> = Object.fromEntries(ALL_DEFS.map((d) => [d.kind, d]))
 
 export function getDef(kind: string): ComponentDef | undefined {
-  return REGISTRY[kind]
+  return Object.hasOwn(REGISTRY, kind) ? REGISTRY[kind] : undefined
 }
 
 export function renderComponent(kind: string, props: Props, w: number, h: number): Prim[] {
-  const def = REGISTRY[kind]
+  const def = getDef(kind)
   if (!def) return []
   return def.render({ ...def.defaults, ...props }, w, h)
 }

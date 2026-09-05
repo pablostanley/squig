@@ -1,0 +1,24 @@
+{
+  "name": "squig",
+  "version": "1.0.0",
+  "description": "Sketch, compare and revise wireframes with humans before building.",
+  "author": {
+    "name": "Pablo Stanley"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Squig",
+    "shortDescription": "Wireframe ideas together before writing code.",
+    "longDescription": "Connect an agent to the full Squig canvas. Explore variations, share review links, address feedback and hand off the chosen direction.",
+    "developerName": "Squig",
+    "category": "Productivity",
+    "capabilities": [
+      "Write"
+    ],
+    "defaultPrompt": "Use Squig to sketch three distinct wireframe directions before building."
+  },
+  "mcpServers": "./.mcp.json",
+  "homepage": "https://squig.sh/docs/plugin",
+  "repository": "https://github.com/pablostanley/squig",
+  "license": "MIT"
+}

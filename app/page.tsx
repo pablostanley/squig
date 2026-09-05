@@ -1,5 +1,6 @@
 "use client"
 
+import { AgentBridge } from "@/components/agent/bridge"
 import { useEffect } from "react"
 import { useSquig } from "@/lib/store"
 import { Canvas } from "@/components/canvas/canvas"
@@ -42,6 +43,7 @@ export default function Home() {
       {!uiHidden && (
         <>
           <TopCorner />
+          {process.env.NEXT_PUBLIC_SQUIG_OFFLINE !== "1" && <AgentBridge />}
           <FileName />
           <LeftRail />
           <LibraryPanel />

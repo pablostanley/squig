@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "squig": {
+      "type": "http",
+      "url": "https://squig.sh/mcp",
+      "headers": {
+        "Authorization": "Bearer ${SQUIG_API_KEY}"
+      }
+    }
+  }
+}

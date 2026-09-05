@@ -1,0 +1,20 @@
+{
+  "name": "squig-plugins",
+  "interface": {
+    "displayName": "Squig Plugins"
+  },
+  "plugins": [
+    {
+      "name": "squig",
+      "source": {
+        "source": "local",
+        "path": "./plugins/squig"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

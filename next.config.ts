@@ -7,6 +7,14 @@ import { fileURLToPath } from "node:url";
 const webxdc = process.env.WEBXDC === "1";
 
 const nextConfig: NextConfig = {
+  env: { NEXT_PUBLIC_SQUIG_OFFLINE: webxdc ? "1" : "0" },
+  ...(webxdc ? { pageExtensions: ["tsx"] } : {}),
+  // Sharp loads libvips via dlopen, which Next's import tracer cannot see.
+  // Include the installed platform's native libraries in both agent functions.
+  outputFileTracingIncludes: {
+    "/mcp": ["./node_modules/.pnpm/@img+sharp-libvips-*/node_modules/@img/**/lib/*.so*"],
+    "/api/v1/**": ["./node_modules/.pnpm/@img+sharp-libvips-*/node_modules/@img/**/lib/*.so*"],
+  },
   // Pin the workspace root to this repo.
   //
   // Turbopack works out the root by walking up the tree looking for lockfiles,

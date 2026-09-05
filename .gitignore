@@ -52,3 +52,7 @@ next-env.d.ts
 *.squig.json
 # …except the drawing the empty canvas is generated from
 !scripts/doodle.squig.json
+
+# Automated browser verification artifacts
+/test-results/
+/playwright-report/
