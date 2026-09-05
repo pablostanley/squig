@@ -138,13 +138,16 @@ an issue first.
 
 ![Three editable wireframes on the shared Squig canvas](docs/agent-canvas.png)
 
-External agents draw on the same Squig canvas as the user. Open a canvas and
-click **Connect agent** to connect any compatible MCP client or HTTP agent.
+External agents draw on the same Squig canvas as the user. Open a canvas,
+click **Connect agent**, then **Copy for your agent**, and paste the
+invitation into your agent's chat. It carries the canvas link, a key scoped to
+that canvas, and the MCP and REST addresses, so an agent that can call HTTP
+starts over REST with nothing to install; MCP clients can use the same server.
 Watch it add real editable wireframes and notes, and edit alongside it.
 An agent with a workspace key can also create a new canvas and send its
 editable link before drawing. Keep variations side by side on that canvas.
 
-- **[Open a canvas](https://squig.sh)** — connect an agent to your current drawing.
+- **[Open a canvas](https://squig.sh)** — copy the invitation for your agent.
 - **[Workspace keys](https://squig.sh/connect)** — let an agent create canvases.
 - **[MCP setup](https://squig.sh/docs/mcp)** — Codex, Claude Code, Cursor, and
   other Streamable HTTP clients. Endpoint: `https://squig.sh/mcp`.

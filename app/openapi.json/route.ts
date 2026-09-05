@@ -23,7 +23,7 @@ export function GET() {
   const responses = {
     "200": {
       description:
-        "Command result. Canvas mutations return id, revision, document and editorUrl. Create and rotate_canvas_link also return canvasUrl and canvasKey for the normal editable canvas.",
+        "Command result. Canvas mutations return id, revision and editorUrl; edit_document returns createdIds, changed nodes and deletedIds instead of the whole document, while reads and replace_document return the full document. Create and rotate_canvas_link also return canvasUrl and canvasKey for the normal editable canvas.",
       content: jsonContent({ type: "object", additionalProperties: true }),
     },
     ...Object.fromEntries(

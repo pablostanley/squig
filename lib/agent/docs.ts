@@ -22,7 +22,7 @@ export const pages: DocPage[] = [
       },
       {
         title: "Connect once",
-        text: "Open your canvas and click Connect agent. Copy the canvas key or MCP configuration into your client. This grants access to this canvas only. To let an agent create new canvases, create a workspace key at /connect instead. Codex, Claude Code, Cursor and other Streamable HTTP clients use the same server; agents without MCP can use REST.",
+        text: "Open your canvas, click Connect agent, then click Copy for your agent. That copies a short invitation: the canvas link, a key scoped to this canvas, the MCP and REST addresses, and a first instruction. Paste it into your agent's chat — Codex, Claude Code, Cursor, or anything that can call HTTP. An agent that can make HTTP requests starts immediately over REST with the key as its bearer token; nothing to install. An agent with MCP support can add the server itself, or you set it up once with the manual configuration in the same popover (see /docs/mcp). Workspace keys at /connect remain for agents that need to create canvases.",
       },
       {
         title: "Ask for distinct directions",
@@ -39,7 +39,7 @@ export const pages: DocPage[] = [
       },
       {
         title: "Bring an existing sketch",
-        text: "Open a local Squig canvas and choose Connect agent. This creates a shared online canvas from your current drawing and keeps you in the editor. Give the canvas key to your agent; documents lists that canvas and get_document reads it. Reuse the same canvas for further changes.",
+        text: "Open a local Squig canvas and choose Connect agent. This creates a shared online canvas from your current drawing and keeps you in the editor. Copy the invitation for your agent; squig_documents lists that canvas and squig_get_document reads it, or GET /api/v1/documents over REST. Reuse the same canvas for further changes.",
       },
     ],
   },
@@ -49,6 +49,16 @@ export const pages: DocPage[] = [
     description:
       "Connect Codex, Claude Code, Cursor and other MCP clients to Squig’s remote Streamable HTTP server using a scoped workspace key.",
     sections: [
+      {
+        title: "The fast path: paste the invitation",
+        text: "You do not have to install anything to start. In the canvas, Connect agent copies an invitation block; paste it into your agent's chat. It carries the canvas link, a key scoped to that one canvas, the MCP and REST addresses, and the first instruction. An agent that can make HTTP requests sends the key as Authorization: Bearer and calls REST straight away: read the canvas first, then edit in small batches so the person watching sees the work appear. An agent with MCP support can add the server from the same addresses. Treat the block as a secret; it grants edit access to that canvas.",
+        code: "Wireframe with me in Squig.\nCanvas: https://squig.sh/?agent=DOCUMENT_ID\nKey: sq_canvas_XXXX (send as Authorization: Bearer; scoped to this canvas; keep it private)\nMCP: https://squig.sh/mcp · REST: https://squig.sh/api/v1 · Agent guide: https://squig.sh/llms.txt\nStart by reading the canvas (squig_get_document, or GET /api/v1/documents/DOCUMENT_ID), then edit in small batches so I can watch.",
+      },
+      {
+        title: "Reading the canvas with the pasted key",
+        text: "This is the whole first step over REST. The same command is squig_get_document through MCP. POST /api/v1/tools/{name} runs every other command with the same JSON input.",
+        code: 'curl https://squig.sh/api/v1/documents/DOCUMENT_ID \\\n  -H "Authorization: Bearer sq_canvas_XXXX"',
+      },
       {
         title: "Server and authentication",
         text: "The server is https://squig.sh/mcp on a deployed instance, or your own instance’s /mcp endpoint. Get a canvas key from Connect agent in the editor, or a workspace key at /connect to create and manage multiple canvases. Every request requires Authorization: Bearer <key>. This release uses bearer keys, not an OAuth login flow. Clients that only support OAuth cannot connect directly. The server is stateless Streamable HTTP with JSON responses; it does not offer legacy SSE or a persistent event stream.",
@@ -75,7 +85,7 @@ export const pages: DocPage[] = [
       },
       {
         title: "Tools, resources and prompts",
-        text: "Every API command is also an MCP tool with a squig_ prefix. Start with squig_documents to continue an existing canvas, or squig_create_document with a workspace key for a new one. Return canvasUrl before drawing; use small coherent batches so the user sees progress. The server exposes squig://guides/wireframing as a text resource and wireframe-first as a prompt. Tool schemas include descriptions and read-only/destructive annotations. Tool errors carry isError with an HTTP-style status and an actionable message.",
+        text: "Every API command is also an MCP tool with a squig_ prefix. Start with squig_documents to continue an existing canvas, or squig_create_document with a workspace key for a new one. Return canvasUrl before drawing; use small coherent batches so the user sees progress. Responses stay small on purpose: squig_catalog with no arguments returns a compact index of kinds, and a query or kind adds defaults and editable controls; squig_edit_document returns the new revision with only the nodes the batch created, changed or deleted, so read squig_get_document when you need the whole canvas. The server exposes squig://guides/wireframing as a text resource and wireframe-first as a prompt. Tool schemas include descriptions and read-only/destructive annotations. Tool errors carry isError with an HTTP-style status and an actionable message.",
       },
       {
         title: "Troubleshooting",
@@ -105,11 +115,11 @@ export const pages: DocPage[] = [
       },
       {
         title: "Read and discover",
-        text: "GET /api/v1/documents lists the newest 100 documents in the workspace, or only the connected document for a canvas key. GET /api/v1/documents/{id} reads one with its revision and comments. GET /api/v1/catalog?q=hero searches all components; ?kind=button returns one definition with defaults, dimensions and controls.",
+        text: "GET /api/v1/documents lists the newest 100 documents in the workspace, or only the connected document for a canvas key. GET /api/v1/documents/{id} reads one with its revision and comments. GET /api/v1/catalog with no parameters returns a compact index: kind, name, category, group and size for every component. GET /api/v1/catalog?q=hero searches all components and ?kind=button returns one definition; both add defaults, dimensions and controls.",
       },
       {
         title: "Atomic canvas editing",
-        text: "Send the current revision with every canvas mutation. All operations succeed together or none are saved. Explicit node IDs make a batch easy to reference. Successful edits return createdIds and the new revision. If a request times out, read the document before retrying: do not assume it failed.",
+        text: "Send the current revision with every canvas mutation. All operations succeed together or none are saved. Explicit node IDs make a batch easy to reference. A successful edit returns the new revision, createdIds, the changed nodes it created or updated, deletedIds, the node count and the current variations, rather than the whole document; read GET /api/v1/documents/{id} when you need everything. If a request times out, read the document before retrying: do not assume it failed.",
         code: '{\n  "documentId": "DOCUMENT_ID",\n  "revision": 1,\n  "operations": [\n    {"op":"add","nodes":[\n      {"id":"title","type":"text","x":80,"y":60,"w":520,"h":64,"fontSize":36,"text":"A good book. Better company."},\n      {"id":"join","type":"component","kind":"button","x":80,"y":160,"props":{"label":"Join the next meeting"}}\n    ]},\n    {"op":"variation","id":"meeting-first","title":"Meeting first","description":"Make the next gathering easy to find.","nodeIds":["title","join"]},\n    {"op":"note","x":660,"y":60,"text":"This direction puts attending ahead of browsing."}\n  ]\n}',
       },
       {
@@ -150,11 +160,11 @@ export const pages: DocPage[] = [
       },
       {
         title: "Variations and notes",
-        text: "variation creates or updates a named set of member node IDs with a title and description. Place directions side by side, include their annotations in nodeIds when exporting a focused render, and make the rationale specific. Removing a member node removes its variation unless that variation is updated in the same batch. remove_variation removes a named direction without deleting its nodes. Review comments stay in their own list; resolve them after addressing the feedback.",
+        text: "variation creates or updates a named set of member node IDs with a title and description. Place directions side by side, include their annotations in nodeIds when exporting a focused render, and make the rationale specific. Removing a member node removes its variation unless that variation is updated in the same batch. remove_variation removes a named direction without deleting its nodes. Review comments are stored and returned by the API, but the editor does not display them yet, so put anything the user must see on the canvas with note; resolve comments after addressing the feedback.",
       },
       {
         title: "Undo, export and visual inspection",
-        text: "history and restore are durable revision-based undo. restore records a new revision. export_document returns portable .squig.json plus variation metadata, feedback and implementation guidance. render_document returns SVG or a PNG image directly to the agent. Drawing paths match the canvas; server font availability can differ, so use a browser screenshot for final typography checks. The browser also exports SVG and PNG. Pan, zoom, selection and the clipboard remain browser UI state; agents edit the same underlying geometry directly.",
+        text: "history and restore are durable revision-based undo. restore records a new revision. export_document returns portable .squig.json plus variation metadata, feedback and implementation guidance. render_document returns SVG or a PNG image directly to the agent. Drawing paths match the canvas. render_document embeds the editor's fonts (Patrick Hand, Geist, Source Serif 4), so text is legible in the PNG; letterforms are rasterized on the server, so use a browser screenshot for final typography checks. The browser also exports SVG and PNG. Pan, zoom, selection and the clipboard remain browser UI state; agents edit the same underlying geometry directly.",
       },
     ],
   },

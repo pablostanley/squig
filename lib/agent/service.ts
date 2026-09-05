@@ -4,6 +4,7 @@ import {
   AgentError,
   emptyDocument,
   applyOperations,
+  diffNodes,
   validateDocument,
 } from "./engine"
 import {
@@ -17,11 +18,14 @@ import {
 } from "./db"
 import { ALL_DEFS, getDef, searchAll } from "@/lib/library/registry"
 
-export const origin = () =>
-  process.env.SQUIG_PUBLIC_URL ??
-  (process.env.VERCEL_ENV === "preview" && process.env.VERCEL_URL
-    ? `https://${process.env.VERCEL_URL}`
-    : "https://squig.sh")
+export const origin = () => {
+  if (process.env.SQUIG_PUBLIC_URL) return process.env.SQUIG_PUBLIC_URL
+  // The branch host survives every redeploy; VERCEL_URL is per-deployment.
+  const preview =
+    process.env.VERCEL_ENV === "preview" &&
+    (process.env.VERCEL_BRANCH_URL || process.env.VERCEL_URL)
+  return preview ? `https://${preview}` : "https://squig.sh"
+}
 export const publicDoc = (row: StoredDocument) => ({
   id: row.id,
   revision: row.revision,
@@ -53,6 +57,18 @@ export async function execute(
   switch (name) {
     case "catalog": {
       const a = tools.catalog.schema.parse(args)
+      if (!a.kind && !a.query)
+        return {
+          total: ALL_DEFS.length,
+          components: ALL_DEFS.map(({ kind, name, category, group, size }) => ({
+            kind,
+            name,
+            category,
+            group,
+            size,
+          })),
+          hint: "Pass query or kind for defaults and editable controls.",
+        }
       const defs = a.kind
         ? [getDef(a.kind)].filter(Boolean)
         : searchAll(a.query)
@@ -102,11 +118,22 @@ export async function execute(
       if (row.revision !== a.revision)
         throw new AgentError(409, "Revision conflict; read latest first")
       const result = applyOperations(row.document, a.operations)
+      const saved = await save(workspace, row.id, a.revision, result.document)
+      // Only what this batch touched; get_document returns the whole canvas.
+      const { changed, deletedIds } = diffNodes(
+        row.document.nodes,
+        saved.document.nodes,
+      )
       return {
-        ...publicDoc(
-          await save(workspace, row.id, a.revision, result.document),
-        ),
+        id: saved.id,
+        revision: saved.revision,
+        updatedAt: saved.updated_at,
+        editorUrl: `${origin()}/?agent=${saved.id}`,
         createdIds: result.createdIds,
+        changed,
+        deletedIds,
+        nodeCount: Object.keys(saved.document.nodes).length,
+        variations: saved.document.variations,
       }
     }
     case "replace_document": {

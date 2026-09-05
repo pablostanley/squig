@@ -3,6 +3,7 @@ import assert from "node:assert/strict"
 import {
   applyOperations,
   cleanNode,
+  diffNodes,
   emptyDocument,
   validateDocument,
 } from "../lib/agent/engine.ts"
@@ -348,6 +349,69 @@ check(() =>
     ["order"],
   ),
 )
+// An edit response ships only the nodes its batch touched.
+const touched = applyOperations(
+  d,
+  operation.array().parse([
+    { op: "update", patches: [{ id: "c", patch: { text: "Changed" } }] },
+    { op: "delete", ids: ["draw"] },
+    {
+      op: "add",
+      nodes: [{ id: "fresh", type: "shape", x: 0, y: 600, w: 40, h: 40 }],
+    },
+  ]),
+).document
+const diff = diffNodes(d.nodes, touched.nodes)
+check(() =>
+  assert.deepEqual(Object.keys(diff.changed).sort(), ["c", "fresh"]),
+)
+check(() => assert.deepEqual(diff.deletedIds, ["draw"]))
+check(() => {
+  const node = diff.changed.c
+  assert.ok(node.type === "text" && node.text === "Changed")
+})
+check(() => assert.equal(diff.changed.a, undefined))
+check(() =>
+  assert.deepEqual(diffNodes(d.nodes, d.nodes), {
+    changed: {},
+    deletedIds: [],
+  }),
+)
+// The command layer keeps an unfiltered catalog small; db() stays lazy.
+const { execute, origin } = await import("../lib/agent/service.ts")
+type CatalogResult = {
+  total: number
+  hint?: string
+  components: Record<string, unknown>[]
+}
+const compact = (await execute("catalog", {}, {
+  workspaceId: "w",
+})) as unknown as CatalogResult
+check(() => assert.equal(compact.components.length, ALL_DEFS.length))
+check(() =>
+  assert.ok(
+    compact.components.every(
+      (c) => !!c.size && !("controls" in c) && !("defaults" in c),
+    ),
+  ),
+)
+check(() => assert.ok(compact.hint?.includes("query or kind")))
+const detailed = (await execute("catalog", { kind: "button" }, {
+  workspaceId: "w",
+})) as unknown as CatalogResult
+check(() => assert.equal(detailed.components.length, 1))
+check(() => assert.ok(Array.isArray(detailed.components[0].controls)))
+// Preview links must ride the branch host, not the per-deployment hash.
+delete process.env.SQUIG_PUBLIC_URL
+process.env.VERCEL_ENV = "preview"
+process.env.VERCEL_URL = "squig-abc123.vercel.app"
+process.env.VERCEL_BRANCH_URL = "squig-git-feature.vercel.app"
+check(() => assert.equal(origin(), "https://squig-git-feature.vercel.app"))
+delete process.env.VERCEL_BRANCH_URL
+check(() => assert.equal(origin(), "https://squig-abc123.vercel.app"))
+delete process.env.VERCEL_ENV
+check(() => assert.equal(origin(), "https://squig.sh"))
+delete process.env.VERCEL_URL
 console.log(
   `✓ ${checks} agent engine checks passed (${ALL_DEFS.length} library definitions)`,
 )

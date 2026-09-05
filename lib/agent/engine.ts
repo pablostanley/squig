@@ -360,3 +360,20 @@ export function applyOperations(
   }
   return { document: validateDocument(d), createdIds }
 }
+/** Nodes a saved batch created, changed or removed, for a slim edit response. */
+export function diffNodes(
+  before: CanvasDocument["nodes"],
+  after: CanvasDocument["nodes"],
+): { changed: CanvasDocument["nodes"]; deletedIds: string[] } {
+  const changed: CanvasDocument["nodes"] = {}
+  for (const [id, node] of Object.entries(after))
+    if (
+      !Object.hasOwn(before, id) ||
+      JSON.stringify(before[id]) !== JSON.stringify(node)
+    )
+      changed[id] = node
+  return {
+    changed,
+    deletedIds: Object.keys(before).filter((id) => !Object.hasOwn(after, id)),
+  }
+}
