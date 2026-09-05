@@ -14,17 +14,17 @@ const nextConfig: NextConfig = {
   serverExternalPackages: ["@resvg/resvg-js"],
   // resvg's rasteriser is a native .node binding loaded at runtime, and the
   // vendored fonts are read from disk — neither is an import Next's tracer can
-  // follow. Include both in the two agent functions that render PNGs.
+  // follow. Include both in the two agent functions that render PNGs. Globs
+  // must point at pnpm's real store paths: node_modules/@resvg is a symlink,
+  // and Vercel rejects a function package that contains symlinked directories.
   outputFileTracingIncludes: {
     "/mcp": [
       "./lib/agent/fonts/*",
       "./node_modules/.pnpm/@resvg+resvg-js-*/node_modules/@resvg/**/*.node",
-      "./node_modules/@resvg/**",
     ],
     "/api/v1/**": [
       "./lib/agent/fonts/*",
       "./node_modules/.pnpm/@resvg+resvg-js-*/node_modules/@resvg/**/*.node",
-      "./node_modules/@resvg/**",
     ],
   },
   // Pin the workspace root to this repo.
