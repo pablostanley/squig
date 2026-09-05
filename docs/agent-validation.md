@@ -21,7 +21,9 @@ page and approval API were removed.
   An existing local drawing can be connected in place. Also checks docs SEO,
   mobile overflow and browser errors. Sharing and agent setup have separate
   popovers; browser checks cover outside-click and Escape dismissal, clipboard
-  contents, temporary copy checkmarks and sidebar visibility.
+  contents, temporary copy checkmarks and sidebar visibility. Shared canvases
+  ignore local drawer quota/staleness warnings; a simulated cloud outage shows
+  one error beneath the filename and clears it after reconnecting.
 
 The tests use isolated workspaces and delete their fixtures. Run the browser
 suite with a running server and DATABASE_URL in .env.local. Install Chromium

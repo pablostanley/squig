@@ -1,5 +1,6 @@
 "use client"
 import { useEffect, useState, useRef } from "react"
+import { useCanvasSyncIssue } from "@/lib/agent/sync-status"
 import { useSquig } from "@/lib/store"
 import { agentRequest, KEY_STORAGE } from "@/lib/agent/client"
 import { unionBox } from "@/lib/types"
@@ -38,6 +39,15 @@ const canvasStorage = (id: string) => `squig:canvas-key:${id}`
 export function AgentBridge() {
   const attaching = useRef<string | null>(null)
   const [status, setStatus] = useState("")
+  function reportIssue(message: string) {
+    setStatus(message)
+    useCanvasSyncIssue.setState({
+      issue: { docId: useSquig.getState().docId, message },
+    })
+  }
+  function clearIssue() {
+    useCanvasSyncIssue.setState({ issue: null })
+  }
   const [connected, setConnected] = useState(false)
   const [conflict, setConflict] = useState(false)
   const [panel, setPanel] = useState<"share" | "agent" | null>(null)
@@ -59,7 +69,7 @@ export function AgentBridge() {
     const key = canvasKey || localStorage.getItem(KEY_STORAGE)
     if (!key) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- browser-only connection hydration
-      setStatus("Open the full canvas invitation link to connect.")
+      reportIssue("Open the full canvas invitation link to connect.")
       return
     }
     if (canvasKey)
@@ -145,6 +155,7 @@ export function AgentBridge() {
           initialized = true
           setConnected(true)
           setConflict(false)
+          clearIssue()
           setStatus("Live canvas")
           return
         }
@@ -174,7 +185,7 @@ export function AgentBridge() {
         if (merged.conflicts.length) {
           stopped = true
           setConflict(true)
-          setStatus(
+          reportIssue(
             "You and another editor changed the same field. Your draft is preserved.",
           )
           return
@@ -198,7 +209,7 @@ export function AgentBridge() {
           if (next.conflicts.length) {
             stopped = true
             setConflict(true)
-            setStatus(
+            reportIssue(
               "Concurrent edit needs review; your draft is preserved.",
             )
             return
@@ -210,10 +221,12 @@ export function AgentBridge() {
           )
             apply(next.value)
           else if (!equal(duringSave, next.value)) baseline = current
+          clearIssue()
           setStatus("Live canvas · saved")
         } else {
           if (!equal(current, remote)) apply(remote)
           baseline = remote
+          clearIssue()
           setStatus(
             remoteChanged ? "Live canvas · new changes" : "Live canvas",
           )
@@ -222,7 +235,7 @@ export function AgentBridge() {
         if (!active) return
         const error = e as Error & { status?: number }
         // A racing commit is retried against the fresh revision next tick.
-        if (error.status !== 409) setStatus(error.message)
+        if (error.status !== 409) reportIssue(error.message)
       } finally {
         busy = false
       }
@@ -293,7 +306,7 @@ export function AgentBridge() {
       })
       setReload((v) => v + 1)
     } catch (e) {
-      setStatus((e as Error).message)
+      reportIssue((e as Error).message)
     } finally {
       connecting.current = false
     }
@@ -311,10 +324,7 @@ export function AgentBridge() {
     URL.revokeObjectURL(url)
   }
   return (
-    <div className="agent-sync">
-      <span className="agent-sync-status" role="status">
-        {status}
-      </span>
+    <div className="agent-sync" data-connected={connected}>
       {conflict && (
         <>
           <button onClick={preserve}>Download my draft</button>

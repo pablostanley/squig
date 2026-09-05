@@ -18,6 +18,7 @@
 // ---------------------------------------------------------------------------
 
 import { useEffect, useRef, useState } from "react"
+import { useCanvasSyncIssue } from "@/lib/agent/sync-status"
 import { useSquig } from "@/lib/store"
 
 /** grace period after a drag ends, so nudge-release-nudge doesn't strobe */
@@ -27,6 +28,9 @@ const SETTLE_MS = 160
 const SAVED_MS = 1800
 
 export function FileName() {
+  const docId = useSquig((s) => s.docId)
+  const syncIssue = useCanvasSyncIssue((s) => s.issue?.docId === docId ? s.issue.message : null)
+  const shared = docId.startsWith("agent_")
   const fileName = useSquig((s) => s.fileName)
   const renaming = useSquig((s) => s.renamingFile)
   const full = useSquig((s) => s.drawerFull)
@@ -86,8 +90,8 @@ export function FileName() {
   // stories, but the line is not the place for the story. The flash that
   // arrived with each said which it was; this says the part that outlives it,
   // which is the same part either way.
-  const stuck = full || stale
-  const note = stuck ? "not saved — export to keep this one" : saved ? "saved to this browser" : ""
+  const stuck = !!syncIssue || (!shared && (full || stale))
+  const note = syncIssue || (shared ? "" : stuck ? "not saved — export to keep this one" : saved ? "saved to this browser" : "")
 
   // renaming and the note both outrank the duck: neither should vanish because
   // the other hand started a drag

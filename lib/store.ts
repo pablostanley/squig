@@ -624,6 +624,9 @@ function flushSave(get: () => SquigState, force = false) {
   // the look goes to prefs too, but only as the default a new file will start
   // from — the copy that matters travels inside the document below
   savePrefs({ look: lookOf(s), contextRow: s.contextRow, bigNudge: s.bigNudge, activeId: s.docId })
+  // Shared canvases persist through the cloud bridge. The local drawer's
+  // capacity and timestamp guards must not report cloud documents as unsaved.
+  if (s.docId.startsWith("agent_")) { dirty = false; return }
   // This tab has been told its document moved on without it. Not one more
   // write goes out until it is pointed at another document — ⌘S included,
   // since nobody pressing it is asking to throw away work they can't see.
@@ -775,6 +778,7 @@ function watchWindow(get: () => SquigState) {
       return
     }
     const s = get()
+    if (s.docId.startsWith("agent_")) return
     // e.key is null when the whole origin was cleared; docKey never is, so
     // that lands on "not ours" and this tab is left holding the only copy —
     // which is the truth, and the save that follows puts it back

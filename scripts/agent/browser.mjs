@@ -76,7 +76,10 @@ try {
   await page.goto(
     doc.canvasUrl.replace(new URL(doc.canvasUrl).origin, base),
   )
-  await expect(page.locator(".agent-sync")).toContainText("Live canvas")
+  await expect(page.locator(".agent-sync")).toHaveAttribute(
+    "data-connected",
+    "true",
+  )
   await expect(
     page.getByText("Meeting first", { exact: true }).first(),
   ).toBeVisible()
@@ -139,6 +142,49 @@ try {
   await expect(
     page.getByRole("button", { name: "Sans serif", exact: true }),
   ).toBeVisible()
+  // Shared saves ignore local drawer failures and cross-tab cache events.
+  await page.evaluate((id) => {
+    const original = Storage.prototype.setItem
+    Storage.prototype.setItem = function (key, value) {
+      if (key.startsWith("squig:file:agent_"))
+        throw new DOMException("Full", "QuotaExceededError")
+      return original.call(this, key, value)
+    }
+    window.dispatchEvent(
+      new StorageEvent("storage", {
+        key: `squig:file:agent_${id}`,
+        newValue: null,
+        storageArea: localStorage,
+      }),
+    )
+  }, doc.id)
+  await expect(page.getByText("Live canvas", { exact: true })).toHaveCount(
+    0,
+  )
+  await expect(
+    page.getByText("not saved — export to keep this one", { exact: true }),
+  ).toHaveCount(0)
+  const documentRoute = `**/api/v1/documents/${doc.id}`
+  await page.route(documentRoute, (route) =>
+    route.fulfill({
+      status: 503,
+      contentType: "application/json",
+      body: JSON.stringify({
+        error: "Connection interrupted. Reconnecting…",
+      }),
+    }),
+  )
+  await expect(
+    page.getByText("Connection interrupted. Reconnecting…", {
+      exact: true,
+    }),
+  ).toBeVisible()
+  await page.unroute(documentRoute)
+  await expect(
+    page.getByText("Connection interrupted. Reconnecting…", {
+      exact: true,
+    }),
+  ).toHaveCount(0)
   await page
     .getByRole("button", { name: "Browser test canvas", exact: true })
     .click()
@@ -153,6 +199,9 @@ try {
     .toBe("A human edited this")
   let current = await api(`documents/${doc.id}`)
   expect(current.document.fileName).toBe("A human edited this")
+  await expect(
+    page.getByText("not saved — export to keep this one", { exact: true }),
+  ).toHaveCount(0)
   await page
     .getByRole("button", { name: "Sans serif", exact: true })
     .click()
@@ -184,7 +233,10 @@ try {
   await viewer.goto(
     doc.canvasUrl.replace(new URL(doc.canvasUrl).origin, base),
   )
-  await expect(viewer.locator(".agent-sync")).toContainText("Live canvas")
+  await expect(viewer.locator(".agent-sync")).toHaveAttribute(
+    "data-connected",
+    "true",
+  )
   let independentRace = false
   await page.route("**/api/v1/tools/replace_document", async (route) => {
     if (!independentRace) {

@@ -172,16 +172,6 @@
   align-items: center;
   gap: 4px;
 }
-.agent-sync-status {
-  max-width: 160px;
-  font:
-    11px var(--font-sans),
-    sans-serif;
-  color: var(--muted-foreground);
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
 .canvas-action {
   display: inline-flex;
   align-items: center;
@@ -201,11 +191,6 @@
 .agent-copy-button:focus-visible {
   outline: 2px solid var(--sq-ink);
   outline-offset: 2px;
-}
-@media (max-width: 800px) {
-  .agent-sync-status {
-    display: none;
-  }
 }
 .docs-layout {
   display: grid;
