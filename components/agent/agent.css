@@ -332,3 +332,74 @@
     transition: none;
   }
 }
+
+/* Connect agent: one thing to copy, the config a fold below */
+.agent-invite {
+  margin-top: 14px;
+}
+.agent-invite textarea {
+  display: block;
+  height: 132px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-chrome-sm);
+  background: var(--background);
+  color: inherit;
+  font: 11px/1.5 monospace;
+  resize: none;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow: auto;
+}
+.agent-invite-copy {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  margin-top: 10px;
+  padding: 9px 12px;
+  border: 1px solid var(--sq-ink);
+  border-radius: var(--radius-chrome-sm);
+  background: var(--sq-ink);
+  color: var(--background);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background 120ms,
+    border-color 120ms;
+}
+.agent-invite-copy:hover {
+  filter: brightness(1.1);
+}
+.agent-invite-copy:focus-visible {
+  outline: 2px solid var(--sq-ink);
+  outline-offset: 2px;
+}
+.agent-invite-copy .copy-check {
+  color: inherit;
+}
+.agent-invite-more {
+  margin-top: 12px;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+.agent-invite-more summary {
+  cursor: pointer;
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+.agent-invite-more summary:hover {
+  color: inherit;
+}
+.agent-invite-more .agent-copy-field {
+  margin-top: 10px;
+}
+.agent-invite-more a {
+  display: inline-block;
+  margin-top: 8px;
+  font-size: 12px;
+}

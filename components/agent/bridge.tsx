@@ -3,6 +3,7 @@ import { useEffect, useState, useRef } from "react"
 import { useCanvasSyncIssue } from "@/lib/agent/sync-status"
 import { useSquig } from "@/lib/store"
 import { agentRequest, KEY_STORAGE } from "@/lib/agent/client"
+import { agentInvite, mcpConfig } from "@/lib/agent/invite"
 import { unionBox } from "@/lib/types"
 import { nodeVisualBounds } from "@/lib/canvas/line-routing"
 import { fitViewport } from "@/lib/canvas/navigate"
@@ -367,7 +368,7 @@ export function AgentBridge() {
                 <Popover.Description>
                   {kind === "share"
                     ? "Anyone with this link can view and edit this canvas."
-                    : "Let your agent draw alongside you using MCP or the API."}
+                    : "Paste this into your agent's chat. It has everything the agent needs to draw here with you."}
                 </Popover.Description>
                 {credentials.key ? (
                   kind === "share" ? (
@@ -376,42 +377,17 @@ export function AgentBridge() {
                       value={credentials.url}
                     />
                   ) : (
-                    <>
-                      <CopyField
-                        label="MCP connection"
-                        value={`${location.origin}/mcp`}
-                      />
-                      <CopyField
-                        label="Canvas key"
-                        value={credentials.key}
-                        secret
-                      />
-                      <CopyField
-                        label="MCP config"
-                        value={JSON.stringify(
-                          {
-                            mcpServers: {
-                              squig: {
-                                url: `${location.origin}/mcp`,
-                                headers: {
-                                  Authorization: `Bearer ${credentials.key}`,
-                                },
-                              },
-                            },
-                          },
-                          null,
-                          2,
-                        )}
-                        secret
-                      />
-                      <p>
-                        This key gives your agent editing access to this
-                        canvas only.
-                      </p>
-                      <a href="/docs/mcp" target="_blank" rel="noreferrer">
-                        Setup instructions ↗
-                      </a>
-                    </>
+                    <AgentInvite
+                      invite={agentInvite({
+                        origin: location.origin,
+                        id: credentials.id,
+                        key: credentials.key,
+                      })}
+                      config={mcpConfig({
+                        origin: location.origin,
+                        key: credentials.key,
+                      })}
+                    />
                   )
                 ) : (
                   <p role="status">{status || "Preparing canvas…"}</p>
@@ -421,6 +397,72 @@ export function AgentBridge() {
           </Popover.Portal>
         </Popover.Root>
       ))}
+    </div>
+  )
+}
+
+/**
+ * One action: copy the invitation. The MCP config stays one fold away for
+ * people who configure a client once, but it is not the first thing you see.
+ */
+function AgentInvite({ invite, config }: { invite: string; config: string }) {
+  const [copied, setCopied] = useState(false)
+  const [error, setError] = useState(false)
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(
+    () => () => {
+      if (timer.current) clearTimeout(timer.current)
+    },
+    [],
+  )
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(invite)
+      setCopied(true)
+      setError(false)
+      if (timer.current) clearTimeout(timer.current)
+      timer.current = setTimeout(() => setCopied(false), 1600)
+    } catch {
+      setError(true)
+    }
+  }
+  return (
+    <div className="agent-invite">
+      <textarea
+        readOnly
+        rows={5}
+        tabIndex={-1}
+        value={invite}
+        aria-label="Invitation for your agent"
+      />
+      <button
+        type="button"
+        className="agent-invite-copy"
+        data-copied={copied}
+        onClick={() => void copy()}
+      >
+        {copied ? (
+          <CheckIcon key="check" className="copy-check" size={16} weight="bold" />
+        ) : (
+          <CopyIcon size={16} />
+        )}
+        {copied ? "Copied" : "Copy for your agent"}
+      </button>
+      <span className="sr-only" role="status">
+        {copied
+          ? "Invitation copied"
+          : error
+            ? "Copy failed. Select the text and copy it manually."
+            : ""}
+      </span>
+      <p>The key inside edits this canvas only. Works with Codex, Claude Code, Cursor, or any agent that can call MCP or HTTP.</p>
+      <details className="agent-invite-more">
+        <summary>Set up MCP by hand instead</summary>
+        <CopyField label="MCP config" value={config} secret />
+        <a href="/docs/mcp" target="_blank" rel="noreferrer">
+          Setup guide ↗
+        </a>
+      </details>
     </div>
   )
 }
