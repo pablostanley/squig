@@ -57,8 +57,18 @@ connection, saves, incoming changes and errors.
 - `lib/agent/merge.ts`: browser-independent concurrent edit merging.
 - `components/agent/bridge.tsx`: in-canvas connection and synchronization.
 
-Render tools use the canvas drawing paths and primitives. Server fonts can
-differ from browser fonts; use a browser screenshot for final typography.
+Render tools use the canvas drawing paths and primitives. PNGs use resvg and
+vendored Patrick Hand, Geist and Source Serif 4 fonts. Fontkit supplies real
+advance widths to the shared wrapping function; measurement stays local to a
+request, so parallel canvases cannot switch each other's font. `measure_text`
+reports text-node overflow and missing glyphs; component labels and italic
+ink bounds still need visual inspection. Embedded WebP images are converted
+to PNG before resvg sees them, with a 16-million-pixel input limit.
+
+Sync stays mounted when the user hides the editor chrome. The agent invitation
+is one copy action; raw credentials and manual MCP configuration are optional
+details. Edit responses return changed/deleted nodes instead of echoing the
+full canvas. An empty catalog query returns a compact index.
 No arbitrary code or external URL fetching is exposed. Images are embedded
 raster data. Requests, geometry, node counts and batches are bounded.
 

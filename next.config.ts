@@ -20,10 +20,12 @@ const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
     "/mcp": [
       "./lib/agent/fonts/*",
+      "./node_modules/.pnpm/@img+sharp-libvips-*/node_modules/@img/**/lib/*.so*",
       "./node_modules/.pnpm/@resvg+resvg-js-*/node_modules/@resvg/**/*.node",
     ],
     "/api/v1/**": [
       "./lib/agent/fonts/*",
+      "./node_modules/.pnpm/@img+sharp-libvips-*/node_modules/@img/**/lib/*.so*",
       "./node_modules/.pnpm/@resvg+resvg-js-*/node_modules/@resvg/**/*.node",
     ],
   },

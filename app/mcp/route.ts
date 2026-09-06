@@ -31,6 +31,7 @@ export async function POST(request: Request) {
               "history",
               "export_document",
               "render_document",
+              "measure_text",
             ].includes(name),
             destructiveHint: [
               "edit_document",
@@ -46,6 +47,7 @@ export async function POST(request: Request) {
               "history",
               "export_document",
               "render_document",
+              "measure_text",
             ].includes(name),
             openWorldHint: false,
           },

@@ -8,7 +8,7 @@
 
 import { HAND, mirrorPrims, type Prim, type PrimOpts } from "./kit"
 import { textAnchorX, textBaseline, textBoxPadding, textContentWidth, textVerticalOffset } from "./text-layout"
-import { wrapText } from "@/lib/canvas/text-metrics"
+import { wrapText, type TextMeasurer } from "@/lib/canvas/text-metrics"
 import { localArrowRoute, localRouteEndTangent } from "@/lib/canvas/line-routing"
 import {
   normalizeFill,
@@ -61,7 +61,7 @@ function outline(node: Outlined, baseWidth: number, o?: PrimOpts): PrimOpts {
 }
 
 /** A node's prims before any flip is applied. */
-export function basePrims(node: SquigNode): Prim[] {
+export function basePrims(node: SquigNode, measureText?: TextMeasurer): Prim[] {
   switch (node.type) {
     case "component":
       return renderComponent(node.kind, node.props, node.w, node.h)
@@ -129,7 +129,7 @@ export function basePrims(node: SquigNode): Prim[] {
       // an auto-sized layer's lines are its hard returns; a fixed-width layer
       // re-breaks them to the measure the side handles set
       const lines = node.fixedW
-        ? wrapText(node.text, measure, { size: node.fontSize, bold: node.bold, italic: node.italic })
+        ? wrapText(node.text, measure, { size: node.fontSize, bold: node.bold, italic: node.italic }, measureText)
         : node.text.split("\n")
       const offsetY = textVerticalOffset(node.h, lines.length, node.fontSize, boxed, node.verticalAlign)
       const words = lines.map((lineText, i): Prim => ({
@@ -173,6 +173,6 @@ export function basePrims(node: SquigNode): Prim[] {
  * are labels on a wireframe and stay readable while the layout mirrors around
  * them; see mirrorPrims.
  */
-export function nodePrims(node: SquigNode): Prim[] {
-  return mirrorPrims(basePrims(node), node.w, node.h, !!node.flipX, !!node.flipY, node.type === "text")
+export function nodePrims(node: SquigNode, measureText?: TextMeasurer): Prim[] {
+  return mirrorPrims(basePrims(node, measureText), node.w, node.h, !!node.flipX, !!node.flipY, node.type === "text")
 }

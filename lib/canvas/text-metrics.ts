@@ -17,6 +17,8 @@ export interface TypeStyle {
   italic?: boolean
 }
 
+export type TextMeasurer = (text: string, style: TypeStyle) => number
+
 const FALLBACK_ASCENT = 0.8
 const FALLBACK_DESCENT = 0.2
 /** Patrick Hand averages about this; see textWidth in the sketch kit. */
@@ -74,32 +76,42 @@ export function measureLinesWidth(lines: string[], style: TypeStyle): number {
  * behaves the same way — so the canvas and the textarea break in the same
  * places).
  */
-function wrapParagraph(text: string, maxW: number, style: TypeStyle): string[] {
-  if (measureTextWidth(text, style) <= maxW) return [text]
+function wrapParagraph(text: string, maxW: number, style: TypeStyle, measure: TextMeasurer): string[] {
+  if (measure(text, style) <= maxW) return [text]
   const out: string[] = []
   let line = ""
 
   const breakLongWord = (word: string): string => {
     let rest = word
-    while (measureTextWidth(rest, style) > maxW && rest.length > 1) {
-      // largest head that still fits — but always at least one character, or a
-      // box narrower than one glyph would loop forever
-      let i = rest.length - 1
-      while (i > 1 && measureTextWidth(rest.slice(0, i), style) > maxW) i--
-      out.push(rest.slice(0, i))
-      rest = rest.slice(i)
+    while (rest.length > 1) {
+      // Probe short prefixes instead of repeatedly shaping the entire suffix.
+      // This bounds work for long unbroken agent text and narrow text boxes.
+      let low = 1, high = 2
+      while (high < rest.length && measure(rest.slice(0, high), style) <= maxW) {
+        low = high
+        high *= 2
+      }
+      high = Math.min(high, rest.length)
+      if (high === rest.length && measure(rest, style) <= maxW) return rest
+      while (low + 1 < high) {
+        const mid = Math.floor((low + high) / 2)
+        if (measure(rest.slice(0, mid), style) <= maxW) low = mid
+        else high = mid
+      }
+      out.push(rest.slice(0, low))
+      rest = rest.slice(low)
     }
     return rest
   }
 
   for (const word of text.split(" ")) {
     const test = line ? `${line} ${word}` : word
-    if (measureTextWidth(test, style) <= maxW) {
+    if (measure(test, style) <= maxW) {
       line = test
       continue
     }
     if (line) out.push(line)
-    line = measureTextWidth(word, style) > maxW ? breakLongWord(word) : word
+    line = measure(word, style) > maxW ? breakLongWord(word) : word
   }
   out.push(line)
   return out
@@ -110,8 +122,8 @@ function wrapParagraph(text: string, maxW: number, style: TypeStyle): string[] {
  * breaks are recomputed from the width, which is the whole point of a
  * fixed-width text layer.
  */
-export function wrapText(text: string, maxW: number, style: TypeStyle): string[] {
-  return (text || " ").split("\n").flatMap((p) => wrapParagraph(p, maxW, style))
+export function wrapText(text: string, maxW: number, style: TypeStyle, measure: TextMeasurer = measureTextWidth): string[] {
+  return (text || " ").split("\n").flatMap((p) => wrapParagraph(p, maxW, style, measure))
 }
 
 /**

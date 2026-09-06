@@ -294,6 +294,14 @@ export const tools = {
       "Export a portable .squig.json document and implementation handoff containing geometry, component props, variations and notes. No code is deployed by this tool.",
     schema: z.object({ documentId: id }),
   },
+  measure_text: {
+    description:
+      "Measure actual text-node wrapping with the canvas fonts. Reports required dimensions, overflow and missing glyphs without modifying nodes. Component labels are not measured.",
+    schema: z.object({
+      documentId: z.string().min(1),
+      nodeIds: z.array(z.string().min(1)).max(100).optional(),
+    }),
+  },
   render_document: {
     description:
       "Render the full canvas or one variation as SVG, or a PNG image for visual inspection. Uses the canvas drawing paths and the editor's fonts. Inspect spacing, clipping and hierarchy before sharing.",

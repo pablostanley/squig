@@ -94,9 +94,9 @@ try {
   await expect(
     page.getByLabel("Editable canvas link", { exact: true }),
   ).toHaveValue(doc.canvasUrl.replace(new URL(doc.canvasUrl).origin, base))
-  await expect(page.getByLabel("Canvas key", { exact: true })).toHaveCount(
-    0,
-  )
+  await expect(
+    page.getByRole("button", { name: "Copy for your agent", exact: true }),
+  ).toHaveCount(0)
   await page
     .getByRole("button", { name: "Copy editable canvas link", exact: true })
     .click()
@@ -122,14 +122,33 @@ try {
   await page
     .getByRole("button", { name: "Connect agent", exact: true })
     .click()
-  await expect(page.getByLabel("Canvas key", { exact: true })).toBeVisible()
+  await expect(
+    page.getByRole("button", { name: "Copy for your agent", exact: true }),
+  ).toBeVisible()
   await expect(
     page.getByLabel("Editable canvas link", { exact: true }),
   ).toHaveCount(0)
-  await page.keyboard.press("Escape")
-  await expect(page.getByLabel("Canvas key", { exact: true })).toHaveCount(
-    0,
+  await expect(
+    page.getByLabel("Invitation for your agent"),
+  ).not.toBeVisible()
+  await page
+    .getByRole("button", { name: "Copy for your agent", exact: true })
+    .click()
+  await expect(
+    page.getByRole("button", { name: "Copied", exact: true }),
+  ).toBeVisible()
+  const invitation = await page.evaluate(() =>
+    navigator.clipboard.readText(),
   )
+  expect(invitation).toContain(`GET /api/v1/documents/${doc.id}`)
+  expect(invitation).toContain(doc.canvasKey)
+  await expect(
+    page.getByRole("button", { name: "Copy for your agent", exact: true }),
+  ).toBeVisible()
+  await page.keyboard.press("Escape")
+  await expect(
+    page.getByRole("button", { name: "Copy for your agent", exact: true }),
+  ).toHaveCount(0)
   await page
     .getByRole("button", { name: "Hide sidebar", exact: true })
     .click()
@@ -329,6 +348,36 @@ try {
   await expect(
     page.getByRole("button", { name: "Download my draft" }),
   ).toHaveCount(0)
+  // Hiding all chrome must never detach the cloud sync session.
+  await page.keyboard.press("Meta+Backslash")
+  await expect(
+    page.getByRole("button", { name: "Share", exact: true }),
+  ).not.toBeVisible()
+  const hiddenDoc = await api(`documents/${doc.id}`)
+  await api("tools/edit_document", {
+    documentId: doc.id,
+    revision: hiddenDoc.revision,
+    operations: [
+      {
+        op: "update",
+        patches: [
+          {
+            id: "a",
+            patch: { text: "Still syncing while chrome is hidden" },
+          },
+        ],
+      },
+    ],
+  })
+  await expect(
+    page
+      .getByText("Still syncing while chrome is hidden", { exact: true })
+      .first(),
+  ).toBeVisible()
+  await page.keyboard.press("Meta+Backslash")
+  await expect(
+    page.getByRole("button", { name: "Share", exact: true }),
+  ).toBeVisible()
   // Start with a user's local .squig file and attach the agent in place.
   const localContext = await browser.newContext()
   await localContext.addInitScript(
@@ -375,8 +424,8 @@ try {
     .getByRole("button", { name: "Connect agent", exact: true })
     .click()
   await expect(
-    local.getByLabel("Canvas key", { exact: true }),
-  ).not.toHaveValue("")
+    local.getByRole("button", { name: "Copy for your agent", exact: true }),
+  ).toBeVisible()
   await local.keyboard.press("Escape")
   await local.getByRole("button", { name: "Share", exact: true }).click()
   await expect(

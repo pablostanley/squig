@@ -118,6 +118,22 @@ try {
   })
   assert.ok(!edited.isError, JSON.stringify(edited))
   checks++
+  const delta = JSON.parse(edited.content[0].text)
+  assert.ok(delta.changed.title && !delta.document)
+  checks++
+  const metrics = await request("tools/measure_text", scoped, {
+    documentId: doc.id,
+    nodeIds: ["title"],
+  })
+  assert.equal(metrics.measurements[0].id, "title")
+  assert.ok(metrics.measurements[0].requiredHeight > 0)
+  checks++
+  await request(
+    "tools/measure_text",
+    scoped,
+    { documentId: sibling.id },
+    404,
+  )
   let current = await request(`documents/${doc.id}`, key)
   assert.equal(current.revision, 2)
   checks++
@@ -230,6 +246,59 @@ try {
   assert.ok(!png.isError, JSON.stringify(png))
   assert.equal(png.content[0].type, "image")
   checks += 2
+  // Exercise the native WebP conversion on the deployed server too.
+  const { default: sharp } = await import("sharp")
+  const webp = await sharp({
+    create: {
+      width: 20,
+      height: 20,
+      channels: 3,
+      background: { r: 230, g: 10, b: 50 },
+    },
+  })
+    .webp()
+    .toBuffer()
+  await request("tools/edit_document", key, {
+    documentId: sibling.id,
+    revision: 1,
+    operations: [
+      {
+        op: "add",
+        nodes: [
+          {
+            id: "webp",
+            type: "image",
+            x: 0,
+            y: 0,
+            w: 100,
+            h: 100,
+            naturalW: 20,
+            naturalH: 20,
+            src: `data:image/webp;base64,${webp.toString("base64")}`,
+          },
+        ],
+      },
+    ],
+  })
+  const image = await request("tools/render_document", key, {
+    documentId: sibling.id,
+    format: "png",
+  })
+  const { data: pixels, info } = await sharp(
+    Buffer.from(image.base64, "base64"),
+  )
+    .raw()
+    .toBuffer({ resolveWithObject: true })
+  const offset =
+    (Math.floor(info.height / 2) * info.width +
+      Math.floor(info.width / 2)) *
+    info.channels
+  assert.ok(
+    pixels[offset] > 200 &&
+      pixels[offset + 1] < 40 &&
+      pixels[offset + 2] < 100,
+  )
+  checks++
   const canvasRotation = await request("tools/rotate_canvas_link", key, {
     documentId: doc.id,
   })

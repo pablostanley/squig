@@ -6,6 +6,7 @@ import { cropOf } from "@/lib/types"
 import { nodeVisualBounds } from "@/lib/canvas/line-routing"
 import { AgentError, type CanvasDocument } from "./engine"
 import path from "node:path"
+import { textMeasurer } from "./text-metrics"
 const escape = (value: unknown) =>
   String(value).replace(
     /[&<>"']/g,
@@ -54,9 +55,13 @@ export function renderSvg(document: CanvasDocument, variationId?: string) {
       : document.look.font === "hand"
         ? '"Patrick Hand", "Comic Sans MS", cursive'
         : "Geist, Arial, sans-serif"
+  const measure = textMeasurer(document.look.font)
   const body = nodes
     .map((node) => {
-      const { paths, texts, crisp } = primsToPaths(nodePrims(node), node.seed)
+      const { paths, texts, crisp } = primsToPaths(
+        nodePrims(node, measure),
+        node.seed,
+      )
       let content = paths
         .map(
           (p) =>
@@ -118,4 +123,39 @@ export async function renderPng(svg: string): Promise<Buffer> {
     },
   })
   return Buffer.from(resvg.render().asPng())
+}
+
+// resvg decodes PNG/JPEG/GIF itself. Normalize WebP before rendering so an
+// accepted canvas image cannot silently disappear from the agent's preview.
+export async function pngDocument(
+  document: CanvasDocument,
+): Promise<CanvasDocument> {
+  const images = Object.values(document.nodes).filter(
+    (n) => n.type === "image" && /^data:image\/webp[;,]/i.test(n.src),
+  )
+  if (!images.length) return document
+  const { default: sharp } = await import("sharp")
+  const nodes = { ...document.nodes }
+  for (const node of images) {
+    if (node.type !== "image") continue
+    try {
+      const data = Buffer.from(
+        node.src.slice(node.src.indexOf(",") + 1),
+        "base64",
+      )
+      const png = await sharp(data, { limitInputPixels: 16_000_000 })
+        .png()
+        .toBuffer()
+      nodes[node.id] = {
+        ...node,
+        src: `data:image/png;base64,${png.toString("base64")}`,
+      }
+    } catch {
+      throw new AgentError(
+        400,
+        `Image ${node.id} could not be rendered; use a valid raster image up to 16 million pixels.`,
+      )
+    }
+  }
+  return { ...document, nodes }
 }

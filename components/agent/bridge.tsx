@@ -37,7 +37,7 @@ const editable = (doc: Snapshot): Snapshot => ({
 const equal = canvasEqual
 const canvasStorage = (id: string) => `squig:canvas-key:${id}`
 
-export function AgentBridge() {
+export function AgentBridge({ hidden = false }: { hidden?: boolean }) {
   const attaching = useRef<string | null>(null)
   const [status, setStatus] = useState("")
   function reportIssue(message: string) {
@@ -337,7 +337,7 @@ export function AgentBridge() {
       {(["agent", "share"] as const).map((kind) => (
         <Popover.Root
           key={kind}
-          open={panel === kind}
+          open={panel === kind && !hidden}
           onOpenChange={(open) => {
             setPanel(open ? kind : null)
             if (open) void connect()
@@ -405,7 +405,13 @@ export function AgentBridge() {
  * One action: copy the invitation. The MCP config stays one fold away for
  * people who configure a client once, but it is not the first thing you see.
  */
-function AgentInvite({ invite, config }: { invite: string; config: string }) {
+function AgentInvite({
+  invite,
+  config,
+}: {
+  invite: string
+  config: string
+}) {
   const [copied, setCopied] = useState(false)
   const [error, setError] = useState(false)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -428,13 +434,6 @@ function AgentInvite({ invite, config }: { invite: string; config: string }) {
   }
   return (
     <div className="agent-invite">
-      <textarea
-        readOnly
-        rows={5}
-        tabIndex={-1}
-        value={invite}
-        aria-label="Invitation for your agent"
-      />
       <button
         type="button"
         className="agent-invite-copy"
@@ -442,7 +441,12 @@ function AgentInvite({ invite, config }: { invite: string; config: string }) {
         onClick={() => void copy()}
       >
         {copied ? (
-          <CheckIcon key="check" className="copy-check" size={16} weight="bold" />
+          <CheckIcon
+            key="check"
+            className="copy-check"
+            size={16}
+            weight="bold"
+          />
         ) : (
           <CopyIcon size={16} />
         )}
@@ -455,9 +459,23 @@ function AgentInvite({ invite, config }: { invite: string; config: string }) {
             ? "Copy failed. Select the text and copy it manually."
             : ""}
       </span>
-      <p>The key inside edits this canvas only. Works with Codex, Claude Code, Cursor, or any agent that can call MCP or HTTP.</p>
-      <details className="agent-invite-more">
-        <summary>Set up MCP by hand instead</summary>
+      <p>Gives your agent editing access to this canvas only.</p>
+      {error && (
+        <p role="alert">
+          Copy failed. Open the details below and copy the invitation
+          manually.
+        </p>
+      )}
+      <details className="agent-invite-more" open={error || undefined}>
+        <summary>Connection details</summary>
+        <textarea
+          readOnly
+          rows={5}
+          value={invite}
+          onFocus={(e) => e.target.select()}
+          aria-label="Invitation for your agent"
+        />
+
         <CopyField label="MCP config" value={config} secret />
         <a href="/docs/mcp" target="_blank" rel="noreferrer">
           Setup guide ↗

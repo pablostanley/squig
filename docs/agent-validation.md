@@ -8,11 +8,12 @@ page and approval API were removed.
 
 - `pnpm test`: existing canvas geometry, selection, text, groups, connectors,
   clipboard, files, history, navigation and other regression suites.
-- `pnpm test:agent`: 194 checks, including all 155 library definitions, all six
+- `pnpm test:agent`: 221 checks, including all 155 library definitions, all six
   node types, atomic operations, validation, rendering and concurrent merges.
 - `scripts/agent/smoke.mjs`: real Neon database and official MCP SDK. Tests
   workspace isolation, canvas key scopes, MCP editing, stale writes, atomic
   rollback, concurrent CAS, history, rendering, key rotation and deletion.
+  51 checks pass, including compact edit responses and scoped text metrics.
 - `scripts/agent/browser.mjs`: clean-browser invitation opens the normal
   editor without workspace credentials; real text objects are visible.
   Human changes save to the shared document, agent edits arrive in the editor,
@@ -23,7 +24,8 @@ page and approval API were removed.
   popovers; browser checks cover outside-click and Escape dismissal, clipboard
   contents, temporary copy checkmarks and sidebar visibility. Shared canvases
   ignore local drawer quota/staleness warnings; a simulated cloud outage shows
-  one error beneath the filename and clears it after reconnecting.
+  one error beneath the filename and clears it after reconnecting. The new
+  invitation is copied with one action, and hiding the chrome leaves sync active.
 
 The tests use isolated workspaces and delete their fixtures. Run the browser
 suite with a running server and DATABASE_URL in .env.local. Install Chromium
@@ -46,5 +48,21 @@ Synchronization checks once per second and defers updates during active text
 edits or transforms. Independent edits merge; same-field conflicts require
 reconciliation. This is not character-level collaborative text editing and
 has no cursor avatars. Canvas keys are editing capabilities, not named users.
-There is no OAuth or account recovery. Server PNG fonts may differ from the
-browser. Implementing the selected design remains the external agent’s job.
+There is no OAuth or account recovery. PNG rendering uses the vendored canvas fonts and real advance widths. Text
+metrics flag missing glyphs and overflow; component labels and italic ink
+bounds still need visual inspection. WebP pixel rendering is tested. Implementing the selected design remains the external agent’s job.
+
+
+## Deployment review
+
+Production's DATABASE_URL was compared privately with the migrated preview
+connection and matches. A read-only schema query confirmed document, revision
+and canvas_hash; there is no outstanding migration on the connected database.
+No production write or deployment was needed for this check.
+
+The existing preview URL remains SSO-protected. Vercel rejected a domain-only
+protection exception because this account lacks Advanced Deployment Protection.
+No paid add-on was purchased and project-wide protection was left unchanged.
+External agents need an explicitly authorized Vercel bypass for this preview,
+or the public Squig endpoint after the PR ships. The local and protected-preview
+integration scripts exercise the same API and MCP implementation.

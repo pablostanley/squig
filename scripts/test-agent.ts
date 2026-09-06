@@ -1,4 +1,4 @@
-import { renderPng, renderSvg } from "../lib/agent/render.ts"
+import { renderPng, renderSvg, pngDocument } from "../lib/agent/render.ts"
 import assert from "node:assert/strict"
 import {
   applyOperations,
@@ -225,7 +225,14 @@ const typeset = applyOperations(
     {
       op: "add",
       nodes: [
-        { id: "t", type: "text", x: 0, y: 0, text: "Legible", fontSize: 24 },
+        {
+          id: "t",
+          type: "text",
+          x: 0,
+          y: 0,
+          text: "Legible",
+          fontSize: 24,
+        },
       ],
     },
   ]),
@@ -409,9 +416,13 @@ type CatalogResult = {
   hint?: string
   components: Record<string, unknown>[]
 }
-const compact = (await execute("catalog", {}, {
-  workspaceId: "w",
-})) as unknown as CatalogResult
+const compact = (await execute(
+  "catalog",
+  {},
+  {
+    workspaceId: "w",
+  },
+)) as unknown as CatalogResult
 check(() => assert.equal(compact.components.length, ALL_DEFS.length))
 check(() =>
   assert.ok(
@@ -421,9 +432,13 @@ check(() =>
   ),
 )
 check(() => assert.ok(compact.hint?.includes("query or kind")))
-const detailed = (await execute("catalog", { kind: "button" }, {
-  workspaceId: "w",
-})) as unknown as CatalogResult
+const detailed = (await execute(
+  "catalog",
+  { kind: "button" },
+  {
+    workspaceId: "w",
+  },
+)) as unknown as CatalogResult
 check(() => assert.equal(detailed.components.length, 1))
 check(() => assert.ok(Array.isArray(detailed.components[0].controls)))
 // Preview links must ride the branch host, not the per-deployment hash.
@@ -437,6 +452,135 @@ check(() => assert.equal(origin(), "https://squig-abc123.vercel.app"))
 delete process.env.VERCEL_ENV
 check(() => assert.equal(origin(), "https://squig.sh"))
 delete process.env.VERCEL_URL
+// Real face metrics drive both diagnostics and the SVG's line breaks.
+const { textMeasurer, measureDocumentText } = await import(
+  "../lib/agent/text-metrics"
+)
+for (const font of ["hand", "sans", "serif"] as const) {
+  const measure = textMeasurer(font)
+  check(() =>
+    assert.ok(
+      measure("WWWW", { size: 20 }) > measure("iiii", { size: 20 }) * 2,
+    ),
+  )
+}
+const textDoc = applyOperations(
+  emptyDocument("Text metrics"),
+  operation
+    .array()
+    .parse([
+      {
+        op: "add",
+        nodes: [
+          {
+            id: "overflow",
+            type: "text",
+            x: 0,
+            y: 0,
+            w: 70,
+            h: 10,
+            text: "Wide words wrap here",
+            fontSize: 24,
+            fixedW: true,
+          },
+        ],
+      },
+    ]),
+).document
+const measured = measureDocumentText(textDoc)[0]
+check(() => assert.ok(measured.overflowY && measured.lineCount > 1))
+check(() =>
+  assert.equal(
+    (renderSvg(textDoc).svg.match(/<text /g) ?? []).length,
+    measured.lineCount,
+  ),
+)
+const fitted = applyOperations(
+  textDoc,
+  operation
+    .array()
+    .parse([
+      {
+        op: "update",
+        patches: [
+          { id: "overflow", patch: { h: measured.requiredHeight } },
+        ],
+      },
+    ]),
+).document
+check(() => assert.equal(measureDocumentText(fitted)[0].overflowY, false))
+const { wrapText } = await import("../lib/canvas/text-metrics")
+let measuredCharacters = 0
+const longLines = wrapText("a".repeat(10000), 8, { size: 1 }, (t) => {
+  measuredCharacters += t.length
+  return t.length
+})
+check(() => assert.ok(longLines.every((line) => line.length <= 8)))
+check(() => assert.equal(longLines.join("").length, 10000))
+check(() =>
+  assert.ok(
+    measuredCharacters < 300000,
+    "long words must not repeatedly measure their entire suffix",
+  ),
+)
+// WebP is accepted by the canvas and must survive agent PNG previews.
+const { default: sharp } = await import("sharp")
+const webp = await sharp({
+  create: {
+    width: 20,
+    height: 20,
+    channels: 3,
+    background: { r: 230, g: 10, b: 50 },
+  },
+})
+  .webp()
+  .toBuffer()
+const imageDoc = applyOperations(
+  emptyDocument("WebP"),
+  operation
+    .array()
+    .parse([
+      {
+        op: "add",
+        nodes: [
+          {
+            id: "image",
+            type: "image",
+            x: 0,
+            y: 0,
+            w: 100,
+            h: 100,
+            naturalW: 20,
+            naturalH: 20,
+            src: `data:image/webp;base64,${webp.toString("base64")}`,
+          },
+        ],
+      },
+    ]),
+).document
+const preview = await pngDocument(imageDoc)
+check(() => assert.notEqual(preview.nodes.image, imageDoc.nodes.image))
+check(() =>
+  assert.ok(
+    imageDoc.nodes.image.type === "image" &&
+      imageDoc.nodes.image.src.startsWith("data:image/webp"),
+  ),
+)
+const renderedWebp = await renderPng(renderSvg(preview).svg)
+const { data: pixels, info } = await sharp(renderedWebp)
+  .raw()
+  .toBuffer({ resolveWithObject: true })
+const pixel =
+  (Math.floor(info.height / 2) * info.width + Math.floor(info.width / 2)) *
+  info.channels
+check(() =>
+  assert.ok(
+    pixels[pixel] > 200 &&
+      pixels[pixel + 1] < 40 &&
+      pixels[pixel + 2] < 100,
+    "WebP pixels must be visible in the PNG",
+  ),
+)
 console.log(
   `✓ ${checks} agent engine checks passed (${ALL_DEFS.length} library definitions)`,
 )

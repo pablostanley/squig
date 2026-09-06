@@ -164,7 +164,7 @@ export const pages: DocPage[] = [
       },
       {
         title: "Undo, export and visual inspection",
-        text: "history and restore are durable revision-based undo. restore records a new revision. export_document returns portable .squig.json plus variation metadata, feedback and implementation guidance. render_document returns SVG or a PNG image directly to the agent. Drawing paths match the canvas. render_document embeds the editor's fonts (Patrick Hand, Geist, Source Serif 4), so text is legible in the PNG; letterforms are rasterized on the server, so use a browser screenshot for final typography checks. The browser also exports SVG and PNG. Pan, zoom, selection and the clipboard remain browser UI state; agents edit the same underlying geometry directly.",
+        text: "history and restore are durable revision-based undo. restore records a new revision. export_document returns portable .squig.json plus variation metadata, feedback and implementation guidance. render_document returns SVG or a PNG image directly to the agent. Drawing paths match the canvas. render_document embeds the editor's fonts (Patrick Hand, Geist, Source Serif 4), so text is legible in the PNG; letterforms are rasterized on the server, so use a browser screenshot for final typography checks. measure_text (squig_measure_text over MCP) reports line counts, required dimensions, overflow and missing glyphs for text nodes using the same font advances and wrapping as server renders. It does not inspect component labels; italic measurements use regular-face advances. PNG previews normalize WebP images before rasterizing (up to 16 million source pixels). The browser also exports SVG and PNG. Pan, zoom, selection and the clipboard remain browser UI state; agents edit the same underlying geometry directly.",
       },
     ],
   },
@@ -219,6 +219,10 @@ export const pages: DocPage[] = [
       {
         title: "Storage and access",
         text: "agent_workspaces stores hashed workspace keys. agent_documents stores current JSON, revision, hashed canvas capabilities. agent_revisions stores immutable canvas versions. agent_comments stores feedback. agent_limits stores one counter per hashed quota key. Canvas saves and revision records are written in one SQL statement. The revision predicate provides compare-and-swap conflict detection across server instances.",
+      },
+      {
+        title: "External agents and preview protection",
+        text: "A Vercel SSO-protected preview redirects unauthenticated HTTP and MCP clients before Squig sees their canvas key. A canvas key cannot bypass hosting authentication. Use a public instance, or an explicitly configured Vercel protection bypass for testing. The protected-preview smoke script uses vercel curl with your authorized CLI session. Do not paste a project-wide bypass secret into ordinary canvas invitations. Domain-specific protection exceptions require the Advanced Deployment Protection add-on on Pro. This is a hosting setting, not an MCP installation problem.",
       },
       {
         title: "Operating an instance",

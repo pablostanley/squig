@@ -60,13 +60,15 @@ export async function execute(
       if (!a.kind && !a.query)
         return {
           total: ALL_DEFS.length,
-          components: ALL_DEFS.map(({ kind, name, category, group, size }) => ({
-            kind,
-            name,
-            category,
-            group,
-            size,
-          })),
+          components: ALL_DEFS.map(
+            ({ kind, name, category, group, size }) => ({
+              kind,
+              name,
+              category,
+              group,
+              size,
+            }),
+          ),
           hint: "Pass query or kind for defaults and editable controls.",
         }
       const defs = a.kind
@@ -118,7 +120,12 @@ export async function execute(
       if (row.revision !== a.revision)
         throw new AgentError(409, "Revision conflict; read latest first")
       const result = applyOperations(row.document, a.operations)
-      const saved = await save(workspace, row.id, a.revision, result.document)
+      const saved = await save(
+        workspace,
+        row.id,
+        a.revision,
+        result.document,
+      )
       // Only what this batch touched; get_document returns the whole canvas.
       const { changed, deletedIds } = diffNodes(
         row.document.nodes,
@@ -192,11 +199,25 @@ export async function execute(
         },
       }
     }
+    case "measure_text": {
+      const a = tools.measure_text.schema.parse(args),
+        row = await owned(workspace, a.documentId)
+      if (a.nodeIds?.some((id) => !Object.hasOwn(row.document.nodes, id)))
+        throw new AgentError(404, "Node not found")
+      const { measureDocumentText } = await import("./text-metrics")
+      return {
+        revision: row.revision,
+        measurements: measureDocumentText(row.document, a.nodeIds),
+      }
+    }
     case "render_document": {
       const a = tools.render_document.schema.parse(args),
         row = await owned(workspace, a.documentId)
-      const { renderSvg, renderPng } = await import("./render")
-      const rendered = renderSvg(row.document, a.variationId)
+      const { renderSvg, renderPng, pngDocument } = await import("./render")
+      const rendered = renderSvg(
+        a.format === "png" ? await pngDocument(row.document) : row.document,
+        a.variationId,
+      )
       if (a.format === "svg")
         return {
           ...rendered,

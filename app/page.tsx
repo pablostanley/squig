@@ -42,14 +42,15 @@ export default function Home() {
   return (
     <main className="relative h-full">
       <Canvas />
+          <Panel style={{ display: uiHidden ? "none" : undefined }} className="absolute top-4 right-4 z-40 flex-row items-center gap-1 p-1">
+            {process.env.NEXT_PUBLIC_SQUIG_OFFLINE !== "1" && <AgentBridge hidden={uiHidden} />}
+            <button className="canvas-action" aria-label={sidebarVisible ? "Hide sidebar" : "Show sidebar"} aria-pressed={sidebarVisible} title={sidebarVisible ? "Hide sidebar" : "Show sidebar"} onClick={() => setSidebarVisible(v => !v)}><SidebarSimpleIcon size={18} /></button>
+          </Panel>
       {/* ⌘\ clears the room — the canvas and what you've selected, nothing else */}
       {!uiHidden && (
         <>
           <TopCorner />
-          <Panel className="absolute top-4 right-4 z-40 flex-row items-center gap-1 p-1">
-            {process.env.NEXT_PUBLIC_SQUIG_OFFLINE !== "1" && <AgentBridge />}
-            <button className="canvas-action" aria-label={sidebarVisible ? "Hide sidebar" : "Show sidebar"} aria-pressed={sidebarVisible} title={sidebarVisible ? "Hide sidebar" : "Show sidebar"} onClick={() => setSidebarVisible(v => !v)}><SidebarSimpleIcon size={18} /></button>
-          </Panel>
+
           <FileName />
           <LeftRail />
           <LibraryPanel />
