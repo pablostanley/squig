@@ -86,6 +86,18 @@ export function AgentBridge({ hidden = false }: { hidden?: boolean }) {
     let baseline: Snapshot,
       localId = "",
       revision = 0
+    const openingId = useSquig.getState().docId
+    function detach() {
+      active = false
+      stopped = true
+      setConnected(false)
+      setConflict(false)
+      setCredentials({ key: "", url: "", id: "" })
+      setPanel(null)
+      clearIssue()
+      history.replaceState(null, "", "/")
+      setStatus("")
+    }
     function apply(doc: Snapshot) {
       const s = useSquig.getState()
       const rebaseHistory = (frames: typeof s.past) =>
@@ -128,6 +140,10 @@ export function AgentBridge({ hidden = false }: { hidden?: boolean }) {
           setStatus("Opening shared canvas…")
           const row = await agentRequest(`documents/${id}`, key!)
           if (!active) return
+          if (useSquig.getState().docId !== openingId) {
+            detach()
+            return
+          }
           const keepCurrent = attaching.current === id
           if (!keepCurrent)
             useSquig.getState().loadDoc(JSON.stringify(row.document))
@@ -162,12 +178,7 @@ export function AgentBridge({ hidden = false }: { hidden?: boolean }) {
         }
         const s = useSquig.getState()
         if (s.docId !== localId) {
-          stopped = true
-          setConnected(false)
-          setCredentials({ key: "", url: "", id: "" })
-          setPanel(null)
-          history.replaceState(null, "", "/")
-          setStatus("Opened a local canvas")
+          detach()
           return
         }
         if (s.transforming || s.editingId) return
@@ -234,6 +245,10 @@ export function AgentBridge({ hidden = false }: { hidden?: boolean }) {
         }
       } catch (e) {
         if (!active) return
+        if (!initialized && useSquig.getState().docId !== openingId) {
+          detach()
+          return
+        }
         const error = e as Error & { status?: number }
         // A racing commit is retried against the fresh revision next tick.
         if (error.status !== 409) reportIssue(error.message)
@@ -243,8 +258,13 @@ export function AgentBridge({ hidden = false }: { hidden?: boolean }) {
     }
     void tick()
     const timer = setInterval(tick, 1000)
+    // Release the old invitation immediately, including while a save is in
+    // flight or a conflict has stopped polling.
+    const unsubscribe = useSquig.subscribe((s) => {
+      if (active && initialized && s.docId !== localId) detach()
+    })
     const prevent = (e: BeforeUnloadEvent) => {
-      if (initialized && !equal(snapshot(), baseline)) {
+      if (active && initialized && !equal(snapshot(), baseline)) {
         e.preventDefault()
         e.returnValue = ""
       }
@@ -253,6 +273,7 @@ export function AgentBridge({ hidden = false }: { hidden?: boolean }) {
     return () => {
       active = false
       clearInterval(timer)
+      unsubscribe()
       window.removeEventListener("beforeunload", prevent)
     }
   }, [reload])
@@ -261,6 +282,8 @@ export function AgentBridge({ hidden = false }: { hidden?: boolean }) {
   async function connect() {
     if (credentials.key || connecting.current) return
     connecting.current = true
+    const sourceId = useSquig.getState().docId
+    const doc = JSON.parse(useSquig.getState().serialize())
     try {
       let key = localStorage.getItem(KEY_STORAGE)
       if (!key) {
@@ -270,6 +293,7 @@ export function AgentBridge({ hidden = false }: { hidden?: boolean }) {
         key = workspace.key
         localStorage.setItem(KEY_STORAGE, key!)
       }
+      if (useSquig.getState().docId !== sourceId) return
       const existing = connected
         ? new URLSearchParams(location.search).get("agent")
         : null
@@ -280,6 +304,7 @@ export function AgentBridge({ hidden = false }: { hidden?: boolean }) {
           { documentId: existing },
         )
         localStorage.setItem(canvasStorage(existing), result.canvasKey)
+        if (useSquig.getState().docId !== sourceId) return
         setCredentials({
           key: result.canvasKey,
           url: `${location.origin}/?agent=${existing}#${result.canvasKey}`,
@@ -288,7 +313,6 @@ export function AgentBridge({ hidden = false }: { hidden?: boolean }) {
         return
       }
       setStatus("Connecting this canvas…")
-      const doc = JSON.parse(useSquig.getState().serialize())
       const created = await agentRequest("documents", key!, {
         name: doc.fileName,
       })
@@ -298,6 +322,7 @@ export function AgentBridge({ hidden = false }: { hidden?: boolean }) {
         document: doc,
       })
       localStorage.setItem(canvasStorage(created.id), created.canvasKey)
+      if (useSquig.getState().docId !== sourceId) return
       attaching.current = created.id
       history.pushState(null, "", `/?agent=${created.id}`)
       setCredentials({
@@ -307,9 +332,14 @@ export function AgentBridge({ hidden = false }: { hidden?: boolean }) {
       })
       setReload((v) => v + 1)
     } catch (e) {
-      reportIssue((e as Error).message)
+      if (useSquig.getState().docId === sourceId)
+        reportIssue((e as Error).message)
     } finally {
       connecting.current = false
+      if (useSquig.getState().docId !== sourceId) {
+        setPanel(null)
+        setStatus("")
+      }
     }
   }
   function preserve() {

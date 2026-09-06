@@ -11,9 +11,13 @@ export function canvasEqual(a: unknown, b: unknown): boolean {
     )
   const left = a as Record<string, unknown>,
     right = b as Record<string, unknown>
-  const keys = Object.keys(left)
+  // Optional fields in the editor can be explicitly undefined. JSON omits
+  // those fields, so treating them as edits causes an idle canvas to keep
+  // saving new revisions after every server round trip.
+  const keys = Object.keys(left).filter((key) => left[key] !== undefined)
+  const rightKeys = Object.keys(right).filter((key) => right[key] !== undefined)
   return (
-    keys.length === Object.keys(right).length &&
+    keys.length === rightKeys.length &&
     keys.every(
       (key) =>
         Object.hasOwn(right, key) && canvasEqual(left[key], right[key]),

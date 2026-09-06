@@ -8,7 +8,7 @@ page and approval API were removed.
 
 - `pnpm test`: existing canvas geometry, selection, text, groups, connectors,
   clipboard, files, history, navigation and other regression suites.
-- `pnpm test:agent`: 221 checks, including all 155 library definitions, all six
+- `pnpm test:agent`: 225 checks, including all 155 library definitions, all six
   node types, atomic operations, validation, rendering and concurrent merges.
 - `scripts/agent/smoke.mjs`: real Neon database and official MCP SDK. Tests
   workspace isolation, canvas key scopes, MCP editing, stale writes, atomic
@@ -26,6 +26,11 @@ page and approval API were removed.
   ignore local drawer quota/staleness warnings; a simulated cloud outage shows
   one error beneath the filename and clears it after reconnecting. The new
   invitation is copied with one action, and hiding the chrome leaves sync active.
+  Delayed canvas loads and connection saves cannot attach or overwrite a file
+  opened while those requests are in flight. Switching files immediately clears
+  the previous canvas invitation, including when synchronization has stopped.
+  An idle imported canvas keeps the same revision across successive polls;
+  omitted optional JSON fields are not treated as edits.
 
 The tests use isolated workspaces and delete their fixtures. Run the browser
 suite with a running server and DATABASE_URL in .env.local. Install Chromium

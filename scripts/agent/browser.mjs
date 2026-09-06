@@ -286,7 +286,7 @@ try {
     .getByRole("textbox", { name: "file name", exact: true })
     .press("Enter")
   await expect
-    .poll(async () => (await api(`documents/${doc.id}`)).document.fileName)
+    .poll(async () => (await api(`documents/${doc.id}`)).document.fileName, { timeout: 15000 })
     .toBe("Working together")
   await expect(
     page.getByText("Agent drew this beside you", { exact: true }).first(),
@@ -420,12 +420,13 @@ try {
   await expect(
     local.getByText("Already on my canvas", { exact: true }).first(),
   ).toBeVisible()
+  await expect(local.getByRole("menu", { includeHidden: true })).toHaveCount(0)
   await local
     .getByRole("button", { name: "Connect agent", exact: true })
     .click()
   await expect(
     local.getByRole("button", { name: "Copy for your agent", exact: true }),
-  ).toBeVisible()
+  ).toBeVisible({ timeout: 15000 })
   await local.keyboard.press("Escape")
   await local.getByRole("button", { name: "Share", exact: true }).click()
   await expect(
@@ -436,10 +437,83 @@ try {
   expect(
     (await api(`documents/${attachedId}`)).document.nodes.existing.text,
   ).toBe("Already on my canvas")
+  await expect(local.locator(".agent-sync")).toHaveAttribute("data-connected", "true")
+  const idleRevision = (await api(`documents/${attachedId}`)).revision
+  let idlePolls = 0
+  const countIdlePoll = (request) => {
+    if (request.method() === "GET" && new URL(request.url()).pathname === `/api/v1/documents/${attachedId}`)
+      idlePolls++
+  }
+  local.on("request", countIdlePoll)
+  await expect.poll(() => idlePolls, { timeout: 15000 }).toBeGreaterThanOrEqual(3)
+  local.off("request", countIdlePoll)
+  expect((await api(`documents/${attachedId}`)).revision).toBe(idleRevision)
   await expect(
     local.getByText("Already on my canvas", { exact: true }).first(),
   ).toBeVisible()
+  // Switching files releases the old share key without waiting for a poll.
+  await local.keyboard.press("Escape")
+  await local.getByTitle("file menu", { exact: true }).click()
+  await local.getByRole("menuitem", { name: "New file", exact: true }).click()
+  await expect(local.locator(".agent-sync")).toHaveAttribute("data-connected", "false")
+  expect(new URL(local.url()).search).toBe("")
+
+  // Hold the first save response, then switch files while connecting. The
+  // invitation must never attach the newly opened file to that older canvas.
+  let releaseSave, markSaveHeld, heldDocumentId
+  const saveHeld = new Promise((resolve) => { markSaveHeld = resolve })
+  const saveRelease = new Promise((resolve) => { releaseSave = resolve })
+  await local.route("**/api/v1/tools/replace_document", async (route) => {
+    heldDocumentId = route.request().postDataJSON().documentId
+    const response = await route.fetch()
+    markSaveHeld()
+    await saveRelease
+    await route.fulfill({ response })
+  })
+  await local.getByRole("button", { name: "Connect agent", exact: true }).click()
+  await saveHeld
+  await local.keyboard.press("Escape")
+  await local.getByTitle("file menu", { exact: true }).click()
+  await local.getByRole("menuitem", { name: "New file", exact: true }).click()
+  const saveFinished = local.waitForResponse("**/api/v1/tools/replace_document")
+  releaseSave()
+  await saveFinished
+  await expect(local.locator(".agent-sync")).toHaveAttribute("data-connected", "false")
+  await local.unroute("**/api/v1/tools/replace_document")
+  // A fresh share must create a fresh canvas; it must not reuse the held save.
+  await local.getByRole("button", { name: "Share", exact: true }).click()
+  await expect(local.getByLabel("Editable canvas link", { exact: true })).not.toHaveValue("")
+  const newId = new URL(local.url()).searchParams.get("agent")
+  expect(newId).toBeTruthy()
+  expect(newId).not.toBe(attachedId)
+  expect(newId).not.toBe(heldDocumentId)
+  expect((await api(`documents/${newId}`)).document.nodes).toEqual({})
   await localContext.close()
+
+  // A delayed initial load must not overwrite a file opened in the meantime.
+  const openingContext = await browser.newContext()
+  const opening = await openingContext.newPage()
+  opening.on("pageerror", (e) => errors.push(e.message))
+  let releaseOpen, markOpenHeld
+  const openHeld = new Promise((resolve) => { markOpenHeld = resolve })
+  const openRelease = new Promise((resolve) => { releaseOpen = resolve })
+  await opening.route(`**/api/v1/documents/${doc.id}`, async (route) => {
+    const response = await route.fetch()
+    markOpenHeld()
+    await openRelease
+    await route.fulfill({ response })
+  })
+  await opening.goto(doc.canvasUrl.replace(new URL(doc.canvasUrl).origin, base))
+  await openHeld
+  await opening.getByTitle("file menu", { exact: true }).click()
+  await opening.getByRole("menuitem", { name: "New file", exact: true }).click()
+  const openFinished = opening.waitForResponse(`**/api/v1/documents/${doc.id}`)
+  releaseOpen()
+  await openFinished
+  await expect(opening).toHaveURL(`${base}/`)
+  await expect(opening.locator(".agent-sync")).toHaveAttribute("data-connected", "false")
+  await expect(opening.getByRole("button", { name: "untitled scribbles", exact: true })).toBeVisible()
+  await openingContext.close()
   await page.goto(`${base}/docs/mcp`)
   await expect(page.locator("h1")).toHaveText(
     "Install the Squig MCP server",

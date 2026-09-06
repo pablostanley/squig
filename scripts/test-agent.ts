@@ -324,6 +324,10 @@ check(() =>
 // Shared canvas merging must preserve concurrent human and agent changes.
 const { mergeCanvas, canvasEqual } = await import("../lib/agent/merge")
 check(() => assert.ok(canvasEqual({ a: 1, b: 2 }, { b: 2, a: 1 })))
+check(() => assert.ok(canvasEqual({ nodes: { a: { text: "Hello", groupIds: undefined } } }, { nodes: { a: { text: "Hello" } } })))
+check(() => assert.ok(canvasEqual({ text: "Hello" }, { text: "Hello", groupIds: undefined })))
+check(() => assert.ok(!canvasEqual({ locked: true }, { locked: undefined })))
+check(() => assert.ok(!canvasEqual({ bind: null }, {})))
 const baseCanvas = { nodes: { a: { x: 0, text: "hello" } }, order: ["a"] }
 check(() =>
   assert.deepEqual(
