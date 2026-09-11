@@ -6,6 +6,7 @@
 // ---------------------------------------------------------------------------
 
 import { useEffect, useRef } from "react"
+import { XIcon } from "@phosphor-icons/react"
 import { useSquig } from "@/lib/store"
 import { SHORTCUT_GROUPS, kbd } from "@/lib/shortcuts"
 import { trapFocus } from "@/components/ui/focus-trap"
@@ -58,10 +59,10 @@ function Sheet() {
             ref={closeRef}
             type="button"
             aria-label="Close keyboard shortcuts"
-            className="ml-auto h-ctl rounded-chrome-sm px-2.5 text-label text-muted-foreground hover:bg-accent"
+            className="ml-auto flex h-ctl w-ctl items-center justify-center rounded-chrome-sm text-muted-foreground hover:bg-accent"
             onClick={() => st().setShortcutsOpen(false)}
           >
-            Close
+            <XIcon aria-hidden="true" className="size-4" />
           </button>
         </div>
 
