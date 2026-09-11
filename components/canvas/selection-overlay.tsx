@@ -14,7 +14,7 @@ import { anchorPoint, arrowEnds, bindOf } from "@/lib/canvas/arrow-binding"
 import { nodeVisualBounds, worldRouteHandle, type RouteHandle } from "@/lib/canvas/line-routing"
 import type { DistanceIndicator, GuideLine } from "@/lib/canvas/snap-engine"
 import { type Handle } from "@/lib/canvas/transform"
-import { resizeCursor, ROTATE_CURSOR, GRAB_OUT, grabPad, handleHitBox, edgeHitBox, visibleHandles, HANDLE_DOT, HANDLE_ROOM } from "@/lib/canvas/handles"
+import { resizeCursor, rotateCursor, type CornerHandle, GRAB_OUT, grabPad, handleHitBox, edgeHitBox, visibleHandles, HANDLE_DOT, HANDLE_ROOM } from "@/lib/canvas/handles"
 import type { Bounds } from "@/lib/selection"
 import { unionBounds } from "@/lib/selection"
 import { ARROW_ANCHORS, type ArrowAnchor, type ArrowNode, type SquigNode } from "@/lib/types"
@@ -244,7 +244,7 @@ export function SelectionOverlay({
   editing: boolean
   gestureKind: Gesture["kind"] | null
   interactive: boolean
-  onStartRotate: (e: React.PointerEvent) => void
+  onStartRotate: (h: CornerHandle, e: React.PointerEvent) => void
   rotationLabel: number | null
   rotationFrame?: Bounds
 }) {
@@ -335,8 +335,8 @@ export function SelectionOverlay({
           <div className="absolute inset-0 rounded-sm" style={{ border: "2px solid var(--sq-select)" }} />
           {showHandles && (["nw", "ne", "se", "sw"] as const).map((hd) => (
             <div key={`rotate-${hd}`} data-rotate-handle={hd} className="pointer-events-auto absolute"
-              style={{ left: hd.includes("w") ? -26 : w, top: hd.includes("n") ? -26 : h,
-                width: 26, height: 26, cursor: ROTATE_CURSOR }} onPointerDown={onStartRotate} />
+              style={{ left: hd.includes("w") ? -20 : w, top: hd.includes("n") ? -20 : h,
+                width: 20, height: 20, cursor: rotateCursor(hd, rotation) }} onPointerDown={(e) => onStartRotate(hd, e)} />
           ))}
           {showHandles && (["n", "e", "s", "w"] as const).map((hd) => {
             const box = edgeHitBox(hd, w, h)

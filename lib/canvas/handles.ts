@@ -70,7 +70,16 @@ export function visibleHandles(w: number, h: number, text = false): Handle[] {
     ...(text || h >= HANDLE_ROOM ? ["e", "w"] : [])] as Handle[])
 }
 
-export const ROTATE_CURSOR = `url("data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path d="M5 15a8 8 0 1 1 12 4M2 11l3 5 5-3" fill="none" stroke="white" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 15a8 8 0 1 1 12 4M2 11l3 5 5-3" fill="none" stroke="black" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>')}") 12 12, crosshair`
+export type CornerHandle = "nw" | "ne" | "se" | "sw"
+
+/** CSS cursors ignore the selection's transform, so mirror and turn the SVG itself. */
+export function rotateCursor(handle: CornerHandle, rotation = 0): string {
+  const flipX = handle.includes("w") ? -1 : 1
+  const flipY = handle.includes("s") ? -1 : 1
+  const path = "M5 15a8 8 0 1 1 12 4M2 11l3 5 5-3"
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="-2 -2 28 28"><g transform="translate(12 12) rotate(${-rotation}) scale(${flipX} ${flipY}) translate(-12 -12)" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="${path}" stroke="white" stroke-width="4"/><path d="${path}" stroke="black" stroke-width="2"/></g></svg>`
+  return `url("data:image/svg+xml,${encodeURIComponent(svg)}") 9 9, crosshair`
+}
 
 /** Native resize arrows follow the on-screen orientation of a rotated edge. */
 export function resizeCursor(handle: Handle, rotation = 0): string {

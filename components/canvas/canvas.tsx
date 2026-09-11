@@ -71,7 +71,7 @@ import { AnchorZones, SelectionOverlay, SmartGuides } from "./selection-overlay"
 import { TextEditOverlay } from "./text-edit-overlay"
 import { nodeVisualBounds, type RouteHandle } from "@/lib/canvas/line-routing"
 import { normalizeRotation, orientResize, rotateNodes, rotatePoint, rotationDelta, unrotatePoint } from "@/lib/canvas/rotation"
-import { resizeCursor, ROTATE_CURSOR } from "@/lib/canvas/handles"
+import { resizeCursor, rotateCursor, type CornerHandle } from "@/lib/canvas/handles"
 import { SMALL_NUDGE } from "@/lib/nudge"
 import { constrainMoveTo45, constrainSnapToDirection, type DragDirection } from "@/lib/canvas/move"
 
@@ -250,6 +250,7 @@ export type Gesture =
     }
   | {
       kind: "rotate"
+      handle: CornerHandle
       sx: number
       sy: number
       pointerId: number
@@ -840,7 +841,9 @@ export function Canvas() {
         const current = Math.atan2(g.center[1] - wy, wx - g.center[0]) * 180 / Math.PI
         const delta = rotationDelta(g.startAngle, current, g.initialRotation, mods.shift)
         s.updateNodes(rotateNodes(g.origNodes, g.center, delta))
-        setRotationLabel(normalizeRotation(g.initialRotation + delta))
+        const rotation = normalizeRotation(g.initialRotation + delta)
+        setRotationLabel(rotation)
+        setGestureCursor(rotateCursor(g.handle, rotation))
         return
       }
 
@@ -1329,7 +1332,8 @@ export function Canvas() {
     (g: Gesture, e: React.PointerEvent) => {
       gestureRef.current = g
       setGestureKind(g.kind)
-      setGestureCursor(g.kind === "resize" ? resizeCursor(g.handle, g.origNodes.length === 1 ? g.origNodes[0].rotation : 0) : null)
+      setGestureCursor(g.kind === "rotate" ? rotateCursor(g.handle, g.initialRotation)
+        : g.kind === "resize" ? resizeCursor(g.handle, g.origNodes.length === 1 ? g.origNodes[0].rotation : 0) : null)
       setRotationFrame(g.kind === "rotate" && g.origNodes.length > 1 ? unionBounds(g.origNodes.map(nodeVisualBounds)) ?? undefined : undefined)
 
       // capture keeps events coming even when the pointer leaves the window
@@ -1486,7 +1490,7 @@ export function Canvas() {
     [st, beginGesture, toWorld, resetTextWidth, resetTextHeight]
   )
 
-  const startRotate = useCallback((e: React.PointerEvent) => {
+  const startRotate = useCallback((handle: CornerHandle, e: React.PointerEvent) => {
     if (e.button !== 0 || !e.isPrimary || gestureRef.current) return
     e.stopPropagation()
     e.preventDefault()
@@ -1496,7 +1500,7 @@ export function Canvas() {
     if (!b) return
     const center: [number, number] = [b.x + b.w / 2, b.y + b.h / 2]
     const [wx, wy] = toWorld(e)
-    beginGesture({ kind: "rotate", sx: e.clientX, sy: e.clientY, pointerId: e.pointerId, exceeded: false,
+    beginGesture({ kind: "rotate", handle, sx: e.clientX, sy: e.clientY, pointerId: e.pointerId, exceeded: false,
       center, startAngle: Math.atan2(center[1] - wy, wx - center[0]) * 180 / Math.PI,
       initialRotation: origNodes.length === 1 ? origNodes[0].rotation ?? 0 : 0,
       origNodes: structuredClone(origNodes), dirty: false }, e)
@@ -2489,8 +2493,6 @@ export function Canvas() {
       ? "crosshair"
       : gestureKind === "pan" || gestureKind === "pinch"
         ? "grabbing"
-        : gestureKind === "rotate"
-          ? ROTATE_CURSOR
         : gestureCursor
           ? gestureCursor
       : gestureKind === "move"
