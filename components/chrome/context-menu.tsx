@@ -221,7 +221,7 @@ export function CanvasContextMenu() {
         run: () => st().setViewport({ x: 0, y: 0, zoom: 1 }),
       },
       {
-        label: contextRow ? "Hide context menu" : "Show context menu",
+        label: contextRow ? "Hide quick controls" : "Show quick controls",
         icon: SlidersHorizontalIcon,
         run: () => st().setContextRow(!contextRow),
       },

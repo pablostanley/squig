@@ -5,7 +5,7 @@ import { Tooltip as TooltipPrimitive } from "@base-ui/react/tooltip"
 
 import { cn } from "@/lib/utils"
 
-function TooltipProvider({ delay = 0, ...props }: React.ComponentProps<typeof TooltipPrimitive.Provider>) {
+function TooltipProvider({ delay = 700, ...props }: React.ComponentProps<typeof TooltipPrimitive.Provider>) {
   return <TooltipPrimitive.Provider data-slot="tooltip-provider" delay={delay} {...props} />
 }
 
@@ -31,10 +31,11 @@ function TooltipContent({
     <TooltipPrimitive.Portal>
       <TooltipPrimitive.Positioner side={side} sideOffset={sideOffset} className="z-50">
         <TooltipPrimitive.Popup
+          role="tooltip"
           data-slot="tooltip-content"
           className={cn(
-            "inline-flex w-fit max-w-xs origin-(--transform-origin) items-center gap-1.5 rounded-chrome-sm bg-foreground px-2.5 py-1.5 text-label text-background transition-[transform,opacity] duration-100",
-            "data-starting-style:scale-95 data-starting-style:opacity-0 data-ending-style:scale-95 data-ending-style:opacity-0",
+            "inline-flex w-fit max-w-xs origin-(--transform-origin) items-center gap-1.5 rounded-chrome-sm bg-foreground px-2.5 py-1.5 text-label text-background transition-[transform,opacity] duration-100 motion-reduce:transition-none",
+            "data-starting-style:scale-95 data-starting-style:opacity-0 data-ending-style:scale-95 data-ending-style:opacity-0 data-instant:transition-none motion-reduce:transform-none",
             className
           )}
           {...props}
@@ -46,4 +47,61 @@ function TooltipContent({
   )
 }
 
-export { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger }
+/**
+ * Quiet, on-demand help for a visible label. The label is the affordance: no
+ * permanent info icon, but it remains a real button so keyboard and assistive
+ * technology users can ask the same question as someone hovering with a mouse.
+ * Delay comes from the nearest provider (700ms by default).
+ */
+function HelpTooltip({
+  label,
+  help,
+  className,
+  side = "left",
+}: {
+  label: React.ReactNode
+  help: React.ReactNode
+  className?: string
+  side?: React.ComponentProps<typeof TooltipPrimitive.Positioner>["side"]
+}) {
+  const descriptionId = React.useId()
+  const triggerId = React.useId()
+  const [open, setOpen] = React.useState(false)
+  const accessibleLabel = typeof label === "string" ? `About ${label}` : "More information"
+
+  return (
+    <Tooltip open={open} triggerId={triggerId} onOpenChange={setOpen}>
+      <TooltipTrigger
+        id={triggerId}
+        type="button"
+        closeOnClick={false}
+        // A fresh focus is a help request, even after Escape dismissed a hover.
+        onFocus={() => setOpen(true)}
+        onClick={() => setOpen(true)}
+        onKeyDown={(event) => {
+          if (event.key === "Escape" && open) {
+            event.preventDefault()
+            event.stopPropagation()
+            setOpen(false)
+          }
+        }}
+        aria-label={accessibleLabel}
+        aria-describedby={descriptionId}
+        className={cn(
+          "min-h-6 cursor-help rounded-chrome-xs text-left decoration-dotted underline-offset-2 outline-none hover:underline focus-visible:underline focus-visible:ring-2 focus-visible:ring-[var(--sq-ink)]/40",
+          className
+        )}
+      >
+        {label}
+      </TooltipTrigger>
+      <TooltipContent side={side} className="max-w-56 text-pretty leading-snug">
+        {help}
+      </TooltipContent>
+      <span id={descriptionId} hidden>
+        {help}
+      </span>
+    </Tooltip>
+  )
+}
+
+export { HelpTooltip, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger }

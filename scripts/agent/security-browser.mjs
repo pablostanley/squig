@@ -143,7 +143,7 @@ try {
   const connect = await fixture()
   await connect.page.goto(`${base}/connect`)
   await connect.page.getByLabel("Workspace key", { exact: true }).fill(candidate)
-  await connect.page.getByRole("button", { name: "Connect this browser", exact: true }).click()
+  await connect.page.getByRole("button", { name: "Connect", exact: true }).click()
   await expect(connect.page.locator(".agent-error")).toContainText("Use a workspace key here")
   expect(connect.calls).toEqual([])
   expect(await connect.page.evaluate(() => localStorage.getItem("squig:agent-key"))).toBeNull()

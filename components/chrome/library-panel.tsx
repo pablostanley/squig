@@ -12,7 +12,7 @@ import { groupDefs, searchDefs, type ComponentDef } from "@/lib/library/registry
 import { SketchPrims } from "@/components/canvas/sketch"
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Panel, PanelFooter } from "@/components/ui/panel"
+import { Panel, PanelFooter, PanelHeader } from "@/components/ui/panel"
 import { cn } from "@/lib/utils"
 import { MagnifyingGlassIcon } from "@phosphor-icons/react"
 
@@ -130,18 +130,19 @@ function Library({ panel }: { panel: Exclude<PanelKind, null> }) {
 
   const sections = useMemo(() => groupDefs(searchDefs(panel, query), panel), [panel, query])
 
-  const total = sections.reduce((n, s) => n + s.defs.length, 0)
   const first = sections[0]?.defs[0]
 
   return (
     <Panel className="absolute top-1/2 left-[72px] z-30 max-h-[82vh] w-[336px] max-w-[calc(100vw-88px)] -translate-y-1/2">
+      <PanelHeader title={panel === "components" ? "Components" : "Blocks"} help="Drag an item onto the canvas, or select it and click to place." />
       <div className="relative shrink-0 border-b border-border/70 p-gutter">
         <MagnifyingGlassIcon className="pointer-events-none absolute top-1/2 left-[26px] size-4 -translate-y-1/2 text-muted-foreground" />
         <Input
           ref={inputRef}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder={panel === "components" ? "find a component…" : "find a block…"}
+          aria-label={panel === "components" ? "Search components" : "Search blocks"}
+          placeholder="Search…"
           className="h-ctl-lg pl-9 text-row"
           onKeyDown={(e) => {
             e.stopPropagation()
@@ -174,21 +175,17 @@ function Library({ panel }: { panel: Exclude<PanelKind, null> }) {
               </div>
             </div>
           ))}
-          {!total && (
-            <p className="py-8 text-center text-row text-muted-foreground">
-              nothing called &ldquo;{query}&rdquo; in here
-            </p>
+          {!sections.length && (
+            <p role="status" className="py-8 text-center text-row text-muted-foreground">No results.</p>
           )}
         </div>
       </ScrollArea>
 
-      <PanelFooter className="text-micro text-muted-foreground">
-        {placingDrag
-          ? "let go where you want it"
-          : placing
-            ? "now click the canvas to drop it"
-            : `${total} to choose from — click one or drag it out`}
-      </PanelFooter>
+      {(placingDrag || placing) && (
+        <PanelFooter role="status" className="text-micro text-muted-foreground">
+          {placingDrag ? "Release to place" : "Click canvas to place"}
+        </PanelFooter>
+      )}
     </Panel>
   )
 }

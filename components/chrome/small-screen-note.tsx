@@ -62,15 +62,16 @@ export function SmallScreenNote() {
 
   return (
     <Panel className="absolute bottom-16 left-4 z-30 max-w-[calc(100vw-2rem)] flex-row items-center gap-3 py-2 pr-2 pl-gutter">
-      <p className="text-label text-muted-foreground">
-        squig wants a bigger screen — down here the panels sit on most of the paper.
+      <p role="status" className="text-label text-muted-foreground">
+        Panels may cover the canvas on this screen.
       </p>
       <button
         type="button"
+        aria-label="Dismiss screen-size notice"
         onClick={dismiss}
         className="shrink-0 rounded-chrome-sm px-2 py-1 text-label text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-[var(--sq-ink)]/40"
       >
-        got it
+        Dismiss
       </button>
     </Panel>
   )

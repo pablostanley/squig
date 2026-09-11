@@ -16,6 +16,7 @@
     "test:agent": "node --experimental-strip-types --import ./scripts/register-loader.mjs scripts/test.ts agent",
     "test:agent:integration": "node scripts/agent/smoke.mjs",
     "test:agent:security-browser": "node scripts/agent/security-browser.mjs",
+    "test:ui": "node scripts/ui/helpers-browser.mjs",
     "test:agent:browser": "node --env-file=.env.local scripts/agent/browser.mjs",
     "test:agent:rollout": "node scripts/agent/rollout-browser.mjs",
     "db:migrate": "node --env-file-if-exists=.env.local scripts/agent/migrate.mjs",

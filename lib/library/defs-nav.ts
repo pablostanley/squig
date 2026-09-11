@@ -36,7 +36,7 @@ export const navbarDef: ComponentDef = {
   controls: [
     { key: "brand", label: "Product name", type: "text" },
     { key: "logo", label: "Logo", type: "toggle" },
-    { key: "links", label: "Links (comma-sep)", type: "text" },
+    { key: "links", label: "Links", help: "Separate items with commas.", type: "text" },
     { key: "search", label: "Search", type: "toggle", quick: true },
     { key: "avatar", label: "Avatar", type: "toggle", quick: true },
     { key: "cta", label: "Button", type: "toggle", quick: true },
@@ -170,7 +170,7 @@ export const sidebarDef: ComponentDef = {
   controls: [
     { key: "brand", label: "Product name", type: "text" },
     { key: "header", label: "Logo row", type: "toggle" },
-    { key: "items", label: "Items (comma-sep)", type: "text" },
+    { key: "items", label: "Items", help: "Separate items with commas.", type: "text" },
     { key: "icons", label: "Icons", type: "toggle", quick: true },
     { key: "active", label: "Active item", type: "number", min: 1, max: 8, quick: true },
     { key: "user", label: "User footer", type: "toggle", quick: true },

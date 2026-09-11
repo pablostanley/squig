@@ -75,11 +75,7 @@ export function Connect() {
   return (
     <AgentShell>
       <div className="agent-content">
-        <h1>A pencil for your agent.</h1>
-        <p className="agent-lead">
-          Think it through together. Let your agent sketch a few directions,
-          leave your notes, and build the one that feels right.
-        </p>
+        <h1>Connect your agent</h1>
         {error && (
           <p role="alert" className="agent-error">
             {error}
@@ -89,11 +85,9 @@ export function Connect() {
           <section>
             {!key ? (
               <>
-                <h2>Start a shared workspace</h2>
+                <h2>Create a workspace</h2>
                 <p>
-                  Your usual Squig files stay in this browser. Agent documents
-                  are saved online so you and your agent can return to the same
-                  canvas.
+                  Agent canvases are saved online. Local drawings stay in this browser.
                 </p>
                 <form
                   onSubmit={(e) => {
@@ -130,17 +124,16 @@ export function Connect() {
                     onChange={(e) => setInput(e.target.value)}
                   />
                   <button className="agent-button secondary" disabled={busy}>
-                    Connect this browser
+                    Connect
                   </button>
                 </form>
               </>
             ) : (
               <>
-                <h2>You’re connected.</h2>
+                <h2>Connected</h2>
                 <p>
-                  Use this key in your agent’s MCP settings. It can read and
-                  edit every document in this workspace. Save a copy somewhere
-                  private; there is no account recovery.
+                  This key can read and edit every canvas in the workspace.
+                  Save it privately; there is no account recovery.
                 </p>
                 <div className="agent-panel">
                   <label htmlFor="workspace-key">Workspace key</label>
@@ -173,7 +166,7 @@ export function Connect() {
                     </button>
                   </div>
                 </div>
-                <h3>Your agent canvases</h3>
+                <h3>Canvases</h3>
                 {docs.length ? (
                   <ul className="agent-list">
                     {docs.map((d) => (
@@ -189,12 +182,11 @@ export function Connect() {
                   </ul>
                 ) : (
                   <p className="agent-muted">
-                    Your first canvas will appear here when your agent creates
-                    it. You can also share your current canvas from the editor.
+                    No canvases yet. Ask your agent to create one, or share a local drawing.
                   </p>
                 )}
                 <details>
-                  <summary>Manage this connection</summary>
+                  <summary>Manage connection</summary>
                   <p className="agent-muted">
                     Rotating the key disconnects agents using the old one.
                     Editable canvas links keep working.
@@ -222,39 +214,37 @@ export function Connect() {
             )}
           </section>
           <section>
-            <h2>Bring your favorite agent</h2>
+            <h2>MCP setup</h2>
             <p>
-              For Codex, save the key as <code>SQUIG_API_KEY</code> in the
-              environment where Codex runs, then add Squig:
+              Set <code>SQUIG_API_KEY</code> in your agent’s environment, then run:
             </p>
             <pre className="agent-code">{`codex mcp add squig \\\n  --url ${endpoint} \\\n  --bearer-token-env-var SQUIG_API_KEY`}</pre>
-            <p>Or add this to your Codex config:</p>
-            <pre className="agent-code">{`[mcp_servers.squig]\nurl = "${endpoint}"\nbearer_token_env_var = "SQUIG_API_KEY"`}</pre>
+            <details>
+              <summary>Manual Codex config</summary>
+              <pre className="agent-code">{`[mcp_servers.squig]\nurl = "${endpoint}"\nbearer_token_env_var = "SQUIG_API_KEY"`}</pre>
+            </details>
             <p>
               <Link href="/docs/mcp">
                 MCP setup for Codex, Claude and Cursor
               </Link>
             </p>
-            <h3>Then give it an idea.</h3>
-            <div className="agent-panel">
-              <p
-                style={{
-                  fontFamily: "var(--font-sketch)",
-                  fontSize: 25,
-                  margin: 0,
-                }}
-              >
-                “I’m making a little site for my book club. Sketch three ways it
-                could work in Squig before we build it.”
-              </p>
-            </div>
-            <p className="agent-muted">
-              Your agent can use the whole library, draw its own elements, add
-              notes, and revise the same wireframe after your feedback.
-            </p>
+            <details>
+              <summary>Example prompt</summary>
+              <div className="agent-panel">
+                <p
+                  style={{
+                    fontFamily: "var(--font-sketch)",
+                    fontSize: 25,
+                    margin: 0,
+                  }}
+                >
+                  “I’m making a little site for my book club. Sketch three ways it
+                  could work in Squig before we build it.”
+                </p>
+              </div>
+            </details>
             <p>
-              <Link href="/docs/plugin">Install the wireframing plugin</Link>{" "}
-              for a reusable workflow.
+              <Link href="/docs/plugin">Install the wireframing plugin</Link>
             </p>
           </section>
         </div>

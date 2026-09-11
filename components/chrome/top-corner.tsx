@@ -155,6 +155,7 @@ export function ZoomPill() {
         type="button"
         className="size-ctl rounded-chrome-sm text-row text-muted-foreground hover:bg-accent"
         onClick={() => zoomBy(1 / 1.25)}
+        aria-label="Zoom out"
       >
         −
       </button>
@@ -163,6 +164,7 @@ export function ZoomPill() {
         className="h-ctl min-w-12 rounded-chrome-sm px-1 text-center text-label text-muted-foreground tabular-nums hover:bg-accent"
         onClick={() => st().setViewport({ x: 0, y: 0, zoom: 1 })}
         title="reset view (⌘0)"
+        aria-label={`Zoom ${Math.round(zoom * 100)}%, reset view`}
       >
         {Math.round(zoom * 100)}%
       </button>
@@ -170,6 +172,7 @@ export function ZoomPill() {
         type="button"
         className="size-ctl rounded-chrome-sm text-row text-muted-foreground hover:bg-accent"
         onClick={() => zoomBy(1.25)}
+        aria-label="Zoom in"
       >
         +
       </button>
@@ -186,9 +189,10 @@ export function CommandHint() {
       onPointerDown={(e) => e.stopPropagation()}
       onClick={() => st().setCommandOpen(true)}
       data-squig-chrome
+      data-command-trigger
       className="absolute bottom-4 left-1/2 z-30 flex h-ctl -translate-x-1/2 items-center gap-2 rounded-full border border-border/80 bg-background px-gutter text-label text-muted-foreground shadow-panel hover:text-foreground"
     >
-      search everything
+      Search
       <kbd className="inline-flex h-5 items-center rounded-chrome-xs border bg-muted px-1 font-sans text-micro">⌘K</kbd>
     </button>
   )

@@ -40,6 +40,7 @@ function CommitInput({
   onCommit,
   onStep,
   ariaLabel,
+  ariaDescription,
   unstyled = false,
 }: {
   value: string
@@ -50,6 +51,7 @@ function CommitInput({
   /** arrow-key nudge, in the field's own units */
   onStep?: (delta: number) => void
   ariaLabel?: string
+  ariaDescription?: string
   /** the caller draws the box; render a bare input inside it */
   unstyled?: boolean
 }) {
@@ -99,6 +101,7 @@ function CommitInput({
     type,
     inputMode: type === "number" ? ("decimal" as const) : undefined,
     "aria-label": ariaLabel,
+    "aria-description": ariaDescription,
     value: draft ?? value,
     placeholder,
     onChange: (e: React.ChangeEvent<HTMLInputElement>) => setDraft(e.target.value),
@@ -203,7 +206,7 @@ const LIVE_REASONS = new Set(["scrub", "wheel", "keyboard", "increment-press", "
  */
 export function MixedNumberField({
   label,
-  ariaLabel,
+  ariaLabel = label,
   shared,
   onCommit,
   onStep,
@@ -278,7 +281,7 @@ export function MixedNumberField({
         <NumberField.ScrubArea
           pixelSensitivity={PIXELS_PER_UNIT}
           className={FIELD_HANDLE}
-          aria-label={`Drag to change ${label || "value"}`}
+          aria-hidden="true"
           onPointerDown={() => {
             scrubPending.current = true
           }}
@@ -287,7 +290,7 @@ export function MixedNumberField({
           {label || <Grip />}
         </NumberField.ScrubArea>
         <NumberField.Input
-          aria-label={ariaLabel || label || undefined}
+          aria-label={ariaLabel || undefined}
           className={FIELD_INPUT}
           // the canvas listens globally; a digit typed here is not a shortcut
           onKeyDown={(e) => {
@@ -321,7 +324,7 @@ function MixedScrubField({
   className,
 }: {
   label: string
-  ariaLabel?: string
+  ariaLabel: string
   onCommit: (n: number) => void
   onStep?: (delta: number) => void
   onGestureStart?: () => void
@@ -367,7 +370,7 @@ function MixedScrubField({
     <div className={cn(FIELD_BOX, className)}>
       <span
         role="presentation"
-        aria-label={`Drag to change ${label || "value"}`}
+        aria-hidden="true"
         className={FIELD_HANDLE}
         onPointerDown={startScrub}
       >
@@ -376,7 +379,7 @@ function MixedScrubField({
       <CommitInput
         unstyled
         type="number"
-        ariaLabel={ariaLabel || label || undefined}
+        ariaLabel={ariaLabel || undefined}
         value=""
         placeholder={MIXED_LABEL}
         onStep={
@@ -403,18 +406,21 @@ export function MixedTextField({
   onCommit,
   className,
   ariaLabel,
+  ariaDescription,
   placeholder,
 }: {
   shared: Shared<string>
   onCommit: (v: string) => void
   className?: string
   ariaLabel?: string
+  ariaDescription?: string
   /** shown when the field is genuinely empty — a dash still wins for mixed */
   placeholder?: string
 }) {
   return (
     <CommitInput
       ariaLabel={ariaLabel}
+      ariaDescription={ariaDescription}
       className={cn("h-ctl rounded-chrome-sm px-2.5 text-label", className)}
       value={shared.mixed ? "" : shared.value}
       placeholder={shared.mixed ? MIXED_LABEL : placeholder}

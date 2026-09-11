@@ -168,7 +168,7 @@ function IconPicker({ nodes, control }: { nodes: ComponentNode[]; control: Contr
           ref={searchRef}
           value={query}
           aria-label="Search icons"
-          placeholder="search 1,500 icons…"
+          placeholder="Search icons…"
           className="pl-7 text-label"
           onChange={(e) => setQuery(e.target.value)}
           // the canvas listens globally; a letter typed here is not a tool key
@@ -204,7 +204,7 @@ function IconPicker({ nodes, control }: { nodes: ComponentNode[]; control: Contr
             ))}
           </div>
         ) : (
-          <PanelNote className="px-1 py-3 text-center">nothing matches &ldquo;{q}&rdquo;</PanelNote>
+          <PanelNote className="px-1 py-3 text-center">No results.</PanelNote>
         )}
       </div>
     </div>

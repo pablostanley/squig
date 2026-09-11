@@ -385,7 +385,7 @@ export const notificationListDef: ComponentDef = {
     { key: "unread", label: "Unread", type: "number", min: 0, max: 6, quick: true },
     { key: "avatars", label: "Avatars", type: "toggle" },
     { key: "title", label: "Title", type: "text" },
-    { key: "titles", label: "Rows (comma-sep)", type: "text" },
+    { key: "titles", label: "Rows", help: "Separate items with commas.", type: "text" },
   ],
   render(p, w, h) {
     const prims: Prim[] = [rect(0, 0, w, h)]
@@ -456,7 +456,7 @@ export const activityFeedDef: ComponentDef = {
     { key: "header", label: "Header", type: "toggle", quick: true },
     { key: "title", label: "Title", type: "text" },
     { key: "avatars", label: "Avatars", type: "toggle" },
-    { key: "lines", label: "Entries (comma-sep)", type: "text" },
+    { key: "lines", label: "Entries", help: "Separate items with commas.", type: "text" },
   ],
   render(p, w, h) {
     const prims: Prim[] = [rect(0, 0, w, h)]
@@ -515,7 +515,7 @@ export const commentsDef: ComponentDef = {
     { key: "rows", label: "Comments", type: "number", min: 1, max: 4, quick: true },
     { key: "composer", label: "Composer", type: "toggle", quick: true },
     { key: "threaded", label: "Threaded", type: "toggle" },
-    { key: "names", label: "People (comma-sep)", type: "text" },
+    { key: "names", label: "People", help: "Separate items with commas.", type: "text" },
     { key: "placeholder", label: "Composer text", type: "text" },
   ],
   render(p, w, h) {
@@ -579,7 +579,7 @@ export const inboxListDef: ComponentDef = {
     { key: "rows", label: "Rows", type: "number", min: 3, max: 8, quick: true },
     { key: "star", label: "Stars", type: "toggle", quick: true },
     { key: "checkbox", label: "Checkboxes", type: "toggle", quick: true },
-    { key: "senders", label: "Senders (comma-sep)", type: "text" },
+    { key: "senders", label: "Senders", help: "Separate items with commas.", type: "text" },
   ],
   render(p, w, h) {
     const prims: Prim[] = [rect(0, 0, w, h)]
@@ -658,11 +658,11 @@ export const kanbanBoardDef: ComponentDef = {
   size: { w: 680, h: 420 },
   defaults: { names: "To do, Doing, Done, Nope", columns: 3, cards: 3, avatars: true, tags: KANBAN_TAGS.join(", ") },
   controls: [
-    { key: "names", label: "Column names (comma-sep)", type: "text" },
+    { key: "names", label: "Column names", help: "Separate items with commas.", type: "text" },
     { key: "columns", label: "Columns", type: "number", min: 2, max: 4, quick: true },
     { key: "cards", label: "Cards", type: "number", min: 1, max: 4, quick: true },
     { key: "avatars", label: "Avatars", type: "toggle" },
-    { key: "tags", label: "Tags (comma-sep)", type: "text" },
+    { key: "tags", label: "Tags", help: "Separate items with commas.", type: "text" },
   ],
   render(p, w, h) {
     const prims: Prim[] = []
@@ -728,7 +728,7 @@ export const calendarBlockDef: ComponentDef = {
     { key: "month", label: "Month", type: "text" },
     { key: "view", label: "View", type: "select", options: ["week", "month"], quick: true },
     { key: "events", label: "Events", type: "toggle", quick: true },
-    { key: "eventNames", label: "Events (comma-sep)", type: "text" },
+    { key: "eventNames", label: "Events", help: "Separate items with commas.", type: "text" },
   ],
   render(p, w, h) {
     const prims: Prim[] = [rect(0, 0, w, h)]
@@ -830,7 +830,7 @@ export const fileBrowserDef: ComponentDef = {
   size: { w: 640, h: 400 },
   defaults: { path: "Home, Projects, Doodles", layout: "grid", items: 8, toolbar: true },
   controls: [
-    { key: "path", label: "Path (comma-sep)", type: "text" },
+    { key: "path", label: "Path", help: "Separate items with commas.", type: "text" },
     { key: "layout", label: "Layout", type: "select", options: ["grid", "list"], quick: true },
     { key: "items", label: "Items", type: "number", min: 3, max: 12, quick: true },
     { key: "toolbar", label: "Toolbar", type: "toggle", quick: true },
@@ -941,7 +941,7 @@ export const searchResultsDef: ComponentDef = {
     { key: "bar", label: "Search bar", type: "toggle", quick: true },
     { key: "sidebar", label: "Filters", type: "toggle", quick: true },
     { key: "query", label: "Query", type: "text" },
-    { key: "filters", label: "Filters (comma-sep)", type: "text" },
+    { key: "filters", label: "Filters", help: "Separate items with commas.", type: "text" },
   ],
   render(p, w, h) {
     const prims: Prim[] = [rect(0, 0, w, h)]
@@ -1121,7 +1121,7 @@ export const settingsBlockDef: ComponentDef = {
     { key: "header", label: "Header", type: "toggle", quick: true },
     { key: "title", label: "Title", type: "text" },
     { key: "subcopy", label: "Sub-copy", type: "toggle", quick: true },
-    { key: "labels", label: "Rows (comma-sep)", type: "text" },
+    { key: "labels", label: "Rows", help: "Separate items with commas.", type: "text" },
   ],
   render(p, w, h) {
     const prims: Prim[] = [rect(0, 0, w, h)]
@@ -1425,7 +1425,7 @@ export const aiPromptSuggestionsDef: ComponentDef = {
     prompts: "Explain this like I'm five, Make it 30% funnier, Write the boring parts, Find the bug I made",
   },
   controls: [
-    { key: "prompts", label: "Prompts (comma-sep)", type: "text" },
+    { key: "prompts", label: "Prompts", help: "Separate items with commas.", type: "text" },
     { key: "count", label: "Suggestions", type: "number", min: 2, max: 4, quick: true },
     { key: "style", label: "Style", type: "select", options: ["card", "pill"], quick: true },
   ],
@@ -1729,7 +1729,7 @@ export const cartDef: ComponentDef = {
     { key: "totals", label: "Totals", type: "toggle", quick: true },
     { key: "cta", label: "Checkout button", type: "toggle", quick: true },
     { key: "title", label: "Title", type: "text" },
-    { key: "names", label: "Items (comma-sep)", type: "text" },
+    { key: "names", label: "Items", help: "Separate items with commas.", type: "text" },
   ],
   render(p, w, h) {
     const prims: Prim[] = [rect(0, 0, w, h)]
@@ -1902,7 +1902,7 @@ export const productDetailDef: ComponentDef = {
     { key: "thumbs", label: "Thumbnails", type: "toggle", quick: true },
     { key: "options", label: "Options", type: "toggle", quick: true },
     { key: "rating", label: "Rating", type: "toggle" },
-    { key: "sizes", label: "Options (comma-sep)", type: "text" },
+    { key: "sizes", label: "Options", help: "Separate items with commas.", type: "text" },
   ],
   render(p, w, h) {
     const prims: Prim[] = [rect(0, 0, w, h)]
@@ -1995,7 +1995,7 @@ export const productGridDef: ComponentDef = {
     { key: "rows", label: "Rows", type: "number", min: 1, max: 3, quick: true },
     { key: "price", label: "Prices", type: "toggle", quick: true },
     { key: "rating", label: "Rating", type: "toggle" },
-    { key: "prices", label: "Prices (comma-sep)", type: "text" },
+    { key: "prices", label: "Prices", help: "Separate items with commas.", type: "text" },
   ],
   render(p, w, h) {
     const prims: Prim[] = []
@@ -2138,7 +2138,7 @@ export const appShellDef: ComponentDef = {
     { key: "placeholder", label: "Placeholder", type: "toggle", quick: true },
     { key: "title", label: "Title", type: "text" },
     { key: "subtitle", label: "Subtitle", type: "text" },
-    { key: "items", label: "Nav items (comma-sep)", type: "text" },
+    { key: "items", label: "Nav items", help: "Separate items with commas.", type: "text" },
   ],
   render(p, w, h) {
     const prims: Prim[] = [rect(0, 0, w, h)]
@@ -2211,8 +2211,8 @@ export const landingPageDef: ComponentDef = {
     { key: "footer", label: "Footer", type: "toggle", quick: true },
     { key: "headline", label: "Headline", type: "text" },
     { key: "brand", label: "Product name", type: "text" },
-    { key: "links", label: "Nav links (comma-sep)", type: "text" },
-    { key: "featureNames", label: "Features (comma-sep)", type: "text" },
+    { key: "links", label: "Nav links", help: "Separate items with commas.", type: "text" },
+    { key: "featureNames", label: "Features", help: "Separate items with commas.", type: "text" },
   ],
   render(p, w, h) {
     const prims: Prim[] = [rect(0, 0, w, h)]
@@ -2342,7 +2342,7 @@ export const chatScreenDef: ComponentDef = {
     { key: "composer", label: "Composer", type: "toggle", quick: true },
     { key: "who", label: "Talking to", type: "text" },
     { key: "title", label: "Title", type: "text" },
-    { key: "others", label: "Other people (comma-sep)", type: "text" },
+    { key: "others", label: "Other people", help: "Separate items with commas.", type: "text" },
   ],
   render(p, w, h) {
     const prims: Prim[] = [rect(0, 0, w, h)]
@@ -2452,8 +2452,8 @@ export const inboxScreenDef: ComponentDef = {
     { key: "pane", label: "Reading pane", type: "toggle", quick: true },
     { key: "folders", label: "Folder rail", type: "toggle", quick: true },
     { key: "subject", label: "Subject", type: "text" },
-    { key: "folderNames", label: "Folders (comma-sep)", type: "text" },
-    { key: "senders", label: "Senders (comma-sep)", type: "text" },
+    { key: "folderNames", label: "Folders", help: "Separate items with commas.", type: "text" },
+    { key: "senders", label: "Senders", help: "Separate items with commas.", type: "text" },
   ],
   render(p, w, h) {
     const prims: Prim[] = [rect(0, 0, w, h)]
@@ -2553,8 +2553,8 @@ export const profileScreenDef: ComponentDef = {
     { key: "cards", label: "Cards", type: "number", min: 2, max: 9, quick: true },
     { key: "tabs", label: "Tabs", type: "toggle", quick: true },
     { key: "navbar", label: "Navbar", type: "toggle" },
-    { key: "links", label: "Nav links (comma-sep)", type: "text" },
-    { key: "tabLabels", label: "Tabs (comma-sep)", type: "text" },
+    { key: "links", label: "Nav links", help: "Separate items with commas.", type: "text" },
+    { key: "tabLabels", label: "Tabs", help: "Separate items with commas.", type: "text" },
   ],
   render(p, w, h) {
     const prims: Prim[] = [rect(0, 0, w, h)]

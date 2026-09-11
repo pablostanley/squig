@@ -186,7 +186,7 @@ export const settingsDef: ComponentDef = {
     { key: "nav", label: "Side nav", type: "toggle", quick: true },
     { key: "active", label: "Active section", type: "number", min: 1, max: 5, quick: true },
     { key: "danger", label: "Danger zone", type: "toggle", quick: true },
-    { key: "items", label: "Nav items (comma-sep)", type: "text" },
+    { key: "items", label: "Nav items", help: "Separate items with commas.", type: "text" },
   ],
   render(p, w, h) {
     const prims: Prim[] = [rect(0, 0, w, h)]
@@ -291,7 +291,7 @@ export const dashboardDef: ComponentDef = {
     { key: "stats", label: "Stat cards", type: "number", min: 2, max: 4, quick: true },
     { key: "chart", label: "Chart style", type: "select", options: ["line", "bars", "pie"], quick: true },
     { key: "table", label: "Side table", type: "toggle" },
-    { key: "items", label: "Nav items (comma-sep)", type: "text" },
+    { key: "items", label: "Nav items", help: "Separate items with commas.", type: "text" },
   ],
   render(p, w, h) {
     const prims: Prim[] = [rect(0, 0, w, h)]
@@ -354,8 +354,8 @@ export const pricingDef: ComponentDef = {
   controls: [
     { key: "plans", label: "Plans", type: "number", min: 2, max: 4, quick: true },
     { key: "highlight", label: "Highlighted", type: "number", min: 0, max: 4, quick: true },
-    { key: "names", label: "Plan names (comma-sep)", type: "text" },
-    { key: "prices", label: "Prices (comma-sep)", type: "text" },
+    { key: "names", label: "Plan names", help: "Separate items with commas.", type: "text" },
+    { key: "prices", label: "Prices", help: "Separate items with commas.", type: "text" },
   ],
   render(p, w, h) {
     const prims: Prim[] = []

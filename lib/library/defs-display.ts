@@ -221,7 +221,7 @@ export const tabsDef: ComponentDef = {
   size: { w: 300, h: 40 },
   defaults: { labels: "Overview, Details, Reviews", active: 1 },
   controls: [
-    { key: "labels", label: "Tabs (comma-sep)", type: "text" },
+    { key: "labels", label: "Tabs", help: "Separate items with commas.", type: "text" },
     { key: "active", label: "Active", type: "number", min: 1, max: 6, quick: true },
   ],
   render(p, w, h) {
@@ -298,7 +298,7 @@ export const dropdownDef: ComponentDef = {
   size: { w: 180, h: 150 },
   defaults: { items: "Profile, Settings, Invite team, Log out", icons: true, divider: true },
   controls: [
-    { key: "items", label: "Items (comma-sep)", type: "text" },
+    { key: "items", label: "Items", help: "Separate items with commas.", type: "text" },
     { key: "icons", label: "Icons", type: "toggle", quick: true },
     { key: "divider", label: "Last item apart", type: "toggle", quick: true },
   ],
@@ -445,7 +445,7 @@ export const breadcrumbDef: ComponentDef = {
   size: { w: 260, h: 24 },
   defaults: { items: "Home, Library, Data", separator: "chevron", homeIcon: false },
   controls: [
-    { key: "items", label: "Items (comma-sep)", type: "text" },
+    { key: "items", label: "Items", help: "Separate items with commas.", type: "text" },
     { key: "separator", label: "Separator", type: "select", options: ["chevron", "slash"], quick: true },
     { key: "homeIcon", label: "Home icon", type: "toggle", quick: true },
   ],
