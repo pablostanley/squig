@@ -1,3 +1,4 @@
+import { rotatedBounds } from "./rotation"
 // ---------------------------------------------------------------------------
 // Connector routing — pure geometry shared by drawing, hit testing and the
 // on-canvas adjustment handles.
@@ -265,7 +266,7 @@ export function arrowRouteBounds(n: ArrowNode): RouteBounds {
 
 /** The box occupied by what a node actually draws, including routed bends. */
 export function nodeVisualBounds(n: SquigNode): RouteBounds {
-  return n.type === "arrow" ? arrowRouteBounds(n) : { x: n.x, y: n.y, w: n.w, h: n.h }
+  return n.type === "arrow" ? arrowRouteBounds(n) : rotatedBounds(n)
 }
 
 /** Route handle and segment in world coordinates for the selection overlay. */

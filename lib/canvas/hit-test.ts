@@ -9,9 +9,10 @@
 // ---------------------------------------------------------------------------
 
 import { normalizeFill, type SquigNode } from "../types"
-import type { Bounds } from "../selection"
+import { unionBounds, type Bounds } from "../selection"
 import { mirrorPoint } from "./transform"
-import { arrowRouteBounds, sampleArrowRoute } from "./line-routing"
+import { rotatePoint, rotatedCorners, unrotatePoint } from "./rotation"
+import { arrowRouteBounds, nodeVisualBounds, sampleArrowRoute } from "./line-routing"
 
 /**
  * How far off a stroke the pointer may be and still count, in screen px.
@@ -121,14 +122,44 @@ function isSolid(n: SquigNode): boolean {
   return n.type === "component" || n.type === "text" || n.type === "image"
 }
 
+function rotatedHitsRect(n: SquigNode, r: Bounds): boolean {
+  const spin = (x: number, y: number) => rotatePoint(x, y, n.x + n.w / 2, n.y + n.h / 2, n.rotation ?? 0)
+  // Transform the marquee into the ellipse's unit circle. Segment distance
+  // then tests the actual ring without approximating it with a polygon.
+  if (n.type === "shape" && n.shape === "ellipse" && n.w > 0 && n.h > 0) {
+    const corners = rotatedCorners(r).map(([x, y]) => {
+      const p = unrotatePoint(n, x, y)
+      return [(p[0] - n.x - n.w / 2) / (n.w / 2), (p[1] - n.y - n.h / 2) / (n.h / 2)] as [number, number]
+    })
+    let near = inBox(n.x + n.w / 2, n.y + n.h / 2, r, 0) ? 0 : Infinity
+    for (let i = 0; i < 4; i++) near = Math.min(near, distToSegment(0, 0, ...corners[i], ...corners[(i + 1) % 4]))
+    const far = Math.max(...corners.map(([x, y]) => Math.hypot(x, y)))
+    return near <= 1 && (isSolid(n) || far >= 1)
+  }
+  const line = polylineOf(n)
+  const points = line ? line.map(([x, y]) => spin(x, y)) : rotatedCorners(n)
+  if (points.length === 1) return inBox(...points[0], r, 0)
+  const segments = line ? points.length - 1 : points.length
+  for (let i = 0; i < segments; i++) {
+    if (segmentNearRect(...points[i], ...points[(i + 1) % points.length], r, 0)) return true
+  }
+  // No edges cross. A solid rectangle may still contain the whole marquee.
+  if (isSolid(n)) {
+    const [x, y] = unrotatePoint(n, r.x, r.y)
+    return inBox(x, y, n, 0)
+  }
+  return false
+}
+
 // ---------------------------------------------------------------------------
 
 /** Is this node under the given world point? */
 export function hitsPoint(n: SquigNode, x: number, y: number, zoom: number): boolean {
+  ;[x, y] = unrotatePoint(n, x, y)
   const tol = pickTolerance(zoom, n)
   const b = boxOf(n)
   if (!inBox(x, y, b, tol)) return false
-  if (isSolid(n)) return true
+  if (isSolid(n) && !(n.type === "shape" && n.shape === "ellipse")) return true
 
   const line = polylineOf(n)
   if (line) {
@@ -148,6 +179,7 @@ export function hitsPoint(n: SquigNode, x: number, y: number, zoom: number): boo
     const nx = (x - cx) / rx
     const ny = (y - cy) / ry
     const r = Math.hypot(nx, ny)
+    if (isSolid(n) && r <= 1) return true
     // dead centre of a squashed ellipse: nearest ink is the short radius away
     if (r < 1e-6) return Math.min(rx, ry) <= tol
     // Project onto the ring along the ray from the centre and measure in world
@@ -164,9 +196,26 @@ export function hitsPoint(n: SquigNode, x: number, y: number, zoom: number): boo
 
 /** Does this node fall inside/across a marquee rect (world units)? */
 export function hitsRect(n: SquigNode, r: Bounds, zoom: number): boolean {
+  if (n.rotation) return rotatedHitsRect(n, r)
   const b = boxOf(n)
   // bounding boxes must at least touch — `>=` so a tangent marquee counts
   if (!(b.x <= r.x + r.w && b.x + b.w >= r.x && b.y <= r.y + r.h && b.y + b.h >= r.y)) return false
+  if (n.type === "shape" && n.shape === "ellipse") {
+    const rx = n.w / 2
+    const ry = n.h / 2
+    if (rx <= 0 || ry <= 0) return true
+    const cx = n.x + rx
+    const cy = n.y + ry
+    const nearX = Math.max(r.x, Math.min(cx, r.x + r.w))
+    const nearY = Math.max(r.y, Math.min(cy, r.y + r.h))
+    const farX = Math.max(Math.abs(r.x - cx), Math.abs(r.x + r.w - cx))
+    const farY = Math.max(Math.abs(r.y - cy), Math.abs(r.y + r.h - cy))
+    const near = Math.hypot((nearX - cx) / rx, (nearY - cy) / ry)
+    const far = Math.hypot(farX / rx, farY / ry)
+    // A ring can cross a marquee entirely inside its rectangular bounds.
+    // Test the oval before the hollow-rectangle interior rejection below.
+    return near <= 1 && (isSolid(n) || far >= 1)
+  }
   if (isSolid(n)) return true
 
   // for hollow things, require the marquee to actually reach the ink, so a box
@@ -194,25 +243,6 @@ export function hitsRect(n: SquigNode, r: Bounds, zoom: number): boolean {
     r.x >= interior.x && r.y >= interior.y && r.x + r.w <= interior.x + interior.w && r.y + r.h <= interior.y + interior.h
   if (insideInterior) return false
 
-  if (n.type === "shape" && n.shape === "ellipse") {
-    // cheap and good enough: the corners of an ellipse's bbox are empty, so
-    // reject a marquee that only reaches one of them
-    const rx = n.w / 2
-    const ry = n.h / 2
-    if (rx <= 0 || ry <= 0) return true
-    const cx = n.x + rx
-    const cy = n.y + ry
-    const nearestX = Math.max(r.x, Math.min(cx, r.x + r.w))
-    const nearestY = Math.max(r.y, Math.min(cy, r.y + r.h))
-    const farX = Math.abs(r.x - cx) > Math.abs(r.x + r.w - cx) ? r.x : r.x + r.w
-    const farY = Math.abs(r.y - cy) > Math.abs(r.y + r.h - cy) ? r.y : r.y + r.h
-    const near = Math.hypot((nearestX - cx) / rx, (nearestY - cy) / ry)
-    const far = Math.hypot((farX - cx) / rx, (farY - cy) / ry)
-    const band = tol / Math.max(1e-6, Math.min(rx, ry))
-    // the ring is crossed when the rect spans radius 1
-    return near <= 1 + band && far >= 1 - band
-  }
-
   return true
 }
 
@@ -232,6 +262,7 @@ export function hitsRect(n: SquigNode, r: Bounds, zoom: number): boolean {
  * connectors swallow clicks meant for the space between things.
  */
 export function hitsInterior(n: SquigNode, x: number, y: number): boolean {
+  ;[x, y] = unrotatePoint(n, x, y)
   const hollowShape = n.type === "shape" && normalizeFill(n.fill) === "none"
   if (!hollowShape && n.type !== "draw") return false
   if (!inBox(x, y, boxOf(n), 0)) return false
@@ -279,10 +310,8 @@ const reachable = (n: SquigNode | undefined, opts?: PickOpts): n is SquigNode =>
 /**
  * Topmost hollow node whose interior holds the point, or null.
  *
- * The click-only fallback behind `pickAt`: call it when the hard pick came up
- * empty and the press turned out to be a click rather than a drag. Because it
- * only runs after a full miss, anything filled has already won, and walking
- * front-to-back settles overlapping hollow shapes by z-order.
+ * The interior fallback behind `pickAt`. Visible content wins before this
+ * runs, so a hollow container never hides the objects drawn inside it.
  */
 export function pickSoftAt(
   nodes: Record<string, SquigNode>,
@@ -296,6 +325,40 @@ export function pickSoftAt(
     if (reachable(n, opts) && hitsInterior(n, x, y)) return order[i]
   }
   return null
+}
+
+export type CanvasTarget =
+  | { kind: "node"; id: string }
+  | { kind: "selection" }
+  | { kind: "marquee"; softHitId: string | null }
+
+/** The same target drives the press and its hover feedback. */
+export function canvasTarget(
+  nodes: Record<string, SquigNode>,
+  order: readonly string[],
+  selection: readonly string[],
+  x: number,
+  y: number,
+  zoom: number,
+  mods: { shift: boolean; toggle: boolean }
+): CanvasTarget {
+  // Visible content wins over a transparent container, even if the container
+  // is in front. This keeps controls inside a wireframe reachable.
+  const hard = pickAt(nodes, order, x, y, zoom)
+  if (hard) return { kind: "node", id: hard }
+  const soft = pickSoftAt(nodes, order, x, y)
+  if (soft && selection.includes(soft)) return { kind: "node", id: soft }
+
+  // Empty space between selected members is a grip for the whole selection.
+  // Shift leaves it available for a fresh marquee.
+  if (!mods.shift && !mods.toggle && selection.length > 1) {
+    const b = unionBounds(selection.map((id) => nodes[id]).filter((n) => n && !n.locked).map(nodeVisualBounds))
+    if (b && inBox(x, y, b, 0)) return { kind: "selection" }
+  }
+  // Shift-drag inside an unselected container sweeps its contents; a click
+  // still toggles the container. Plain drags move it on the very first press.
+  if (soft && (!mods.shift || mods.toggle)) return { kind: "node", id: soft }
+  return { kind: "marquee", softHitId: soft }
 }
 
 /** Topmost node under a world point, or null. Walks front-to-back. */

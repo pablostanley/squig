@@ -8,11 +8,11 @@
 // ---------------------------------------------------------------------------
 
 import { imageSheet } from "@/lib/canvas/crop"
-import { HANDLES, HANDLE_CURSORS, type Handle } from "@/lib/canvas/transform"
+import { HANDLES, type Handle } from "@/lib/canvas/transform"
 import { imagePlacement, mirrorBox } from "@/lib/sketch/paths"
 import type { ImageNode } from "@/lib/types"
 import { NodeSketch } from "./sketch"
-import { grabPad, handleHitBox, HANDLE_DOT, HANDLE_ROOM } from "./selection-overlay"
+import { resizeCursor, grabPad, handleHitBox, HANDLE_DOT, HANDLE_ROOM } from "@/lib/canvas/handles"
 
 /** How much of the picture still shows where the crop has cut it away. */
 const GHOST_OPACITY = 0.28
@@ -28,11 +28,11 @@ const GHOST_OPACITY = 0.28
 export function CropStage({ node }: { node: ImageNode }) {
   const p = imagePlacement(node)
   return (
-    <g transform={`translate(${node.x} ${node.y})`}>
+    <g transform={`translate(${node.x} ${node.y}) rotate(${-(node.rotation ?? 0)} ${node.w / 2} ${node.h / 2})`}>
       <g transform={mirrorBox(node.w, node.h, node.flipX, node.flipY)} opacity={GHOST_OPACITY}>
         <image href={node.src} x={p.x} y={p.y} width={p.w} height={p.h} preserveAspectRatio="none" />
       </g>
-      <NodeSketch node={node} />
+      <NodeSketch node={{ ...node, rotation: undefined }} />
     </g>
   )
 }
@@ -70,7 +70,10 @@ export function CropOverlay({
   const padY = grabPad(h, showTall)
 
   return (
-    <>
+    <div className="pointer-events-none absolute inset-0" style={{
+      transform: node.rotation ? `rotate(${-node.rotation}deg)` : undefined,
+      transformOrigin: `${left + w / 2}px ${top + h / 2}px`,
+    }}>
       {/* the whole picture: how far a drag can still go, and the surface that
           slides under the window — it takes the press and lets it bubble to
           the canvas, which is where the pan gesture actually starts */}
@@ -117,7 +120,7 @@ export function CropOverlay({
               <div
                 key={hd}
                 className="pointer-events-auto absolute"
-                style={{ left: box.left, top: box.top, width: box.width, height: box.height, cursor: HANDLE_CURSORS[hd] }}
+                style={{ left: box.left, top: box.top, width: box.width, height: box.height, cursor: resizeCursor(hd, node.rotation) }}
                 onPointerDown={(e) => onStartCrop(hd, e)}
               >
                 <div
@@ -134,6 +137,6 @@ export function CropOverlay({
             )
           })}
       </div>
-    </>
+    </div>
   )
 }

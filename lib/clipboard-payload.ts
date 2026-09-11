@@ -17,6 +17,7 @@
 
 import type { SquigNode, TextNode } from "./types"
 import { normalizeArrowAnchors, normalizeBind, normalizeCrop, normalizeLineStyle } from "./types"
+import { normalizeRotation } from "./canvas/rotation"
 import { normalizeGroupIds } from "./canvas/groups"
 
 const PAYLOAD_VERSION = 1
@@ -117,6 +118,8 @@ export function validNode(v: unknown): SquigNode | null {
   if (!num(n.x) || !num(n.y) || !num(n.w) || !num(n.h)) return null
   if (n.groupIds !== undefined && !(Array.isArray(n.groupIds) && n.groupIds.every(str))) return null
   n.groupIds = normalizeGroupIds(n.groupIds)
+  if (n.rotation !== undefined && !num(n.rotation)) return null
+  n.rotation = n.type === "arrow" ? undefined : normalizeRotation(n.rotation ?? 0) || undefined
 
   switch (n.type) {
     case "component":

@@ -11,6 +11,7 @@ import type { Bounds } from "../selection"
 import { textBlockHeight, textContentWidth } from "../sketch/text-layout"
 import { wrapText } from "./text-metrics"
 import { setTextHeight, setTextWidth, textNaturalHeight } from "./text-reflow"
+import { orientResize } from "./rotation"
 
 export const HANDLES = ["nw", "n", "ne", "e", "se", "s", "sw", "w"] as const
 export type Handle = (typeof HANDLES)[number]
@@ -72,8 +73,8 @@ export interface ResizeOpts {
 
 /**
  * Where the bounding box ends up after dragging `handle` by (dx, dy) in world
- * units. Clamps rather than flipping — squig has never supported mirrored
- * nodes and a surprise flip mid-drag is worse than a hard stop.
+ * units. Clamps rather than flipping; explicit flip commands keep a resize
+ * from accidentally mirroring the selection.
  */
 export function resizeBounds(orig: Bounds, handle: Handle, dx: number, dy: number, opts: ResizeOpts = {}): Bounds {
   const movesW = handle.includes("w")
@@ -109,51 +110,24 @@ export function resizeBounds(orig: Bounds, handle: Handle, dx: number, dy: numbe
     const cx = orig.x + orig.w / 2
     const cy = orig.y + orig.h / 2
 
-    if (isCorner) {
-      // uniform scale driven by whichever axis the user pulled harder.
-      // Inverted spans floor at zero rather than going through Math.abs: an
-      // absolute value turns "dragged 250px past the anchor" into "250px wide
-      // again", so the box would shrink, bottom out, then grow back the other
-      // way — the exact mirroring this function promises not to do.
-      const s = Math.max(Math.max(0, right - left) / orig.w, Math.max(0, bottom - top) / orig.h)
-      const w = orig.w * s
-      const h = orig.h * s
-      if (opts.fromCenter) {
-        left = cx - w / 2
-        right = cx + w / 2
-        top = cy - h / 2
-        bottom = cy + h / 2
-      } else {
-        // pin the corner opposite the one being dragged
-        if (movesW) {
-          right = orig.x + orig.w
-          left = right - w
-        } else {
-          left = orig.x
-          right = left + w
-        }
-        if (movesN) {
-          bottom = orig.y + orig.h
-          top = bottom - h
-        } else {
-          top = orig.y
-          bottom = top + h
-        }
-      }
-    } else if (movesE || movesW) {
-      // side handle: the perpendicular axis grows about the centre
-      const h = (Math.max(0, right - left) * orig.h) / orig.w
-      top = cy - h / 2
-      bottom = cy + h / 2
-    } else {
-      const w = (Math.max(0, bottom - top) * orig.w) / orig.h
-      left = cx - w / 2
-      right = cx + w / 2
+    // Clamp the uniform scale, rather than each dimension independently.
+    // Otherwise a 2:1 box turns into a square when it reaches the minimum.
+    const sx = Math.max(0, right - left) / orig.w
+    const sy = Math.max(0, bottom - top) / orig.h
+    const scale = Math.max(MIN_SIZE / orig.w, MIN_SIZE / orig.h,
+      isCorner ? Math.max(sx, sy) : movesE || movesW ? sx : sy)
+    const w = orig.w * scale
+    const h = orig.h * scale
+    return {
+      x: opts.fromCenter || (!movesW && !movesE) ? cx - w / 2 : movesW ? orig.x + orig.w - w : orig.x,
+      y: opts.fromCenter || (!movesN && !movesS) ? cy - h / 2 : movesN ? orig.y + orig.h - h : orig.y,
+      w,
+      h,
     }
   }
 
   // -- clamp (never flip) ---------------------------------------------------
-  if (right - left < MIN_SIZE) {
+  if ((movesW || movesE) && right - left < MIN_SIZE) {
     if (opts.fromCenter) {
       const c = (left + right) / 2
       left = c - MIN_SIZE / 2
@@ -164,7 +138,7 @@ export function resizeBounds(orig: Bounds, handle: Handle, dx: number, dy: numbe
       right = left + MIN_SIZE
     }
   }
-  if (bottom - top < MIN_SIZE) {
+  if ((movesN || movesS) && bottom - top < MIN_SIZE) {
     if (opts.fromCenter) {
       const c = (top + bottom) / 2
       top = c - MIN_SIZE / 2
@@ -252,18 +226,21 @@ export function resizeNodesBy(
   delta: number
 ): Record<string, Partial<SquigNode>> {
   if (!origNodes.length || !Number.isFinite(delta) || delta === 0) return {}
-  const next: Bounds =
-    axis === "width"
-      ? { ...orig, w: Math.max(MIN_SIZE, orig.w + delta) }
-      : { ...orig, h: Math.max(MIN_SIZE, orig.h + delta) }
+  const solo = origNodes.length === 1 ? origNodes[0] : null
+  if (solo && solo.type !== "arrow") orig = solo
+  // A nonuniform world scale would shear rotated members. The document stores
+  // rectangles and angles, so preserve their proportions just as pointer resize does.
+  const next = resizeBounds(orig, axis === "width" ? "e" : "s", axis === "width" ? delta : 0,
+    axis === "height" ? delta : 0, { aspect: !solo && origNodes.some((n) => !!n.rotation) })
   if (next.w === orig.w && next.h === orig.h) return {}
 
-  const solo = origNodes.length === 1 ? origNodes[0] : null
   if (solo?.type === "text") {
     const patch = axis === "width" ? setTextWidth(solo, next.w) : setTextHeight(solo, next.h)
-    return { [solo.id]: patch as Partial<SquigNode> }
+    return { [solo.id]: orientResize(solo, patch as Partial<SquigNode>) }
   }
-  return scaleNodes(origNodes, orig, next)
+  const patches = scaleNodes(origNodes, orig, next)
+  if (solo) patches[solo.id] = orientResize(solo, patches[solo.id])
+  return patches
 }
 
 /** Handle offsets within a bbox of the given size, for the overlay. */

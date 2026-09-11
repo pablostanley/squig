@@ -191,6 +191,8 @@ export function TextEditOverlay({ node, target }: { node: SquigNode; target: Edi
       }}
       className="absolute resize-none overflow-hidden border-0 outline-none"
       style={{
+        transform: node.rotation ? `rotate(${-node.rotation}deg)` : undefined,
+        transformOrigin: `${(node.x + node.w / 2) * v.zoom + v.x - box.left}px ${(node.y + node.h / 2) * v.zoom + v.y - box.top}px`,
         left: box.left,
         top: box.top,
         width: box.width,

@@ -11,6 +11,7 @@ import {
   vouchNode,
 } from "@/lib/doc"
 import { pruneDegenerateGroups } from "@/lib/canvas/groups"
+import { normalizeRotation } from "@/lib/canvas/rotation"
 import type { TextMeasurer } from "@/lib/canvas/text-metrics"
 import type { FontMode } from "@/lib/theme"
 import { textMeasurer } from "./text-metrics"
@@ -305,6 +306,7 @@ export function applyOperations(
         members(op.ids).forEach((n) => {
           if (op.axis === "x") n.flipX = !n.flipX
           else n.flipY = !n.flipY
+          n.rotation = normalizeRotation(-(n.rotation ?? 0)) || undefined
         })
         break
       case "align": {

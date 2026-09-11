@@ -1,5 +1,10 @@
 # squig multi-select — UX spec
 
+This is the original implementation plan. The current interaction rules and
+the selection/rotation sweep are in [Canvas interaction audit](canvas-interaction-audit.md).
+In particular, transparent interiors now move, selected edges resize, and
+Shift-drag inside an unselected outline starts a marquee.
+
 Target: a user coming from Figma / FigJam should never be surprised. Every
 behaviour below is either a direct match to those tools or the obvious
 adaptation for a tool that has no groups/frames.

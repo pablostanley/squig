@@ -9,6 +9,7 @@
 // drawn, not as a napkin, and corners must actually meet. Icons stay crisp.
 // ---------------------------------------------------------------------------
 
+import { rotationTransform } from "@/lib/canvas/rotation"
 import { memo, useMemo } from "react"
 import { INK, type Prim } from "@/lib/sketch/kit"
 import { imagePlacement, mirrorBox, mirrorGlyphs, primsToPaths } from "@/lib/sketch/paths"
@@ -135,10 +136,10 @@ export const NodeSketch = memo(function NodeSketch({
   const prims = useMemo<Prim[]>(() => nodePrims(node), [shapeKey, node.type])
 
   return (
-    <>
+    <g transform={rotationTransform(node)}>
       {node.type === "image" && <ImagePixels node={node} />}
       <SketchPrims prims={prims} seed={node.seed} hiddenText={hiddenText} />
-    </>
+    </g>
   )
 })
 

@@ -340,4 +340,31 @@ const docJson = () => JSON.stringify({ nodes: s().nodes, order: s().order })
 
 // ---------------------------------------------------------------------------
 
+
+{
+  reset()
+  const id = rect(0, 0)
+  s().updateNode(id, { x: 30 }, { checkpoint: true })
+  s().undo()
+  const past = s().past.length
+  const future = s().future
+  s().checkpoint()
+  s().updateNode(id, { x: 60 })
+  s().updateNode(id, { x: 0 })
+  s().finishCheckpoint()
+  check("out-and-back drag leaves no undo step", s().past.length === past)
+  check("out-and-back drag preserves redo", s().future === future)
+  s().redo()
+  check("redo still applies the displaced edit", s().nodes[id].x === 30)
+  s().checkpoint()
+  s().updateNode(id, { rotation: 45 })
+  s().finishCheckpoint()
+  s().undo()
+  check("rotation undoes as one step", !s().nodes[id].rotation)
+  s().redo()
+  check("rotation redoes as one step", s().nodes[id].rotation === 45)
+  s().flipSelected("x")
+  check("flipping a rotated shape reflects its orientation", s().nodes[id].rotation === -45)
+}
+
 report("history checks passed")

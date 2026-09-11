@@ -18,6 +18,7 @@
 // ---------------------------------------------------------------------------
 
 import type { ArrowAnchor, ArrowAnchors, ArrowBind, ArrowNode, SquigNode } from "../types"
+import { rotatePoint, unrotatePoint } from "./rotation"
 import { hitsInterior, hitsPoint } from "./hit-test"
 
 /**
@@ -183,6 +184,7 @@ function axisLoad(u: number, r: number): number {
  * rectangles, and a freehand scribble has no outline anyone could name.
  */
 export function edgeDistance(n: SquigNode, ux: number, uy: number): number {
+  ;[ux, uy] = rotatePoint(ux, uy, 0, 0, -(n.rotation ?? 0))
   const ax = axisLoad(Math.abs(ux), n.w / 2)
   const ay = axisLoad(Math.abs(uy), n.h / 2)
   const round = n.type === "shape" && n.shape === "ellipse"
@@ -198,35 +200,26 @@ const centreOf = (n: SquigNode): Point => [n.x + n.w / 2, n.y + n.h / 2]
 export function anchorPoint(n: SquigNode, anchor: ArrowAnchor): Point {
   const cx = n.x + n.w / 2
   const cy = n.y + n.h / 2
-  switch (anchor) {
-    case "top": return [cx, n.y]
-    case "right": return [n.x + n.w, cy]
-    case "bottom": return [cx, n.y + n.h]
-    case "left": return [n.x, cy]
-    case "center": return [cx, cy]
-  }
+  const point: Point = anchor === "top" ? [cx, n.y] : anchor === "right" ? [n.x + n.w, cy]
+    : anchor === "bottom" ? [cx, n.y + n.h] : anchor === "left" ? [n.x, cy] : [cx, cy]
+  return rotatePoint(...point, cx, cy, n.rotation ?? 0)
 }
 
-/**
- * The endpoint drawn for an anchor. Side anchors keep the small bit of
- * daylight Squig has always put between ink and outline; center means center.
- */
+/** Side anchors keep daylight from the outline along the rotated normal. */
 function connectionPoint(n: SquigNode, anchor: ArrowAnchor): Point {
   const [x, y] = anchorPoint(n, anchor)
-  switch (anchor) {
-    case "top": return [x, y - EDGE_GAP]
-    case "right": return [x + EDGE_GAP, y]
-    case "bottom": return [x, y + EDGE_GAP]
-    case "left": return [x - EDGE_GAP, y]
-    case "center": return [x, y]
-  }
+  const offset: Point = anchor === "top" ? [0, -EDGE_GAP] : anchor === "right" ? [EDGE_GAP, 0]
+    : anchor === "bottom" ? [0, EDGE_GAP] : anchor === "left" ? [-EDGE_GAP, 0] : [0, 0]
+  const [dx, dy] = rotatePoint(...offset, 0, 0, n.rotation ?? 0)
+  return [x + dx, y + dy]
 }
 
 /** Which primary side of a node faces a point. Used only to upgrade old binds. */
 function facingAnchor(n: SquigNode, toward: Point, fallback: ArrowAnchor): ArrowAnchor {
   const [cx, cy] = centreOf(n)
-  const dx = toward[0] - cx
-  const dy = toward[1] - cy
+  const local = unrotatePoint(n, ...toward)
+  const dx = local[0] - cx
+  const dy = local[1] - cy
   if (Math.abs(dx) <= EPS && Math.abs(dy) <= EPS) return fallback
 
   // Compare in box-relative space so a wide card still gives its top and
@@ -398,7 +391,8 @@ function nearNode(n: SquigNode, x: number, y: number, zoom: number): boolean {
       return Math.hypot(x - ax, y - ay) <= pad
     })
   }
-  return x >= n.x - pad && x <= n.x + n.w + pad && y >= n.y - pad && y <= n.y + n.h + pad
+  const [lx, ly] = unrotatePoint(n, x, y)
+  return lx >= n.x - pad && lx <= n.x + n.w + pad && ly >= n.y - pad && ly <= n.y + n.h + pad
 }
 
 /** The closest of the four side midpoints and center. */

@@ -22,6 +22,7 @@ import { normalizeFill, normalizeInk, normalizeStroke } from "@/lib/types"
 import { isCropped, trueShapePatch } from "@/lib/canvas/crop"
 import { getDef } from "@/lib/library/registry"
 import { lockedIds, selectionSummary, shared, sharedControls, sharedNumber, unionBounds } from "@/lib/selection"
+import { normalizeRotation, orientResize } from "@/lib/canvas/rotation"
 import { scaleNodes, MIN_SIZE } from "@/lib/canvas/transform"
 import { fitTextBox, setTextBoxed, setTextBoxSize, setTextHeight, setTextWidth } from "@/lib/canvas/text-reflow"
 import { VariantControl } from "./variant-controls"
@@ -453,6 +454,15 @@ function SelectionEditor({ selected }: { selected: SquigNode[] }) {
           />
         </div>
 
+        {arrows.length === 0 && (
+          <Row label="Rotation">
+            <MixedNumberField label="°" ariaLabel="Rotation" shared={sharedNumber(selected, (n) => n.rotation ?? 0)}
+              onGestureStart={startGesture}
+              onCommit={(v) => live(() => ({ rotation: normalizeRotation(v) || undefined }))}
+              onStep={(d) => live((n) => ({ rotation: normalizeRotation((n.rotation ?? 0) + d) || undefined }))} />
+          </Row>
+        )}
+
         {/* eight icons don't fit beside a label column, so alignment takes the
             full width and flipping — which is always available — keeps the row */}
         {multi && (
@@ -848,10 +858,10 @@ function resizeTo(n: SquigNode, w: number, h: number): Partial<SquigNode> {
   // Text dimensions edit the container, just like its four side handles. The
   // font only changes from a corner transform or the Size field.
   if (n.type === "text") {
-    if (w !== n.w && h !== n.h) return setTextBoxSize(n, w, h, n.fontSize) as Partial<SquigNode>
-    if (w !== n.w) return setTextWidth(n, w) as Partial<SquigNode>
-    if (h !== n.h) return setTextHeight(n, h) as Partial<SquigNode>
+    if (w !== n.w && h !== n.h) return orientResize(n, setTextBoxSize(n, w, h, n.fontSize) as Partial<SquigNode>)
+    if (w !== n.w) return orientResize(n, setTextWidth(n, w) as Partial<SquigNode>)
+    if (h !== n.h) return orientResize(n, setTextHeight(n, h) as Partial<SquigNode>)
   }
   const from = unionBounds([n])!
-  return scaleNodes([n], from, { x: n.x, y: n.y, w, h })[n.id]
+  return orientResize(n, scaleNodes([n], from, { x: n.x, y: n.y, w, h })[n.id])
 }

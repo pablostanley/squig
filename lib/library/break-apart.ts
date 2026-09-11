@@ -3,6 +3,7 @@
 // nodes. The same prims that draw the component become real canvas nodes.
 // ---------------------------------------------------------------------------
 
+import { rotateNodes } from "@/lib/canvas/rotation"
 import { nanoid } from "nanoid"
 import type { ComponentNode, FillTone, SquigNode } from "@/lib/types"
 import { measureTextWidth } from "@/lib/canvas/text-metrics"
@@ -140,5 +141,7 @@ export function breakApart(node: ComponentNode): SquigNode[] {
       }
     }
   }
-  return out
+  if (!node.rotation) return out
+  const rotated = rotateNodes(out, [node.x + node.w / 2, node.y + node.h / 2], node.rotation)
+  return out.map((n) => ({ ...n, ...rotated[n.id] }) as SquigNode)
 }

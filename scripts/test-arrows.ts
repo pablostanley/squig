@@ -10,6 +10,7 @@
 
 import {
   anchorTargetAt,
+  anchorPoint,
   arrowEnds,
   bindTargetAt,
   bindable,
@@ -454,5 +455,18 @@ function doc(list: SquigNode[]): Record<string, SquigNode> {
 }
 
 // ---------------------------------------------------------------------------
+
+
+{
+  const n = { ...box("rotated", 100, 100, 200, 80), rotation: 90 }
+  pointIs("rotation carries the right connector anchor to the top", anchorPoint(n, "right"), [200, 40])
+  check("rotated edge distance follows the visible width", close(edgeDistance(n, 1, 0), 40))
+  check("anchor capture follows rotated edges", anchorTargetAt({ rotated: n }, ["rotated"], 200, 25, 1)?.anchor === "right")
+  check("anchor capture ignores the old unrotated box", anchorTargetAt({ rotated: n }, ["rotated"], 105, 140, 1) === null)
+  const arrow: ArrowNode = { id: "attached", seed: 1, type: "arrow", x: 200, y: -100, w: 100, h: 100,
+    points: [[0, 100], [100, 0]], head: true, bind: ["rotated", null], anchors: ["right", null] }
+  const ends = routeEnds(arrow, { rotated: n })
+  check("a bound arrow follows a rotated side with the same gap", !!ends && close(ends[0][0], 200) && close(ends[0][1], 40 - EDGE_GAP))
+}
 
 report("arrow checks passed")

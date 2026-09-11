@@ -24,6 +24,7 @@ import {
   planGroupPaths,
   pruneDegenerateGroups,
 } from "./canvas/groups"
+import { normalizeRotation } from "./canvas/rotation"
 import { breakApart } from "./library/break-apart"
 import {
   applyLook,
@@ -198,6 +199,7 @@ interface SquigState {
   removeNodes: (ids: string[], opts?: { checkpoint?: boolean }) => void
   /** discard the last checkpoint and restore it — cancels an in-flight gesture */
   revertToCheckpoint: () => void
+  finishCheckpoint: () => void
   /** an empty text editor closing: undo the click that placed the draft, or
    *  delete the layer whose words were emptied */
   dismissDraft: (id: string) => void
@@ -928,6 +930,14 @@ export const useSquig = create<SquigState>((set, get) => ({
     })
   },
 
+  finishCheckpoint: () => {
+    const s = get()
+    const before = s.past.at(-1)
+    if (!before || !sameDoc(before, s)) return
+    // Out-and-back drags should neither consume Undo nor destroy Redo.
+    set({ past: s.past.slice(0, -1), future: before.displacedFuture ?? s.future })
+  },
+
   /**
    * Roll back to the most recent checkpoint and forget it ever happened.
    * This is Escape-cancels-the-drag: a cancelled gesture leaves the document
@@ -1462,8 +1472,8 @@ export const useSquig = create<SquigState>((set, get) => ({
     for (const n of sel) {
       patches[n.id] =
         axis === "x"
-          ? { x: box.minX + box.maxX - (n.x + n.w), flipX: !n.flipX }
-          : { y: box.minY + box.maxY - (n.y + n.h), flipY: !n.flipY }
+          ? { x: box.minX + box.maxX - (n.x + n.w), flipX: !n.flipX, rotation: normalizeRotation(-(n.rotation ?? 0)) || undefined }
+          : { y: box.minY + box.maxY - (n.y + n.h), flipY: !n.flipY, rotation: normalizeRotation(-(n.rotation ?? 0)) || undefined }
     }
     get().edit(() => get().updateNodes(patches))
   },

@@ -12,6 +12,7 @@
 
 import type { ExportSurface } from "@/lib/export-image-document"
 import { svgDocument } from "@/lib/export-image-document"
+import { rotationTransform } from "@/lib/canvas/rotation"
 import { nodeVisualBounds } from "@/lib/canvas/line-routing"
 import type { TextMeasurer } from "@/lib/canvas/text-metrics"
 import { iconPathsReady, loadIconWeight, normalizeIconWeight, type IconWeight } from "./icon-catalog"
@@ -112,7 +113,9 @@ export function nodeMarkup(
     )
   }
 
-  return `<g transform="translate(${node.x} ${node.y})">${out.join("")}</g>`
+  const rotation = rotationTransform(node)
+  const body = rotation ? `<g transform="${rotation}">${out.join("")}</g>` : out.join("")
+  return `<g transform="translate(${node.x} ${node.y})">${body}</g>`
 }
 
 /**

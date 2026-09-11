@@ -49,6 +49,7 @@ When the two disagree, the code is right.
 | `seed` | number | the wobble's random seed. Same seed, same hand-drawn line, every render. |
 | `groupIds` | string[]? | the groups this node is in, outermost first. |
 | `flipX`, `flipY` | boolean? | mirrored along its own box. Layout flips; glyphs do not. |
+| `rotation` | number? | counterclockwise degrees around the box center; absent means zero. Normalized to [-180, 180). Connectors store their orientation in their endpoints instead. |
 | `locked` | boolean? | still prints, but the pointer walks past it. Never in a selection. |
 
 Absent is the default for every optional field, and it is the only spelling of

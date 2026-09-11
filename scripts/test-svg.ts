@@ -122,4 +122,12 @@ const gs = (svg: string) => (svg.match(/<g transform="translate\(/g) ?? []).leng
   check("an icon from a weight that had to be fetched still prints its glyph", /<g transform="translate\(\d[^"]*\) scale\([^"]*\)"><path/.test(svg))
 }
 
+
+{
+  const svg = renderSvg([{ ...box, rotation: 90 }], LOOK)
+  check("SVG rotates the same local node as the canvas", svg.includes('rotate(-90 50 25)'))
+  const vb = svg.match(/viewBox="([^"]+)"/)?.[1].split(" ").map(Number)
+  check("SVG bounds include the rotated width and height", !!vb && vb[2] === 50 + EXPORT_PAD * 2 && vb[3] === 100 + EXPORT_PAD * 2)
+}
+
 report("svg checks passed")

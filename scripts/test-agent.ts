@@ -288,6 +288,15 @@ check("aligned to the same top", arranged.nodes.a.y === arranged.nodes.c.y)
 check("brought to the front", arranged.order.at(-1) === "a")
 check("flipped on x", arranged.nodes.c.flipX === true)
 
+const rotatedLayer = applyOperations(d, operation.array().parse([
+  { op: "update", patches: [{ id: "c", patch: { rotation: 390 } }] },
+])).document
+check("agent updates accept and normalize rotation", rotatedLayer.nodes.c.rotation === 30)
+const flippedRotation = applyOperations(rotatedLayer, operation.array().parse([
+  { op: "flip", ids: ["c"], axis: "x" },
+])).document
+check("agent flips reflect a rotated layer's angle", flippedRotation.nodes.c.rotation === -30)
+
 // -- detaching a component --------------------------------------------------
 
 const detached = applyOperations(

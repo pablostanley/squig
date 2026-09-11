@@ -14,6 +14,27 @@ export interface GroupPick {
   groupId: string | null
 }
 
+/** Defer destructive click changes until release so a press can still move. */
+export function selectionForPress(
+  current: GroupPick,
+  picked: GroupPick,
+  additive: boolean,
+  deep: boolean
+): { press: GroupPick; click: GroupPick | null } {
+  const contained = picked.ids.every((id) => current.ids.includes(id))
+  if (additive) {
+    if (contained) {
+      return {
+        press: current,
+        click: { ids: current.ids.filter((id) => !picked.ids.includes(id)), groupId: null },
+      }
+    }
+    return { press: { ids: [...new Set([...current.ids, ...picked.ids])], groupId: null }, click: null }
+  }
+  if (deep || !contained || current.ids.length === picked.ids.length) return { press: picked, click: null }
+  return { press: current, click: picked }
+}
+
 const pathOf = (n: SquigNode | undefined): readonly string[] => n?.groupIds ?? []
 
 /** Canonical path spelling for documents and clipboard payloads. */

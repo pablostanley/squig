@@ -78,6 +78,8 @@ export interface BaseNode {
   /** Mirrored along its own box — see mirrorPrims, which flips layout not glyphs */
   flipX?: boolean
   flipY?: boolean
+  /** Counterclockwise degrees about the center; absent means unrotated. */
+  rotation?: number
   /**
    * Held down: the layer still prints and still exports, but the pointer walks
    * straight past it. This is for the background rectangle and the screenshot

@@ -178,6 +178,8 @@ export function docBounds(doc: SquigDoc): Box | null {
 export interface NodeAt {
   x: number
   y: number
+  /** Counterclockwise degrees around the node's center. */
+  rotation?: number
   id?: string
   seed?: number
   /** held down: still prints, but the pointer walks past it — see BaseNode */
@@ -206,6 +208,7 @@ export function componentNode(kind: string, at: ComponentAt): ComponentNode {
     y: at.y,
     w: at.w ?? def.size.w,
     h: at.h ?? def.size.h,
+    ...(at.rotation !== undefined ? { rotation: at.rotation } : {}),
     ...(at.locked ? { locked: true } : {}),
   }
 }
@@ -246,6 +249,7 @@ export function textNode(text: string, at: TextAt, measureText?: TextMeasurer): 
     y: at.y,
     w: at.w ?? 0,
     h: 0,
+    ...(at.rotation !== undefined ? { rotation: at.rotation } : {}),
     ...(at.w !== undefined ? { fixedW: true } : {}),
     ...(at.align && at.align !== "left" ? { align: at.align } : {}),
     ...(at.bold ? { bold: true } : {}),
@@ -280,6 +284,7 @@ export function shapeNode(shape: ShapeKind, at: ShapeAt): ShapeNode {
     y: at.y,
     w: at.w,
     h: at.h,
+    ...(at.rotation !== undefined ? { rotation: at.rotation } : {}),
     ...(at.stroke && at.stroke !== "regular" ? { stroke: at.stroke } : {}),
     ...(at.ink && at.ink !== "ink" ? { ink: at.ink } : {}),
     ...(at.dashed ? { dashed: true } : {}),

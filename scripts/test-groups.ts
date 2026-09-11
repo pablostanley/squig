@@ -19,7 +19,7 @@ const held = new Map<string, string>()
 }
 
 const { useSquig } = await import("../lib/store.ts")
-const { canGroupSelection, groupPickForHit, stepIntoGroup } = await import("../lib/canvas/groups.ts")
+const { canGroupSelection, groupPickForHit, selectionForPress, stepIntoGroup } = await import("../lib/canvas/groups.ts")
 import type { SquigNode } from "../lib/types.ts"
 import { check, report } from "./harness.ts"
 
@@ -202,5 +202,19 @@ for (const [label, duplicate] of [
 }
 
 // ---------------------------------------------------------------------------
+
+
+{
+  const current = { ids: ["a", "b"], groupId: null }
+  const picked = { ids: ["a"], groupId: null }
+  const plain = selectionForPress(current, picked, false, false)
+  check("plain press preserves the whole selection for dragging", plain.press.ids.join() === "a,b" && plain.click?.ids.join() === "a")
+  const shift = selectionForPress(current, picked, true, false)
+  check("Shift press defers removal until release", shift.press.ids.join() === "a,b" && shift.click?.ids.join() === "b")
+  const deep = selectionForPress(current, picked, false, true)
+  check("deep-selection immediately isolates the leaf for dragging", deep.press.ids.join() === "a" && deep.click === null)
+  const addDeep = selectionForPress(current, { ids: ["c"], groupId: null }, true, true)
+  check("Shift plus deep-selection adds the leaf", addDeep.press.ids.join() === "a,b,c")
+}
 
 report("group checks passed")

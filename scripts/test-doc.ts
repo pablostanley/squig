@@ -452,4 +452,18 @@ const button = (id: string, x = 0, y = 0) => componentNode("button", { id, seed:
   check("an eighty-character id is welcome", addNodes(emptyDoc("ids"), [shapeNode("rect", { x: 0, y: 0, w: 1, h: 1, id: long, seed: 1 })]).order[0] === long)
 }
 
+
+{
+  const n = shapeNode("rect", { id: "rotated", seed: 1, x: 0, y: 0, w: 100, h: 50 })
+  const rotated = patchNode(n, { rotation: 450 })
+  check("node validation canonicalizes rotation", rotated.rotation === 90)
+  const doc = addNodes(emptyDoc(), [rotated])
+  check("rotation survives saving and loading", parseDoc(serializeDoc(doc))?.nodes.rotated.rotation === 90)
+  check("nonfinite rotation is rejected", sanitizeDoc({ bad: { ...n, id: "bad", rotation: Infinity } }, ["bad"]).order.length === 0)
+  check("zero rotation has a single absent spelling", patchNode(rotated, { rotation: 360 }).rotation === undefined)
+  check("shape builders carry rotation", shapeNode("rect", { x: 0, y: 0, w: 20, h: 10, rotation: 30 }).rotation === 30)
+  check("text builders carry rotation", textNode("hi", { x: 0, y: 0, rotation: 30 }).rotation === 30)
+  check("component builders carry rotation", componentNode("button", { x: 0, y: 0, rotation: 30 }).rotation === 30)
+}
+
 report("document checks passed")

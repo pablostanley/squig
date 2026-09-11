@@ -51,7 +51,7 @@ import { pinchViewport, type PinchStart, type Pt } from "@/lib/canvas/pinch"
 import { useSpacebarPan } from "@/lib/canvas/use-spacebar-pan"
 import { useFileDrop } from "@/lib/canvas/use-file-drop"
 import { resizeBounds, resizeNodesBy, scaleNodes, type Handle } from "@/lib/canvas/transform"
-import { pickAt, pickInRect, pickSoftAt, type PickOpts } from "@/lib/canvas/hit-test"
+import { canvasTarget, pickAt, pickInRect, pickSoftAt, type PickOpts } from "@/lib/canvas/hit-test"
 import { canvasOwnsKeyboard } from "@/lib/canvas/keyboard-owner"
 import { useClipboard } from "@/lib/canvas/use-clipboard"
 import { editTarget, hasEditableText, iconControlAt, textControlAt } from "@/lib/canvas/edit-target"
@@ -63,13 +63,15 @@ import { exportDoc } from "@/lib/file-io"
 import { copyAsPngWithNotice } from "@/lib/export-image"
 import { clampGestureZoom, zoomFloor, MAX_ZOOM, MIN_ZOOM } from "@/lib/canvas/navigate"
 import { inViewBox, visibleBox } from "@/lib/canvas/cull"
-import { groupPickForHit, stepIntoGroup, type GroupPick } from "@/lib/canvas/groups"
+import { groupPickForHit, selectionForPress, stepIntoGroup, type GroupPick } from "@/lib/canvas/groups"
 import { ContextRow } from "./context-row"
 import { CropOverlay, CropStage } from "./crop-overlay"
 import { EmptyCanvas } from "./empty-canvas"
 import { AnchorZones, SelectionOverlay, SmartGuides } from "./selection-overlay"
 import { TextEditOverlay } from "./text-edit-overlay"
 import { nodeVisualBounds, type RouteHandle } from "@/lib/canvas/line-routing"
+import { normalizeRotation, orientResize, rotateNodes, rotatePoint, rotationDelta, unrotatePoint } from "@/lib/canvas/rotation"
+import { resizeCursor, ROTATE_CURSOR } from "@/lib/canvas/handles"
 import { SMALL_NUDGE } from "@/lib/nudge"
 import { constrainMoveTo45, constrainSnapToDirection, type DragDirection } from "@/lib/canvas/move"
 
@@ -171,7 +173,7 @@ export type Gesture =
        *  drag narrows to exactly this set. Carries the set rather than the id
        *  because ⌘-click means "just this piece" while a plain click means
        *  "this piece's whole group". */
-      collapseTo: GroupPick | null
+      clickSelection: GroupPick | null
     }
   | {
       kind: "marquee"
@@ -247,6 +249,18 @@ export type Gesture =
       dirty: boolean
     }
   | {
+      kind: "rotate"
+      sx: number
+      sy: number
+      pointerId: number
+      exceeded: boolean
+      center: [number, number]
+      startAngle: number
+      initialRotation: number
+      origNodes: SquigNode[]
+      dirty: boolean
+    }
+  | {
       kind: "resize"
       handle: Handle
       wx: number
@@ -273,6 +287,7 @@ export type Gesture =
       id: string
       /** the box at gesture start */
       origWin: Bounds
+      rotation: number
       /** where the whole picture lay at gesture start — see lib/canvas/crop */
       origSheet: Bounds
       /**
@@ -331,7 +346,7 @@ export function Canvas() {
    * layer, or worse, plant a new one. So the second press is caught in
    * startResize, before it becomes a gesture at all.
    */
-  const lastHandlePress = useRef<{ handle: Handle; t: number } | null>(null)
+  const lastHandlePress = useRef<{ handle: Handle; t: number; selection: string } | null>(null)
   const swallowDblClickUntil = useRef(0)
   const autoPanRef = useRef<number | null>(null)
   const autoPanTickRef = useRef<() => void>(() => {})
@@ -372,10 +387,12 @@ export function Canvas() {
   const [marquee, setMarquee] = useState<Bounds | null>(null)
   const [guides, setGuides] = useState<GuideLine[]>([])
   const [snapDistances, setSnapDistances] = useState<DistanceIndicator[]>([])
+  const [gestureCursor, setGestureCursor] = useState<string | null>(null)
+  const [rotationFrame, setRotationFrame] = useState<Bounds | undefined>(undefined)
+  const [rotationLabel, setRotationLabel] = useState<number | null>(null)
   const [cursor, setCursor] = useState<[number, number] | null>(null)
   const [livePoints, setLivePoints] = useState<[number, number][] | null>(null)
-  /** soft: the pointer is over a hollow shape's middle — a click would select
-   *  it but a drag would marquee, so the outline shows without a move cursor */
+  /** Soft hover: Shift inside an unselected outline offers marquee selection. */
   const [hover, setHover] = useState<{ id: string; soft: boolean; locked: boolean } | null>(null)
   /** the node an arrow end would attach to if it were let go right now */
   const [bindHint, setBindHint] = useState<ArrowTarget | null>(null)
@@ -580,7 +597,7 @@ export function Canvas() {
         // while a hollow-shape candidate is in play the press hasn't chosen a
         // meaning yet, so the selection holds still: a click will take the
         // shape on release, and a real drag lands in the branch below
-        if (!g.exceeded && g.softHitId) return
+        if (!g.exceeded) return
         const box: Bounds = {
           x: Math.min(g.wx, wx),
           y: Math.min(g.wy, wy),
@@ -611,7 +628,7 @@ export function Canvas() {
           s.checkpoint()
           g.dirty = true
           // a real drag means this was never a click, so nothing collapses
-          g.collapseTo = null
+          g.clickSelection = null
         }
 
         // alt engages and disengages drag-a-copy, live, mid-gesture
@@ -817,25 +834,41 @@ export function Canvas() {
         return
       }
 
+      if (g.kind === "rotate") {
+        if (!g.exceeded) return
+        if (!g.dirty) { s.checkpoint(); g.dirty = true }
+        const current = Math.atan2(g.center[1] - wy, wx - g.center[0]) * 180 / Math.PI
+        const delta = rotationDelta(g.startAngle, current, g.initialRotation, mods.shift)
+        s.updateNodes(rotateNodes(g.origNodes, g.center, delta))
+        setRotationLabel(normalizeRotation(g.initialRotation + delta))
+        return
+      }
+
       if (g.kind === "resize") {
         if (!g.dirty) {
           if (!g.exceeded) return
           s.checkpoint()
           g.dirty = true
         }
-        const dx = wx - g.wx
-        const dy = wy - g.wy
+        const solo = g.origNodes.length === 1 ? g.origNodes[0] : null
+        const rotation = solo?.rotation ?? 0
+        const [dx, dy] = rotatePoint(wx - g.wx, wy - g.wy, 0, 0, -rotation)
+        const applyResize = (patches: Record<string, Partial<SquigNode>>) => {
+          if (solo) patches[solo.id] = orientResize(solo, patches[solo.id])
+          s.updateNodes(patches)
+        }
 
         // One text layer alone resizes like a text container. Side handles own
         // one box axis without touching the font. Corners own both axes; Shift
         // locks the box ratio, while the glyphs themselves always keep theirs.
         const soloText = g.origNodes.length === 1 && g.origNodes[0].type === "text" ? (g.origNodes[0] as TextNode) : null
-        const lockAspect = mods.shift && (!soloText || g.handle.length === 2)
+        const lockAspect = (mods.shift && (!soloText || g.handle.length === 2)) ||
+          (!solo && g.origNodes.some((n) => !!n.rotation))
 
         const raw = resizeBounds(g.origBounds, g.handle, dx, dy, { aspect: lockAspect, fromCenter: mods.alt })
         let next = raw
 
-        if (!mods.toggle && !lockAspect) {
+        if (!mods.toggle && !lockAspect && !rotation) {
           // measure the snap on the unsnapped box, then fold the correction
           // back through the same resize so the result stays self-consistent
           const rectS = makeSnapRect("__bbox__", raw.x * v.zoom + v.x, raw.y * v.zoom + v.y, raw.w * v.zoom, raw.h * v.zoom)
@@ -863,7 +896,7 @@ export function Canvas() {
             : g.handle === "w"
               ? next.x + next.w - w
               : next.x
-          s.updateNodes({ [soloText.id]: { ...patch, x } as Partial<SquigNode> })
+          applyResize({ [soloText.id]: { ...patch, x } as Partial<SquigNode> })
           return
         }
 
@@ -878,7 +911,7 @@ export function Canvas() {
             : g.handle === "n"
               ? next.y + next.h - h
               : next.y
-          s.updateNodes({ [soloText.id]: { ...patch, y } as Partial<SquigNode> })
+          applyResize({ [soloText.id]: { ...patch, y } as Partial<SquigNode> })
           return
         }
 
@@ -900,11 +933,11 @@ export function Canvas() {
             : g.handle.includes("n")
               ? next.y + next.h - h
               : next.y
-          s.updateNodes({ [soloText.id]: { ...patch, x, y } as Partial<SquigNode> })
+          applyResize({ [soloText.id]: { ...patch, x, y } as Partial<SquigNode> })
           return
         }
 
-        s.updateNodes(scaleNodes(g.origNodes, g.origBounds, next))
+        applyResize(scaleNodes(g.origNodes, g.origBounds, next))
         return
       }
 
@@ -914,8 +947,7 @@ export function Canvas() {
           s.checkpoint()
           g.dirty = true
         }
-        const dx = wx - g.wx
-        const dy = wy - g.wy
+        const [dx, dy] = rotatePoint(wx - g.wx, wy - g.wy, 0, 0, -g.rotation)
 
         // Sliding the picture: the window is pinned and the sheet moves under
         // it, stopping when the picture's own edge would come inside the box.
@@ -934,7 +966,8 @@ export function Canvas() {
         const aspect = mods.shift
         const raw = resizeBounds(g.origWin, g.handle, dx, dy, { aspect, fromCenter: mods.alt })
         const win = clampWindow(raw, g.origSheet, aspect ? cropAnchor(g.handle, g.origWin, mods.alt) : undefined)
-        s.updateNodes({ [g.id]: cropPatch(win, g.origSheet, g.flipX, g.flipY) as Partial<SquigNode> })
+        s.updateNodes({ [g.id]: orientResize({ ...g.origWin, rotation: g.rotation },
+          cropPatch(win, g.origSheet, g.flipX, g.flipY) as Partial<SquigNode>) })
         return
       }
 
@@ -1090,6 +1123,9 @@ export function Canvas() {
     gestureAbort.current = null
     st().setTransforming(false)
     setGestureKind(null)
+    setRotationLabel(null)
+    setGestureCursor(null)
+    setRotationFrame(undefined)
     setGuides([])
     setSnapDistances([])
     setLivePoints(null)
@@ -1195,8 +1231,8 @@ export function Canvas() {
 
     // a click with no drag inside a bigger selection narrows to what was
     // clicked — already resolved to a group or a single piece at press time
-    if (g.kind === "move" && !g.exceeded && g.collapseTo) {
-      s.setSelection(g.collapseTo.ids, g.collapseTo.groupId)
+    if (g.kind === "move" && !g.exceeded && g.clickSelection) {
+      s.setSelection(g.clickSelection.ids, g.clickSelection.groupId)
     }
 
     // the press sat inside a hollow shape and never became a drag: it was a
@@ -1230,6 +1266,8 @@ export function Canvas() {
       )
     }
 
+    if ((g.kind === "move" || g.kind === "resize" || g.kind === "rotate" || g.kind === "crop" ||
+      g.kind === "endpoint" || g.kind === "route") && g.dirty) s.finishCheckpoint()
     teardownGesture()
   }, [st, stopAutoPan, teardownGesture])
 
@@ -1242,7 +1280,7 @@ export function Canvas() {
 
     if (g.kind === "marquee") {
       s.setSelection(g.base, g.baseGroupId)
-    } else if ((g.kind === "move" || g.kind === "resize" || g.kind === "crop" || g.kind === "endpoint" || g.kind === "route") && g.dirty) {
+    } else if ((g.kind === "move" || g.kind === "resize" || g.kind === "rotate" || g.kind === "crop" || g.kind === "endpoint" || g.kind === "route") && g.dirty) {
       // Escape undoes this drag, not the whole crop — you stay in the mode
       s.revertToCheckpoint()
     } else if (g.kind === "create") {
@@ -1291,6 +1329,8 @@ export function Canvas() {
     (g: Gesture, e: React.PointerEvent) => {
       gestureRef.current = g
       setGestureKind(g.kind)
+      setGestureCursor(g.kind === "resize" ? resizeCursor(g.handle, g.origNodes.length === 1 ? g.origNodes[0].rotation : 0) : null)
+      setRotationFrame(g.kind === "rotate" && g.origNodes.length > 1 ? unionBounds(g.origNodes.map(nodeVisualBounds)) ?? undefined : undefined)
 
       // capture keeps events coming even when the pointer leaves the window
       const ids = gesturePointers(g)
@@ -1316,7 +1356,12 @@ export function Canvas() {
       window.addEventListener(
         "pointerup",
         (ev: PointerEvent) => {
-          if (ids.includes(ev.pointerId)) finishGesture()
+          if (!ids.includes(ev.pointerId)) return
+          if (g.kind !== "pinch") {
+            modsRef.current = readMods(ev)
+            updateGesture(ev.clientX, ev.clientY)
+          }
+          finishGesture()
         },
         opts
       )
@@ -1352,9 +1397,9 @@ export function Canvas() {
       // resolve once up front so a zero-distance press still does its job
       modsRef.current = readMods(e)
       lastPointRef.current = { clientX: e.clientX, clientY: e.clientY }
-      if (g.kind === "marquee") updateGesture(e.clientX, e.clientY)
+      if (g.kind === "marquee" && !g.softHitId && marqueeMode(modsRef.current) === "replace") st().setSelection([])
     },
-    [onPointerMove, finishGesture, cancelGesture, updateGesture]
+    [onPointerMove, finishGesture, cancelGesture, updateGesture, st]
   )
 
   /** Double-clicking a side handle un-fixes the width — the box hugs again. */
@@ -1377,17 +1422,19 @@ export function Canvas() {
 
   const startResize = useCallback(
     (handle: Handle, e: React.PointerEvent) => {
+      if (e.button !== 0 || !e.isPrimary || gestureRef.current) return
       e.stopPropagation()
       e.preventDefault()
       const s = st()
       const sel = s.selection.map((id) => s.nodes[id]).filter(Boolean) as SquigNode[]
-      const b = unionBounds(sel.map(nodeVisualBounds))
+      const b = sel.length === 1 ? { x: sel[0].x, y: sel[0].y, w: sel[0].w, h: sel[0].h }
+        : unionBounds(sel.map(nodeVisualBounds))
       if (!b) return
 
       // the second press on the same handle, soon enough after the first
       const prev = lastHandlePress.current
-      lastHandlePress.current = { handle, t: e.timeStamp }
-      const doubled = !!prev && prev.handle === handle && e.timeStamp - prev.t < 400
+      lastHandlePress.current = { handle, t: e.timeStamp, selection: s.selection.join(",") }
+      const doubled = !!prev && prev.handle === handle && prev.selection === s.selection.join(",") && e.timeStamp - prev.t < 400
       const lone = sel.length === 1 ? sel[0] : null
 
       // double-clicking a side handle of a fixed-width text layer un-fixes it
@@ -1439,6 +1486,22 @@ export function Canvas() {
     [st, beginGesture, toWorld, resetTextWidth, resetTextHeight]
   )
 
+  const startRotate = useCallback((e: React.PointerEvent) => {
+    if (e.button !== 0 || !e.isPrimary || gestureRef.current) return
+    e.stopPropagation()
+    e.preventDefault()
+    const s = st()
+    const origNodes = s.selection.map((id) => s.nodes[id]).filter((n) => n && !n.locked)
+    const b = unionBounds(origNodes.map(nodeVisualBounds))
+    if (!b) return
+    const center: [number, number] = [b.x + b.w / 2, b.y + b.h / 2]
+    const [wx, wy] = toWorld(e)
+    beginGesture({ kind: "rotate", sx: e.clientX, sy: e.clientY, pointerId: e.pointerId, exceeded: false,
+      center, startAngle: Math.atan2(center[1] - wy, wx - center[0]) * 180 / Math.PI,
+      initialRotation: origNodes.length === 1 ? origNodes[0].rotation ?? 0 : 0,
+      origNodes: structuredClone(origNodes), dirty: false }, e)
+  }, [st, toWorld, beginGesture])
+
   /**
    * A press on one of a lone arrow's two end dots.
    *
@@ -1448,6 +1511,7 @@ export function Canvas() {
    */
   const startEndpoint = useCallback(
     (end: 0 | 1, e: React.PointerEvent) => {
+      if (e.button !== 0 || !e.isPrimary || gestureRef.current) return
       e.stopPropagation()
       e.preventDefault()
       const s = st()
@@ -1478,6 +1542,7 @@ export function Canvas() {
   /** Pick up the active connector's elbow segment or curved midpoint. */
   const startRoute = useCallback(
     (handle: RouteHandle, e: React.PointerEvent) => {
+      if (e.button !== 0 || !e.isPrimary || gestureRef.current) return
       e.stopPropagation()
       e.preventDefault()
       const s = st()
@@ -1512,6 +1577,7 @@ export function Canvas() {
   /** A press on one of the eight crop handles. */
   const startCrop = useCallback(
     (handle: Handle, e: React.PointerEvent) => {
+      if (e.button !== 0 || !e.isPrimary || gestureRef.current) return
       e.stopPropagation()
       e.preventDefault()
       const s = st()
@@ -1531,6 +1597,7 @@ export function Canvas() {
           exceeded: false,
           id: n.id,
           origWin: { x: n.x, y: n.y, w: n.w, h: n.h },
+          rotation: n.rotation ?? 0,
           origSheet: imageSheet(n),
           flipX: !!n.flipX,
           flipY: !!n.flipY,
@@ -1553,6 +1620,15 @@ export function Canvas() {
    */
   const onPointerDownCapture = useCallback(
     (e: React.PointerEvent) => {
+      if (e.isPrimary && !gestureRef.current && (e.button === 1 || (e.button === 0 && isSpacebarHeld))) {
+        e.stopPropagation()
+        e.preventDefault()
+        containerRef.current?.focus({ preventScroll: true })
+        const v = st().viewport
+        beginGesture({ kind: "pan", sx: e.clientX, sy: e.clientY, ox: v.x, oy: v.y,
+          pointerId: e.pointerId, exceeded: false }, e)
+        return
+      }
       if (e.pointerType !== "touch") return
       const pts = touchesRef.current
       pts.set(e.pointerId, toLocal(e))
@@ -1594,13 +1670,13 @@ export function Canvas() {
         e
       )
     },
-    [toLocal, st, beginGesture, cancelGesture]
+    [toLocal, st, beginGesture, cancelGesture, isSpacebarHeld]
   )
 
   const onPointerDown = useCallback(
     (e: React.PointerEvent) => {
       // secondary buttons and stray extra touches never start a gesture
-      if (e.button > 1 || !e.isPrimary) return
+      if (e.button > 1 || !e.isPrimary || gestureRef.current) return
       const s = st()
       // a press on the editor's textarea belongs to the caret — grabbing
       // focus here would blur the editor mid-click and end the edit
@@ -1638,7 +1714,7 @@ export function Canvas() {
       // a press off the picture is how you leave.
       if (s.croppingId) {
         const n = cropTarget(s.nodes, s.selection, s.croppingId)
-        if (n && inRect(imageSheet(n), wx, wy)) {
+        if (n && inRect(imageSheet(n), ...unrotatePoint(n, wx, wy))) {
           beginGesture(
             {
               kind: "crop",
@@ -1648,6 +1724,7 @@ export function Canvas() {
               id: n.id,
               handle: "pan",
               origWin: { x: n.x, y: n.y, w: n.w, h: n.h },
+              rotation: n.rotation ?? 0,
               origSheet: imageSheet(n),
               flipX: !!n.flipX,
               flipY: !!n.flipY,
@@ -1718,45 +1795,28 @@ export function Canvas() {
       }
 
       // -- select tool ------------------------------------------------------
-      const hitId = pickAt(s.nodes, s.order, wx, wy, s.viewport.zoom)
+      const target = canvasTarget(s.nodes, s.order, s.selection, wx, wy, s.viewport.zoom, mods)
+      const hitId = target.kind === "node" ? target.id : null
 
-      if (hitId) {
-        const grouped = !!s.nodes[hitId]?.groupIds?.length
+      if (target.kind !== "marquee") {
+        const grouped = !!hitId && !!s.nodes[hitId]?.groupIds?.length
         // ⌘/Ctrl reaches past a group to the one thing under the cursor. With
         // nothing to reach past it has no such job, so outside a group it
         // falls back to toggling — which is what a Ctrl+click is everywhere
         // that isn't a design tool.
         const deep = mods.toggle && grouped
-        const picked = deep
-          ? { ids: [hitId], groupId: null }
-          : groupPickForHit(hitId, s.selection, s.selectionGroupId, s.nodes, s.order)
-        const hitSet = picked.ids
-        const additive = !deep && (mods.shift || mods.toggle)
-        let sel = s.selection
-        let sourceGroupId = s.selectionGroupId
-        let collapseTo: GroupPick | null = null
-
-        if (additive) {
-          if (hitSet.every((id) => sel.includes(id))) {
-            // toggling something off is the whole interaction — no drag follows
-            s.setSelection(sel.filter((i) => !hitSet.includes(i)))
-            return
-          }
-          sel = [...new Set([...sel, ...hitSet])]
-          s.setSelection(sel)
-          sourceGroupId = null
-        } else if (!hitSet.every((id) => sel.includes(id))) {
-          sel = hitSet
-          s.setSelection(sel, picked.groupId)
-          sourceGroupId = picked.groupId
-        } else if (sel.length === hitSet.length && sourceGroupId !== picked.groupId) {
-          s.setSelection(sel, picked.groupId)
-          sourceGroupId = picked.groupId
-        } else if (sel.length > hitSet.length) {
-          // already part of a bigger selection: hold the set together so it
-          // can be dragged, and only narrow down if this turns out to be a click
-          collapseTo = picked
-        }
+        const picked = !hitId
+          ? { ids: s.selection, groupId: s.selectionGroupId }
+          : deep
+            ? { ids: [hitId], groupId: null }
+            : groupPickForHit(hitId, s.selection, s.selectionGroupId, s.nodes, s.order)
+        const { press, click: clickSelection } = selectionForPress(
+          { ids: s.selection, groupId: s.selectionGroupId }, picked,
+          !!hitId && (mods.shift || (!deep && mods.toggle)), deep
+        )
+        const sel = press.ids
+        const sourceGroupId = press.groupId
+        s.setSelection(sel, sourceGroupId)
 
         const sourcePos: Record<string, { x: number; y: number }> = {}
         const sourceBounds: Record<string, Bounds> = {}
@@ -1765,7 +1825,7 @@ export function Canvas() {
         for (const id of s.order) {
           if (!sel.includes(id)) continue
           const n = s.nodes[id]
-          if (n) {
+          if (n && !n.locked) {
             sourcePos[id] = { x: n.x, y: n.y }
             sourceBounds[id] = nodeVisualBounds(n)
             sourceIds.push(id)
@@ -1784,7 +1844,7 @@ export function Canvas() {
           cloneIds: null,
           dirty: false,
           snapLock: { x: null, y: null },
-          collapseTo,
+          clickSelection,
         }, e)
         return
       }
@@ -1792,7 +1852,7 @@ export function Canvas() {
       // no ink under the press — marquee, with the current selection as its
       // base. If the press sits inside a hollow shape, that shape rides along
       // as the thing a mere click would mean.
-      const softHitId = pickSoftAt(s.nodes, s.order, wx, wy)
+      const softHitId = target.softHitId
       beginGesture({
         kind: "marquee",
         ...common,
@@ -1852,7 +1912,7 @@ export function Canvas() {
       // layer. Hand that property to the inspector just like an aimed text run
       // is handed to the inline editor below.
       if (n.type === "component") {
-        const [wx, wy] = toWorld(e)
+        const [wx, wy] = unrotatePoint(n, ...toWorld(e))
         const key = iconControlAt(n, wx - n.x, wy - n.y)
         if (key) {
           setAim(null)
@@ -1869,7 +1929,7 @@ export function Canvas() {
         // textControlAt, which answers null when the click landed on words no
         // control backs, and then the first control opens as it always did
         if (n.type === "component") {
-          const [wx, wy] = toWorld(e)
+          const [wx, wy] = unrotatePoint(n, ...toWorld(e))
           const key = textControlAt(n, wx - n.x, wy - n.y)
           setAim(key ? { id: hitId, key } : null)
         }
@@ -1937,15 +1997,24 @@ export function Canvas() {
         // one, but the hover has to say so, or a held-down rectangle is
         // indistinguishable from a wedged app. What it draws is different too
         // — see the hint below
-        const hard = pickAt(cur.nodes, cur.order, wx, wy, cur.viewport.zoom, { locked: true })
-        const id = hard ?? pickSoftAt(cur.nodes, cur.order, wx, wy, { locked: true })
-        setHover(id ? { id, soft: !hard, locked: !!cur.nodes[id]?.locked } : null)
+        const target = canvasTarget(cur.nodes, cur.order, cur.selection, wx, wy, cur.viewport.zoom, readMods(e))
+        if (target.kind === "selection") {
+          setHover({ id: cur.selection[0], soft: false, locked: false })
+        } else if (target.kind === "node") {
+          setHover({ id: target.id, soft: false, locked: false })
+        } else {
+          const id = target.softHitId ?? pickAt(cur.nodes, cur.order, wx, wy, cur.viewport.zoom, { locked: true })
+            ?? pickSoftAt(cur.nodes, cur.order, wx, wy, { locked: true })
+          setHover(id ? { id, soft: true, locked: !!cur.nodes[id]?.locked } : null)
+        }
       })
     },
     [st, toWorld, hover, isSpacebarHeld]
   )
 
   const onPointerLeave = useCallback(() => {
+    if (hoverRafRef.current !== null) cancelAnimationFrame(hoverRafRef.current)
+    hoverRafRef.current = null
     setHover(null)
     if (!gestureRef.current) setBindHint(null)
   }, [])
@@ -2401,7 +2470,8 @@ export function Canvas() {
   // that happened to be stacked above it shouldn't sit in the middle of it
   const cropNode = cropTarget(nodes, selection, croppingId)
   const hoverNode = hover && !selection.includes(hover.id) && !cropNode ? nodes[hover.id] : null
-  const hoverBounds = hoverNode ? nodeVisualBounds(hoverNode) : null
+  const hoverBounds = hoverNode ? unionBounds(groupPickForHit(hoverNode.id, selection, st().selectionGroupId, nodes, order)
+    .ids.map((id) => nodeVisualBounds(nodes[id]))) ?? nodeVisualBounds(hoverNode) : null
   const bindNode = bindHint ? nodes[bindHint.id] : null
   /**
    * The world worth drawing. Recomputed on every pan and zoom, which is
@@ -2417,6 +2487,12 @@ export function Canvas() {
     ? "grab"
     : placing || tool === "shape" || tool === "arrow" || tool === "draw" || tool === "text"
       ? "crosshair"
+      : gestureKind === "pan" || gestureKind === "pinch"
+        ? "grabbing"
+        : gestureKind === "rotate"
+          ? ROTATE_CURSOR
+        : gestureCursor
+          ? gestureCursor
       : gestureKind === "move"
         ? (altHeld ? "copy" : "move")
         // a crop drag captures the pointer, so the cursor comes from here once
@@ -2555,8 +2631,12 @@ export function Canvas() {
           onStartResize={startResize}
           onStartEndpoint={startEndpoint}
           onStartRoute={startRoute}
+          onStartRotate={startRotate}
+          rotationLabel={rotationLabel}
+          rotationFrame={rotationFrame}
           editing={!!editingId && selection.includes(editingId)}
           gestureKind={gestureKind}
+          interactive={tool === "select" && !placing}
         />
       )}
 

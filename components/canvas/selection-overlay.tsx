@@ -7,62 +7,19 @@
 //
 // All of it is screen-space chrome laid over the canvas: nothing here reads or
 // writes the document, it only draws what Canvas has hold of and hands presses
-// back. The handle geometry lives here because the ring is where it's from;
-// crop mode borrows it.
+// back. Selection and crop share the same handle geometry in lib/canvas.
 // ---------------------------------------------------------------------------
 
 import { anchorPoint, arrowEnds, bindOf } from "@/lib/canvas/arrow-binding"
 import { nodeVisualBounds, worldRouteHandle, type RouteHandle } from "@/lib/canvas/line-routing"
 import type { DistanceIndicator, GuideLine } from "@/lib/canvas/snap-engine"
-import { HANDLES, HANDLE_CURSORS, handleOffset, type Handle } from "@/lib/canvas/transform"
+import { type Handle } from "@/lib/canvas/transform"
+import { resizeCursor, ROTATE_CURSOR, GRAB_OUT, grabPad, handleHitBox, edgeHitBox, visibleHandles, HANDLE_DOT, HANDLE_ROOM } from "@/lib/canvas/handles"
+import type { Bounds } from "@/lib/selection"
 import { unionBounds } from "@/lib/selection"
 import { ARROW_ANCHORS, type ArrowAnchor, type ArrowNode, type SquigNode } from "@/lib/types"
 // type-only, so the two files don't actually depend on each other at runtime
 import type { Gesture } from "./canvas"
-
-/** roughly three handles' worth of box, below which they'd overlap into mush */
-export const HANDLE_ROOM = 34
-
-/** the white square you actually see, in screen px */
-export const HANDLE_DOT = 10
-
-/**
- * How far past the selection box a handle still answers to the pointer.
- *
- * Nothing else is grabbable out there, so the handles may as well be greedy
- * in that direction — aiming at a 10px square is the whole problem.
- */
-const GRAB_OUT = 8
-
-/** and how far inward, at most — see `grabPad` for why it's a maximum */
-const GRAB_IN = 8
-
-/**
- * Inward slop along one axis, in screen px.
- *
- * Reaching inward is where handles compete with each other, so the pad shrinks
- * on small boxes: `crowded` says a third handle sits halfway along this axis,
- * which halves the room each one gets. Without this a 40px box would resize
- * from its middle handle when you aimed at its corner.
- */
-export function grabPad(len: number, crowded: boolean): number {
-  const room = (crowded ? len / 4 : len / 2) - HANDLE_DOT / 2
-  return Math.max(0, Math.min(GRAB_IN, room))
-}
-
-/** The handle's hit rect and the offset of its dot inside it, in screen px. */
-export function handleHitBox(hd: Handle, w: number, h: number, padX: number, padY: number) {
-  const [hx, hy] = handleOffset(hd, w, h)
-  const r = HANDLE_DOT / 2
-  const span = (edgeLow: boolean, edgeHigh: boolean, pad: number): [number, number] => {
-    const lo = -r - (edgeLow ? GRAB_OUT : pad)
-    const hi = r + (edgeHigh ? GRAB_OUT : pad)
-    return [lo, hi - lo]
-  }
-  const [dx, width] = span(hd.includes("w"), hd.includes("e"), padX)
-  const [dy, height] = span(hd.includes("n"), hd.includes("s"), padY)
-  return { left: hx + dx, top: hy + dy, width, height, dotLeft: -dx - r, dotTop: -dy - r }
-}
 
 /** The target's complete connection vocabulary, with the nearest zone active. */
 export function AnchorZones({
@@ -84,6 +41,7 @@ export function AnchorZones({
           top: node.y * v.zoom + v.y,
           width: node.w * v.zoom,
           height: node.h * v.zoom,
+          transform: node.rotation ? `rotate(${-node.rotation}deg)` : undefined,
           borderRadius: node.type === "shape" && node.shape === "ellipse" ? "9999px" : "4px",
           border: "1px solid color-mix(in srgb, var(--sq-select) 58%, transparent)",
         }}
@@ -273,6 +231,10 @@ export function SelectionOverlay({
   onStartRoute,
   editing,
   gestureKind,
+  interactive,
+  onStartRotate,
+  rotationLabel,
+  rotationFrame,
 }: {
   selectedNodes: SquigNode[]
   viewport: { x: number; y: number; zoom: number }
@@ -281,9 +243,15 @@ export function SelectionOverlay({
   onStartRoute: (handle: RouteHandle, e: React.PointerEvent) => void
   editing: boolean
   gestureKind: Gesture["kind"] | null
+  interactive: boolean
+  onStartRotate: (e: React.PointerEvent) => void
+  rotationLabel: number | null
+  rotationFrame?: Bounds
 }) {
   const visualBounds = selectedNodes.map(nodeVisualBounds)
-  const b = unionBounds(visualBounds)
+  const solo = selectedNodes.length === 1 ? selectedNodes[0] : null
+  const b = rotationFrame ?? (solo && solo.type !== "arrow" ? solo : unionBounds(visualBounds))
+  const rotation = rotationFrame ? rotationLabel ?? 0 : solo?.rotation ?? 0
   // the text editor draws its own dashed box; two boxes on one node is noise.
   // Only when it's the *selected* node being edited, mind: a picture dropped in
   // while the caret is still blinking somewhere else is selected and has every
@@ -304,14 +272,14 @@ export function SelectionOverlay({
           node={soloArrow}
           viewport={viewport}
           onStart={onStartRoute}
-          show={!gestureKind || gestureKind === "route"}
+          show={interactive && (!gestureKind || gestureKind === "route")}
         />
         <ArrowEnds
           node={soloArrow}
           viewport={viewport}
           onStart={onStartEndpoint}
           // they stay up through their own drag, the way the resize handles do
-          show={!gestureKind || gestureKind === "endpoint"}
+          show={interactive && (!gestureKind || gestureKind === "endpoint")}
         />
       </>
     )
@@ -330,7 +298,7 @@ export function SelectionOverlay({
   // handles stay up through a resize: they track the box the way tldraw's do,
   // and unmounting them between the two presses of a double-click would hand
   // the second press to the canvas underneath
-  const showHandles = (!gestureKind || gestureKind === "resize") && w > 12 && h > 12
+  const showHandles = interactive && (!gestureKind || gestureKind === "resize")
   const showWide = w >= HANDLE_ROOM
   const showTall = h >= HANDLE_ROOM
 
@@ -338,11 +306,6 @@ export function SelectionOverlay({
   // hide the midpoint that would collide with their corner handles.
   const soloText = selectedNodes.length === 1 && selectedNodes[0].type === "text"
 
-  const visible = (hd: Handle) => {
-    if (hd === "n" || hd === "s") return showWide
-    if (hd === "e" || hd === "w") return soloText || showTall
-    return true
-  }
 
   // the n/s handles are the ones that crowd the x axis, and e/w the y axis
   const padX = grabPad(w, showWide)
@@ -367,8 +330,22 @@ export function SelectionOverlay({
         ))}
 
       {!marqueeing && (
-        <div className="pointer-events-none absolute" style={{ left, top, width: w, height: h }}>
+        <div className="pointer-events-none absolute" style={{ left, top, width: w, height: h,
+          transform: rotation ? `rotate(${-rotation}deg)` : undefined }}>
           <div className="absolute inset-0 rounded-sm" style={{ border: "2px solid var(--sq-select)" }} />
+          {showHandles && (["nw", "ne", "se", "sw"] as const).map((hd) => (
+            <div key={`rotate-${hd}`} data-rotate-handle={hd} className="pointer-events-auto absolute"
+              style={{ left: hd.includes("w") ? -26 : w, top: hd.includes("n") ? -26 : h,
+                width: 26, height: 26, cursor: ROTATE_CURSOR }} onPointerDown={onStartRotate} />
+          ))}
+          {showHandles && (["n", "e", "s", "w"] as const).map((hd) => {
+            const box = edgeHitBox(hd, w, h)
+            return box.width > 0 && box.height > 0 ? (
+              <div key={`edge-${hd}`} data-resize-edge={hd} className="pointer-events-auto absolute"
+                style={{ ...box, cursor: resizeCursor(hd, rotation) }}
+                onPointerDown={(e) => onStartResize(hd, e)} />
+            ) : null
+          })}
           {showHandles &&
             // Corners last, so they sit on top: their pads can meet a side's on
             // a tight box, and a mis-grab costs more on a corner than a side.
@@ -380,7 +357,7 @@ export function SelectionOverlay({
             // middle of either edge — exactly where you aim to set the wrap
             // width. There the sides sit on top, and the corners keep the
             // outward slop past the box that only they cover.
-            HANDLES.filter(visible)
+            visibleHandles(w, h, soloText)
               .slice()
               .sort((a, b) => (soloText ? b.length - a.length : a.length - b.length))
               .map((hd) => {
@@ -388,13 +365,14 @@ export function SelectionOverlay({
                 return (
                   <div
                     key={hd}
+                    data-resize-handle={hd}
                     className="pointer-events-auto absolute"
                     style={{
                       left: box.left,
                       top: box.top,
                       width: box.width,
                       height: box.height,
-                      cursor: HANDLE_CURSORS[hd],
+                      cursor: resizeCursor(hd, rotation),
                     }}
                     onPointerDown={(e) => onStartResize(hd, e)}
                   >
@@ -411,6 +389,13 @@ export function SelectionOverlay({
                   </div>
                 )
               })}
+        </div>
+      )}
+      {!marqueeing && interactive && (
+        <div className="pointer-events-none absolute rounded bg-[var(--sq-select)] px-1.5 py-0.5 text-micro text-white tabular-nums"
+          style={{ left: left + w / 2, top: Math.max(...visualBounds.map((box) => (box.y + box.h) * v.zoom + v.y)) + 16,
+            transform: "translateX(-50%)", whiteSpace: "nowrap" }}>
+          {rotationLabel !== null ? `${Math.round(rotationLabel)}°` : `${Math.round(b.w)} × ${Math.round(b.h)}`}
         </div>
       )}
     </>

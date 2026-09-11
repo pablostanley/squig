@@ -8,7 +8,10 @@
 // ---------------------------------------------------------------------------
 
 import { resizeBounds, resizeNodesBy, scaleNodes, MIN_SIZE, type Handle } from "../lib/canvas/transform.ts"
-import { hitsInterior, hitsPoint, hitsRect, pickAt, pickInRect, pickSoftAt, pickTolerance } from "../lib/canvas/hit-test.ts"
+import { canvasTarget, hitsInterior, hitsPoint, hitsRect, pickAt, pickInRect, pickSoftAt, pickTolerance } from "../lib/canvas/hit-test.ts"
+import { edgeHitBox, visibleHandles, resizeCursor } from "../lib/canvas/handles.ts"
+import { rotatePoint, rotatedBounds, orientResize, rotateNodes, rotationDelta } from "../lib/canvas/rotation.ts"
+import { nodeVisualBounds } from "../lib/canvas/line-routing.ts"
 import { repeatStep } from "../lib/canvas/duplicate.ts"
 import { constrainMoveTo45, constrainSnapToDirection } from "../lib/canvas/move.ts"
 import type { SquigNode } from "../lib/types.ts"
@@ -200,13 +203,13 @@ const apply = (ns: SquigNode[], patches: Record<string, Partial<SquigNode>>): Sq
   const past = resizeBounds(b, "se", -350, -350, { aspect: true })
   check(
     "shift+resize past the anchor clamps instead of rebounding",
-    past.w === MIN_SIZE && past.h === MIN_SIZE,
+    past.w === MIN_SIZE * 2 && past.h === MIN_SIZE,
     JSON.stringify(past)
   )
   const pastSide = resizeBounds(b, "e", -300, 0, { aspect: true })
   check(
     "shift+resize past the anchor on a side handle clamps too",
-    pastSide.w === MIN_SIZE && pastSide.h <= b.h,
+    pastSide.w === MIN_SIZE * 2 && pastSide.h === MIN_SIZE,
     JSON.stringify(pastSide)
   )
   let monotone = true
@@ -513,5 +516,81 @@ const apply = (ns: SquigNode[], patches: Record<string, Partial<SquigNode>>): Sq
 }
 
 // ---------------------------------------------------------------------------
+
+
+// Selection targets are independent of fill, with a deliberate marquee escape.
+{
+  const box = rect("box", 0, 0, 400, 300)
+  const button = rect("button", 40, 40, 80, 40, true)
+  const other = rect("other", 500, 0, 80, 40, true)
+  const nodes = { box, button, other }
+  const order = ["button", "box", "other"]
+  const plain = { shift: false, toggle: false }
+  const shift = { shift: true, toggle: false }
+  check("an unselected hollow interior starts a move", canvasTarget(nodes, order, [], 200, 150, 1, plain).kind === "node")
+  check("a selected hollow interior starts a move", canvasTarget(nodes, order, ["box"], 200, 150, 1, plain).kind === "node")
+  const content = canvasTarget(nodes, order, [], 60, 60, 1, plain)
+  check("visible content wins through a hollow container", content.kind === "node" && content.id === "button")
+  check("Shift can start a marquee inside an unselected container", canvasTarget(nodes, order, [], 200, 150, 1, shift).kind === "marquee")
+  check("Shift on an already selected hollow shape can constrain a move", canvasTarget(nodes, order, ["box"], 200, 150, 1, shift).kind === "node")
+  check("space between selected members moves their selection", canvasTarget(nodes, order, ["button", "other"], 300, 50, 1, plain).kind === "selection")
+  check("Shift leaves selection gaps available for marquee", canvasTarget({ button, other }, ["button", "other"], ["button", "other"], 300, 50, 1, shift).kind === "marquee")
+  check("locked interiors never start a move", canvasTarget({ box: { ...box, locked: true } }, ["box"], [], 200, 150, 1, plain).kind === "marquee")
+  const oval = { ...ellipse("oval", 0, 0, 200, 200), fill: "strong" } as SquigNode
+  check("filled ellipse corners remain empty to clicks", !hitsPoint(oval, 4, 4, 1))
+  check("filled ellipse corners remain empty to marquee", !hitsRect(oval, { x: 0, y: 0, w: 12, h: 12 }, 1))
+  check("a marquee inside the bbox can cross an ellipse outline", hitsRect(ellipse("ring", 0, 0, 200, 200), { x: 20, y: 20, w: 30, h: 30 }, 1))
+}
+
+{
+  const top = edgeHitBox("n", 240, 160)
+  check("edge grips extend continuously between corners", top.left <= 20 && top.left + top.width >= 220)
+  check("edge grips leave a comfortable move interior", top.top + top.height <= 4)
+  check("thin horizontal shapes keep end handles", visibleHandles(200, 2).join() === "w,e")
+  check("thin vertical shapes keep end handles", visibleHandles(2, 200).join() === "n,s")
+  check("tiny selections keep a resize handle", visibleHandles(4, 4).includes("se"))
+  check("resize cursors follow rotation", resizeCursor("e", 90) === "ns-resize")
+  for (const handle of ["nw", "n", "ne", "e", "se", "s", "sw", "w"] as Handle[]) {
+    for (const fromCenter of [false, true]) {
+      const b = { x: 10, y: 20, w: 200, h: 50 }
+      const r = resizeBounds(b, handle, handle.includes("w") ? 1000 : -1000,
+        handle.includes("n") ? 1000 : -1000, { aspect: true, fromCenter })
+      check(`${handle} minimum preserves ratio${fromCenter ? " from center" : ""}`, close(r.w / r.h, 4) && r.w >= 8 && r.h >= 8)
+      if (fromCenter) check(`${handle} minimum pins the center`, close(r.x + r.w / 2, 110) && close(r.y + r.h / 2, 45))
+    }
+  }
+}
+
+{
+  const n = { ...rect("rotated", 100, 100, 200, 80), rotation: 90 }
+  const b = rotatedBounds(n)
+  check("rotated visual bounds include the whole drawing", close(b.x, 160) && close(b.y, 40) && close(b.w, 80) && close(b.h, 200))
+  check("the shared bounds include rotation", close(nodeVisualBounds(n).w, 80))
+  check("rotated hollow interiors remain draggable", hitsInterior(n, 200, 60))
+  check("unrotated empty space is not a hit", !hitsInterior(n, 110, 120))
+  check("rotated edges are selectable", hitsPoint(n, 160, 140, 1))
+  check("marquee intersects the rotated outline", hitsRect(n, { x: 155, y: 100, w: 10, h: 30 }, 1))
+  check("marquee inside a rotated hollow shape doesn't select it", !hitsRect(n, { x: 190, y: 100, w: 10, h: 30 }, 1))
+  const next = resizeBounds(n, "e", 40, 0)
+  const patch = orientResize(n, next)
+  const resized = { ...n, ...patch } as SquigNode
+  const beforeAnchor = rotatePoint(n.x, n.y + n.h / 2, 200, 140, 90)
+  const afterAnchor = rotatePoint(resized.x, resized.y + resized.h / 2, resized.x + resized.w / 2, resized.y + resized.h / 2, 90)
+  check("rotated resize pins the opposite visible edge", close(beforeAnchor[0], afterAnchor[0]) && close(beforeAnchor[1], afterAnchor[1]))
+  const keyPatch = resizeNodesBy([n], b, "width", 40)[n.id]
+  check("keyboard resize uses a rotated layer's local width", close(keyPatch.w!, 240) && close(keyPatch.h!, 80))
+  check("keyboard and pointer resize pin the same rotated edge", close(keyPatch.x!, patch.x!) && close(keyPatch.y!, patch.y!))
+  const thin = rect("thin", 0, 0, 200, 2)
+  check("resizing a thin shape's length preserves its thickness", resizeBounds(thin, "e", 20, 0).h === 2)
+  check("keyboard resizing preserves a thin shape's thickness", resizeNodesBy([thin], thin, "width", 20).thin.h === 2)
+  const patches = rotateNodes([rect("a", 0, 0, 20, 20), rect("b", 100, 0, 20, 20)], [60, 10], 90)
+  check("group rotation orbits member centers", close(patches.a.x!, 50) && close(patches.a.y!, 50) && close(patches.b.y!, -50))
+  check("group rotation also turns the members", patches.a.rotation === 90 && patches.b.rotation === 90)
+  check("rotation Shift snaps the absolute angle", rotationDelta(10, 30, 7, true) === 23)
+  check("rotation crosses the angle seam without jumping", close(rotationDelta(179, -179, 0, false), 2))
+  const curve = { ...arrow("curve", 0, 0, 100, 0), lineStyle: "curved", curveBend: [0, 30] } as SquigNode
+  const back = rotateNodes([curve], [50, 0], 0).curve
+  check("out-and-back rotation preserves the connector route", JSON.stringify(back) === JSON.stringify(curve))
+}
 
 report("geometry checks passed")
