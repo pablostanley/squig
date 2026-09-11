@@ -14,7 +14,7 @@ import { useRef } from "react"
 import { useSquig } from "@/lib/store"
 import { exportDoc, importDoc } from "@/lib/file-io"
 import { saveImageWithNotice } from "@/lib/export-image"
-import { ArrowUpRightIcon, CaretDownIcon } from "@phosphor-icons/react"
+import { ArrowsOutIcon, ArrowUpRightIcon, CaretDownIcon } from "@phosphor-icons/react"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -138,6 +138,7 @@ export function TopCorner() {
 
 export function ZoomPill() {
   const zoom = useSquig((s) => s.viewport.zoom)
+  const empty = useSquig((s) => s.order.length === 0)
   const st = useSquig.getState
 
   const zoomBy = (factor: number) => {
@@ -175,6 +176,16 @@ export function ZoomPill() {
         aria-label="Zoom in"
       >
         +
+      </button>
+      <button
+        type="button"
+        className="flex size-ctl items-center justify-center rounded-chrome-sm text-muted-foreground hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring disabled:pointer-events-none disabled:opacity-50"
+        onClick={() => st().zoomToFit()}
+        disabled={empty}
+        title={`Zoom to fit (${kbd("shift+1")})`}
+        aria-label="Zoom to fit"
+      >
+        <ArrowsOutIcon className="size-3.5" />
       </button>
     </Panel>
   )

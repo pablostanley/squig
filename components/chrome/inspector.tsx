@@ -42,7 +42,6 @@ import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import {
   ArrowCounterClockwiseIcon,
-  ArrowsOutIcon,
   CropIcon,
   FlipHorizontalIcon,
   FlipVerticalIcon,
@@ -50,7 +49,6 @@ import {
   LinkBreakIcon,
   LockSimpleIcon,
   LockSimpleOpenIcon,
-  SelectionAllIcon,
   TrashIcon,
 } from "@phosphor-icons/react"
 import { kbd } from "@/lib/shortcuts"
@@ -204,7 +202,7 @@ export function Inspector() {
         </div>
       </ScrollArea>
 
-      {empty ? <PageFooter /> : <Footer selected={selected} />}
+      {!empty && <Footer selected={selected} />}
     </Panel>
   )
 }
@@ -309,35 +307,6 @@ function PageSettings() {
         </Row>
       </PanelSection>
     </>
-  )
-}
-
-/** Footer for the page panel — whole-canvas moves, not selection ones. */
-function PageFooter() {
-  const count = useSquig((s) => s.order.length)
-  const st = useSquig.getState
-
-  return (
-    <PanelFooter>
-      <Button
-        variant="outline"
-        size="sm"
-        disabled={count === 0}
-        className="h-ctl flex-1 rounded-chrome-sm text-label"
-        onClick={() => st().zoomToFit()}
-      >
-        <ArrowsOutIcon className="size-3" /> Fit
-      </Button>
-      <Button
-        variant="outline"
-        size="sm"
-        disabled={count === 0}
-        className="h-ctl flex-1 rounded-chrome-sm text-label"
-        onClick={() => st().selectAll()}
-      >
-        <SelectionAllIcon className="size-3" /> Select all
-      </Button>
-    </PanelFooter>
   )
 }
 
