@@ -29,6 +29,7 @@ These are references for the interaction model, not a claim of full Figma featur
 | Minimum-size clamping broke the original aspect ratio. | Proportional transforms clamp a single scale; thin shapes keep their untouched dimension. |
 | There was no rotation model or control. | Drag outside any corner to rotate; Shift snaps to 15 degrees. The inspector accepts an exact angle. |
 | Rotation had no representation in editing, routing, or export. | Local axes drive rotated resize/crop; text editors, connector anchors, detached parts, bounds, history, and SVG share rotation geometry. |
+| Alignment and distribution measured the original, unrotated boxes. | The canvas and agent commands share visible-edge alignment and equal-gap distribution. |
 | Transform cursors could disappear under pointer capture. | The active cursor remains visible and follows the object's orientation. |
 | A handle could intercept secondary-button and pan gestures. | Primary transform presses are guarded; middle-button and Space panning take precedence. |
 | A final pointer position could be missed before release. | Release flushes the final position before committing. |

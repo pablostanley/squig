@@ -12,6 +12,7 @@ import { canvasTarget, hitsInterior, hitsPoint, hitsRect, pickAt, pickInRect, pi
 import { edgeHitBox, visibleHandles, resizeCursor } from "../lib/canvas/handles.ts"
 import { rotatePoint, rotatedBounds, orientResize, rotateNodes, rotationDelta } from "../lib/canvas/rotation.ts"
 import { nodeVisualBounds } from "../lib/canvas/line-routing.ts"
+import { alignNodes, distributeNodes } from "../lib/canvas/arrange.ts"
 import { repeatStep } from "../lib/canvas/duplicate.ts"
 import { constrainMoveTo45, constrainSnapToDirection } from "../lib/canvas/move.ts"
 import type { SquigNode } from "../lib/types.ts"
@@ -580,6 +581,11 @@ const apply = (ns: SquigNode[], patches: Record<string, Partial<SquigNode>>): Sq
   const keyPatch = resizeNodesBy([n], b, "width", 40)[n.id]
   check("keyboard resize uses a rotated layer's local width", close(keyPatch.w!, 240) && close(keyPatch.h!, 80))
   check("keyboard and pointer resize pin the same rotated edge", close(keyPatch.x!, patch.x!) && close(keyPatch.y!, patch.y!))
+  const neighbor = rect("neighbor", 300, 100, 20, 20)
+  const aligned = alignNodes([n, neighbor], "left")
+  check("alignment uses the rotated visible edge", close(aligned.neighbor.x!, 160) && close(aligned.rotated.x!, 100))
+  const spaced = distributeNodes([n, neighbor, rect("end", 500, 100, 40, 40)], "x")
+  check("distribution measures gaps from rotated visible edges", close(spaced.neighbor.x!, 360) && close(spaced.end.x!, 500))
   const thin = rect("thin", 0, 0, 200, 2)
   check("resizing a thin shape's length preserves its thickness", resizeBounds(thin, "e", 20, 0).h === 2)
   check("keyboard resizing preserves a thin shape's thickness", resizeNodesBy([thin], thin, "width", 20).thin.h === 2)

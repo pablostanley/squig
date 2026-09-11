@@ -12,13 +12,14 @@ import {
 } from "@/lib/doc"
 import { pruneDegenerateGroups } from "@/lib/canvas/groups"
 import { normalizeRotation } from "@/lib/canvas/rotation"
+import { alignNodes, distributeNodes } from "@/lib/canvas/arrange"
 import type { TextMeasurer } from "@/lib/canvas/text-metrics"
 import type { FontMode } from "@/lib/theme"
 import { textMeasurer } from "./text-metrics"
 import { getDef } from "@/lib/library/registry"
 import { breakApart } from "@/lib/library/break-apart"
 import { settleBinds, remapBinds } from "@/lib/canvas/arrow-binding"
-import { unionBox, type SquigNode, type SquigDoc } from "@/lib/types"
+import type { SquigNode, SquigDoc } from "@/lib/types"
 import { THEMES, type Look } from "@/lib/theme"
 import type { Operation } from "./schema"
 
@@ -311,51 +312,18 @@ export function applyOperations(
         break
       case "align": {
         const ns = members(op.ids)
-        const box = unionBox(ns)!
-        ns.forEach((n) => {
-          switch (op.edge) {
-            case "left":
-              n.x = box.minX
-              break
-            case "right":
-              n.x = box.maxX - n.w
-              break
-            case "top":
-              n.y = box.minY
-              break
-            case "bottom":
-              n.y = box.maxY - n.h
-              break
-            case "hcenter":
-              n.x = (box.minX + box.maxX - n.w) / 2
-              break
-            case "vcenter":
-              n.y = (box.minY + box.maxY - n.h) / 2
-              break
-          }
-        })
+        const patches = alignNodes(ns, op.edge)
+        ns.forEach((n) => Object.assign(n, patches[n.id]))
         break
       }
       case "distribute": {
-        const axis = op.axis,
-          size = axis === "x" ? "w" : "h"
-        const ns = members(op.ids).sort((a, b) => a[axis] - b[axis])
-        if (ns.length < 3) break
-        const start = ns[0][axis],
-          last = ns[ns.length - 1]
-        const gap =
-          (last[axis] +
-            last[size] -
-            start -
-            ns.reduce((s, n) => s + n[size], 0)) /
-          (ns.length - 1)
-        let cursor = start
-        ns.forEach((n) => {
-          n[axis] = cursor
-          cursor += n[size] + gap
-        })
+        const ids = new Set(members(op.ids).map((n) => n.id))
+        const ns = d.order.filter((id) => ids.has(id)).map((id) => d.nodes[id])
+        const patches = distributeNodes(ns, op.axis)
+        ns.forEach((n) => Object.assign(n, patches[n.id]))
         break
       }
+
       case "reorder": {
         const picked = members(op.ids).map((n) => n.id)
         if (op.position === "front")

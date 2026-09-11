@@ -443,7 +443,7 @@ function SelectionEditor({ selected }: { selected: SquigNode[] }) {
         </div>
 
         {arrows.length === 0 && (
-          <Row label="Rotation">
+          <Row label="Rotation" help="Sets each layer's angle. Drag outside a canvas corner to rotate a selection; Shift snaps to 15°.">
             <MixedNumberField label="°" ariaLabel="Rotation" shared={sharedNumber(selected, (n) => n.rotation ?? 0)}
               onGestureStart={startGesture}
               onCommit={(v) => live(() => ({ rotation: normalizeRotation(v) || undefined }))}

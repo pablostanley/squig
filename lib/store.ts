@@ -25,6 +25,7 @@ import {
   pruneDegenerateGroups,
 } from "./canvas/groups"
 import { normalizeRotation } from "./canvas/rotation"
+import { alignNodes, distributeNodes } from "./canvas/arrange"
 import { breakApart } from "./library/break-apart"
 import {
   applyLook,
@@ -1680,26 +1681,9 @@ export const useSquig = create<SquigState>((set, get) => ({
 
   distributeSelected: (axis) => {
     const { selection, nodes, order } = get()
-    const sel = selection.map((id) => nodes[id]).filter(Boolean) as SquigNode[]
-    // fewer than three and there is no gap to even out
-    if (sel.length < 3) return
-    const size = (n: SquigNode) => (axis === "h" ? n.w : n.h)
-    const pos = (n: SquigNode) => (axis === "h" ? n.x : n.y)
-    const rank = new Map(order.map((id, i) => [id, i]))
-    // ties resolve by z-order so the result doesn't depend on click sequence
-    const sorted = [...sel].sort((a, b) => pos(a) - pos(b) || (rank.get(a.id) ?? 0) - (rank.get(b.id) ?? 0))
-    const start = Math.min(...sorted.map(pos))
-    // the widest node may start early and still end last, so take the real
-    // maximum trailing edge rather than the last one in leading-edge order
-    const end = Math.max(...sorted.map((n) => pos(n) + size(n)))
-    const used = sorted.reduce((sum, n) => sum + size(n), 0)
-    const gap = (end - start - used) / (sorted.length - 1)
-    const patches: Record<string, Partial<SquigNode>> = {}
-    let cursor = start
-    for (const n of sorted) {
-      patches[n.id] = axis === "h" ? { x: cursor } : { y: cursor }
-      cursor += size(n) + gap
-    }
+    const ids = new Set(selection)
+    const sel = order.filter((id) => ids.has(id)).map((id) => nodes[id]).filter(Boolean)
+    const patches = distributeNodes(sel, axis === "h" ? "x" : "y")
     // evening out gaps that are already even is the align case again
     get().edit(() => get().updateNodes(patches))
   },
@@ -1770,21 +1754,7 @@ export const useSquig = create<SquigState>((set, get) => ({
     if (selection.length < 2) return
     const sel = selection.map((id) => nodes[id]).filter(Boolean)
     if (sel.length < 2) return
-    const minX = Math.min(...sel.map((n) => n.x))
-    const maxX = Math.max(...sel.map((n) => n.x + n.w))
-    const minY = Math.min(...sel.map((n) => n.y))
-    const maxY = Math.max(...sel.map((n) => n.y + n.h))
-    const patches: Record<string, Partial<SquigNode>> = {}
-    for (const n of sel) {
-      switch (edge) {
-        case "left": patches[n.id] = { x: minX }; break
-        case "right": patches[n.id] = { x: maxX - n.w }; break
-        case "hcenter": patches[n.id] = { x: (minX + maxX) / 2 - n.w / 2 }; break
-        case "top": patches[n.id] = { y: minY }; break
-        case "bottom": patches[n.id] = { y: maxY - n.h }; break
-        case "vcenter": patches[n.id] = { y: (minY + maxY) / 2 - n.h / 2 }; break
-      }
-    }
+    const patches = alignNodes(sel, edge)
     // a selection already flush against that edge writes its own coordinates
     // back onto itself, which edit() reads as the nothing it is
     get().edit(() => get().updateNodes(patches))
