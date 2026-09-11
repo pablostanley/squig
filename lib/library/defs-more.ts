@@ -111,7 +111,7 @@ export const buttonGroupDef: ComponentDef = {
   size: { w: 240, h: 36 },
   defaults: { labels: "Day, Week, Month", active: 2 },
   controls: [
-    { key: "labels", label: "Labels (comma-sep)", type: "text" },
+    { key: "labels", label: "Labels", help: "Separate items with commas.", type: "text" },
     { key: "active", label: "Active", type: "number", min: 1, max: 6, quick: true },
   ],
   render(p, w, h) {
@@ -262,7 +262,7 @@ export const chipGroupDef: ComponentDef = {
   size: { w: 280, h: 78 },
   defaults: { labels: "Design, Research, Prototype, Handoff, Motion, Docs, Testing, Launch", count: 6, dismiss: true },
   controls: [
-    { key: "labels", label: "Labels (comma-sep)", type: "text" },
+    { key: "labels", label: "Labels", help: "Separate items with commas.", type: "text" },
     { key: "count", label: "Chips", type: "number", min: 1, max: 12, quick: true },
     { key: "dismiss", label: "Dismiss", type: "toggle", quick: true },
   ],
@@ -544,7 +544,7 @@ export const comboboxDef: ComponentDef = {
   defaults: { value: "Pick a framework…", items: "Next.js, Remix, Astro, SvelteKit, Nuxt", open: true },
   controls: [
     { key: "value", label: "Value", type: "text" },
-    { key: "items", label: "Items (comma-sep)", type: "text" },
+    { key: "items", label: "Items", help: "Separate items with commas.", type: "text" },
     { key: "open", label: "Open", type: "toggle", quick: true },
   ],
   render(p, w, h) {
@@ -709,7 +709,7 @@ export const radioGroupDef: ComponentDef = {
   size: { w: 220, h: 110 },
   defaults: { label: "Plan", showLabel: true, options: "Free, Pro, Team", selected: 2, direction: "vertical" },
   controls: [
-    { key: "options", label: "Options (comma-sep)", type: "text" },
+    { key: "options", label: "Options", help: "Separate items with commas.", type: "text" },
     { key: "selected", label: "Selected", type: "number", min: 1, max: 8, quick: true },
     { key: "direction", label: "Direction", type: "select", options: ["vertical", "horizontal"], quick: true },
     { key: "showLabel", label: "Group label", type: "toggle", quick: true },
@@ -770,7 +770,7 @@ export const checkboxGroupDef: ComponentDef = {
   size: { w: 220, h: 110 },
   defaults: { label: "Notify me about", showLabel: true, options: "Mentions, Replies, Weekly digest", checked: 2, direction: "vertical" },
   controls: [
-    { key: "options", label: "Options (comma-sep)", type: "text" },
+    { key: "options", label: "Options", help: "Separate items with commas.", type: "text" },
     { key: "checked", label: "Ticked", type: "number", min: 0, max: 8, quick: true },
     { key: "direction", label: "Direction", type: "select", options: ["vertical", "horizontal"], quick: true },
     { key: "showLabel", label: "Group label", type: "toggle", quick: true },
@@ -962,7 +962,7 @@ export const accordionDef: ComponentDef = {
   size: { w: 300, h: 220 },
   defaults: { labels: "What is squig?, How much is it?, Can I export?, Refund policy", expanded: 1 },
   controls: [
-    { key: "labels", label: "Rows (comma-sep)", type: "text" },
+    { key: "labels", label: "Rows", help: "Separate items with commas.", type: "text" },
     { key: "expanded", label: "Expanded", type: "number", min: 0, max: 6, quick: true },
   ],
   render(p, w, h) {
@@ -1069,7 +1069,7 @@ export const kbdDef: ComponentDef = {
   size: { w: 90, h: 30 },
   defaults: { keys: "⌘, K", plus: false },
   controls: [
-    { key: "keys", label: "Keys (comma-sep)", type: "text" },
+    { key: "keys", label: "Keys", help: "Separate items with commas.", type: "text" },
     { key: "plus", label: "Show +", type: "toggle", quick: true },
   ],
   render(p, w, h) {
@@ -1111,7 +1111,7 @@ export const timelineDef: ComponentDef = {
   size: { w: 260, h: 190 },
   defaults: { labels: "Order placed, Packed, In transit, Delivered", count: 4, done: 2, times: true },
   controls: [
-    { key: "labels", label: "Events (comma-sep)", type: "text" },
+    { key: "labels", label: "Events", help: "Separate items with commas.", type: "text" },
     { key: "count", label: "Events", type: "number", min: 2, max: 8, quick: true },
     { key: "done", label: "Completed", type: "number", min: 0, max: 8, quick: true },
     { key: "times", label: "Timestamps", type: "toggle", quick: true },
@@ -1168,7 +1168,7 @@ export const treeViewDef: ComponentDef = {
   size: { w: 220, h: 190 },
   defaults: { names: TREE_NAMES, count: 8, selected: 3 },
   controls: [
-    { key: "names", label: "Rows (comma-sep)", type: "text" },
+    { key: "names", label: "Rows", help: "Separate items with commas.", type: "text" },
     { key: "count", label: "Rows", type: "number", min: 3, max: 10, quick: true },
     { key: "selected", label: "Selected", type: "number", min: 0, max: 10, quick: true },
   ],
@@ -1998,7 +1998,7 @@ export const menubarDef: ComponentDef = {
   size: { w: 400, h: 34 },
   defaults: { items: "File, Edit, View, Window, Help", active: 2, logo: true, trailing: true },
   controls: [
-    { key: "items", label: "Items (comma-sep)", type: "text" },
+    { key: "items", label: "Items", help: "Separate items with commas.", type: "text" },
     { key: "active", label: "Open menu", type: "number", min: 0, max: 8, quick: true },
     { key: "logo", label: "Logo", type: "toggle", quick: true },
     { key: "trailing", label: "Trailing icons", type: "toggle", quick: true },
@@ -2063,7 +2063,7 @@ export const contextMenuDef: ComponentDef = {
   size: { w: 210, h: 210 },
   defaults: { items: "Cut, Copy, Paste, Duplicate, Share, Delete", shortcuts: true, hover: 2 },
   controls: [
-    { key: "items", label: "Items (comma-sep)", type: "text" },
+    { key: "items", label: "Items", help: "Separate items with commas.", type: "text" },
     { key: "shortcuts", label: "Shortcuts", type: "toggle", quick: true },
     { key: "hover", label: "Highlighted", type: "number", min: 0, max: 8, quick: true },
   ],
@@ -2125,7 +2125,7 @@ export const commandMenuDef: ComponentDef = {
   },
   controls: [
     { key: "placeholder", label: "Placeholder", type: "text" },
-    { key: "items", label: "Results (comma-sep)", type: "text" },
+    { key: "items", label: "Results", help: "Separate items with commas.", type: "text" },
     { key: "count", label: "Results", type: "number", min: 2, max: 8, quick: true },
     { key: "footer", label: "Footer", type: "toggle", quick: true },
   ],
@@ -2186,7 +2186,7 @@ export const navTabsPillDef: ComponentDef = {
   size: { w: 280, h: 38 },
   defaults: { labels: "All, Active, Archived", active: 1, container: true },
   controls: [
-    { key: "labels", label: "Tabs (comma-sep)", type: "text" },
+    { key: "labels", label: "Tabs", help: "Separate items with commas.", type: "text" },
     { key: "active", label: "Active", type: "number", min: 1, max: 6, quick: true },
     { key: "container", label: "Track", type: "toggle", quick: true },
   ],
@@ -2230,7 +2230,7 @@ export const bottomNavDef: ComponentDef = {
   size: { w: 320, h: 64 },
   defaults: { labels: "Home, Search, Post, Inbox, You", count: 5, active: 1, showLabels: true, indicator: true },
   controls: [
-    { key: "labels", label: "Labels (comma-sep)", type: "text" },
+    { key: "labels", label: "Labels", help: "Separate items with commas.", type: "text" },
     { key: "count", label: "Items", type: "number", min: 3, max: 5, quick: true },
     { key: "active", label: "Active", type: "number", min: 1, max: 5, quick: true },
     { key: "showLabels", label: "Labels", type: "toggle", quick: true },
@@ -2281,7 +2281,7 @@ export const stepperDef: ComponentDef = {
   size: { w: 400, h: 76 },
   defaults: { labels: "Cart, Shipping, Payment, Done", count: 4, active: 3, showLabels: true },
   controls: [
-    { key: "labels", label: "Labels (comma-sep)", type: "text" },
+    { key: "labels", label: "Labels", help: "Separate items with commas.", type: "text" },
     { key: "count", label: "Steps", type: "number", min: 2, max: 6, quick: true },
     { key: "active", label: "Current", type: "number", min: 1, max: 6, quick: true },
     { key: "showLabels", label: "Labels", type: "toggle", quick: true },
@@ -2377,7 +2377,7 @@ export const dataTableDef: ComponentDef = {
   size: { w: 540, h: 320 },
   defaults: { cols: "Name, Status, Amount", rows: 5, toolbar: true, footer: true, selected: 2 },
   controls: [
-    { key: "cols", label: "Columns (comma-sep)", type: "text" },
+    { key: "cols", label: "Columns", help: "Separate items with commas.", type: "text" },
     { key: "rows", label: "Rows", type: "number", min: 1, max: 10, quick: true },
     { key: "toolbar", label: "Toolbar", type: "toggle", quick: true },
     { key: "footer", label: "Footer", type: "toggle", quick: true },
@@ -2489,8 +2489,8 @@ export const kvListDef: ComponentDef = {
   size: { w: 260, h: 170 },
   defaults: { keys: KV_KEYS, values: KV_VALS, count: 5, dividers: true, layout: "row" },
   controls: [
-    { key: "keys", label: "Keys (comma-sep)", type: "text" },
-    { key: "values", label: "Values (comma-sep)", type: "text" },
+    { key: "keys", label: "Keys", help: "Separate items with commas.", type: "text" },
+    { key: "values", label: "Values", help: "Separate items with commas.", type: "text" },
     { key: "count", label: "Rows", type: "number", min: 2, max: 8, quick: true },
     { key: "layout", label: "Layout", type: "select", options: ["row", "stacked"], quick: true },
     { key: "dividers", label: "Dividers", type: "toggle", quick: true },

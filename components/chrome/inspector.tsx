@@ -188,7 +188,7 @@ export function Inspector() {
           ? "line"
           : selected[0].type
 
-  const subtitle = selected.length > 1 ? selectionSummary(selected) : grouped ? "Grouped" : undefined
+  const subtitle = [selected.length > 1 ? selectionSummary(selected) : null, grouped ? "Grouped" : null].filter(Boolean).join(" · ") || undefined
   const headerHelp = grouped ? `${kbd("mod+click")} selects inside. ${kbd("mod+shift+g")} ungroups.` : undefined
 
   return (
@@ -290,6 +290,7 @@ function PageSettings() {
         <Row label="Big nudge" help="Sets the move and resize step while holding Shift.">
           <MixedNumberField
             label="px"
+            ariaLabel="Big nudge in pixels"
             min={MIN_BIG_NUDGE}
             max={MAX_BIG_NUDGE}
             className="w-[78px]"
@@ -506,7 +507,7 @@ function SelectionEditor({ selected }: { selected: SquigNode[] }) {
               the text actually points. Empty means it points nowhere, and
               clearing the field is how you unlink. ⌘K still opens the floating
               editor over the canvas for the same value. */}
-          <Row label="Link" help="Opens this URL when the text is activated.">
+          <Row label="Link" help="Stores a URL on this text; clear it to remove the link.">
             <MixedTextField
               ariaLabel="Link"
               placeholder="https://…"
@@ -515,9 +516,10 @@ function SelectionEditor({ selected }: { selected: SquigNode[] }) {
             />
           </Row>
 
-          <Row label="Size" help="Sets the text size.">
+          <Row label="Size">
             <MixedNumberField
               label=""
+              ariaLabel="Font size"
               min={4}
               className="w-[78px]"
               shared={sharedNumber(texts, (n) => (n as TextNode).fontSize)}
@@ -537,7 +539,7 @@ function SelectionEditor({ selected }: { selected: SquigNode[] }) {
               the whole group last means revealing it grows into the bottom of
               the section instead of pushing every familiar type control. */}
           <div className="mt-1 flex flex-col gap-row border-t border-border/60 pt-3">
-            <Row spread label="Box">
+            <Row spread label="Box" help="Adds a fill and border to the text layer.">
               <MixedSwitch
                 ariaLabel="Box"
                 shared={textBoxState}
@@ -770,7 +772,7 @@ function SelectionEditor({ selected }: { selected: SquigNode[] }) {
           )}
           {multi && !controls.length && (
             <div className="p-gutter">
-              <PanelNote>No shared settings.</PanelNote>
+              <PanelNote>No shared settings. Select fewer types.</PanelNote>
             </div>
           )}
         </>

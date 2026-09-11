@@ -24,6 +24,7 @@ import { isCropped } from "@/lib/canvas/crop"
 import { lockedIds } from "@/lib/selection"
 import { canGroupSelection } from "@/lib/canvas/groups"
 import { trapFocus } from "@/components/ui/focus-trap"
+import { HelpTooltip } from "@/components/ui/tooltip"
 import {
   ArrowCounterClockwiseIcon,
   CropIcon,
@@ -274,6 +275,8 @@ function Palette() {
 
   const runRow = useCallback(
     (row: Row) => {
+      // Close first so opening another surface (such as Keyboard) survives.
+      close()
       if (row.kind === "action") row.action.run()
       else if (row.kind === "icon") st().insertComponent("icon", { name: row.name })
       else if (row.kind === "node") {
@@ -282,7 +285,6 @@ function Palette() {
         st().setSelection([row.hit.id])
         st().revealSelection()
       } else st().insertComponent(row.def.kind)
-      close()
     },
     [st, close]
   )
@@ -317,16 +319,16 @@ function Palette() {
           role="dialog"
           aria-modal="true"
           aria-label="Search Squig"
-          className="animate-in slide-in-from-bottom-4 fade-in relative mx-auto flex max-h-[62vh] w-full max-w-2xl flex-col overflow-hidden rounded-t-chrome-lg border border-b-0 border-border/80 bg-background shadow-popup duration-150"
+          className="relative mx-auto flex max-h-[62vh] w-full max-w-2xl flex-col overflow-hidden rounded-t-chrome-lg border border-b-0 border-border/80 bg-background shadow-popup"
           onPointerDown={(e) => e.stopPropagation()}
-          onKeyDownCapture={(e) => {
+          onKeyDownCapture={trapFocus}
+          onKeyDown={(e) => {
             if (e.key === "Escape") {
               e.preventDefault()
               e.stopPropagation()
               close()
               return
             }
-            trapFocus(e)
           }}
         >
           <p id="command-palette-help" className="sr-only">
@@ -344,7 +346,7 @@ function Palette() {
               aria-label="Search commands, layers, components, blocks, and icons"
               aria-describedby="command-palette-help"
               placeholder="Search anything…"
-              className="w-full bg-transparent py-4 pr-4 pl-11 text-title outline-none placeholder:text-muted-foreground"
+              className="w-full bg-transparent py-4 pr-20 pl-11 text-title outline-none placeholder:text-muted-foreground"
               onKeyDown={(e) => {
                 e.stopPropagation()
                 // the keys that opened the sheet also close it
@@ -365,6 +367,7 @@ function Palette() {
                 }
               }}
             />
+            <HelpTooltip label="Help" help="Use ↑↓ to browse, Enter to choose, and Escape to close; new items appear at the center of your view." side="top" className="absolute top-1/2 right-4 -translate-y-1/2 text-label text-muted-foreground" />
           </div>
 
           <div ref={listRef} className="flex-1 overflow-y-auto overscroll-contain p-2.5">

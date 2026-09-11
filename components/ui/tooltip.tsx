@@ -35,7 +35,7 @@ function TooltipContent({
           data-slot="tooltip-content"
           className={cn(
             "inline-flex w-fit max-w-xs origin-(--transform-origin) items-center gap-1.5 rounded-chrome-sm bg-foreground px-2.5 py-1.5 text-label text-background transition-[transform,opacity] duration-100 motion-reduce:transition-none",
-            "data-starting-style:scale-95 data-starting-style:opacity-0 data-ending-style:scale-95 data-ending-style:opacity-0",
+            "data-starting-style:scale-95 data-starting-style:opacity-0 data-ending-style:scale-95 data-ending-style:opacity-0 data-instant:transition-none motion-reduce:transform-none",
             className
           )}
           {...props}
@@ -65,16 +65,30 @@ function HelpTooltip({
   side?: React.ComponentProps<typeof TooltipPrimitive.Positioner>["side"]
 }) {
   const descriptionId = React.useId()
+  const triggerId = React.useId()
+  const [open, setOpen] = React.useState(false)
   const accessibleLabel = typeof label === "string" ? `About ${label}` : "More information"
 
   return (
-    <Tooltip>
+    <Tooltip open={open} triggerId={triggerId} onOpenChange={setOpen}>
       <TooltipTrigger
+        id={triggerId}
         type="button"
+        closeOnClick={false}
+        // A fresh focus is a help request, even after Escape dismissed a hover.
+        onFocus={() => setOpen(true)}
+        onClick={() => setOpen(true)}
+        onKeyDown={(event) => {
+          if (event.key === "Escape" && open) {
+            event.preventDefault()
+            event.stopPropagation()
+            setOpen(false)
+          }
+        }}
         aria-label={accessibleLabel}
         aria-describedby={descriptionId}
         className={cn(
-          "cursor-help rounded-chrome-xs text-left decoration-dotted underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-[var(--sq-ink)]/40",
+          "min-h-6 cursor-help rounded-chrome-xs text-left decoration-dotted underline-offset-2 outline-none hover:underline focus-visible:underline focus-visible:ring-2 focus-visible:ring-[var(--sq-ink)]/40",
           className
         )}
       >
@@ -83,7 +97,7 @@ function HelpTooltip({
       <TooltipContent side={side} className="max-w-56 text-pretty leading-snug">
         {help}
       </TooltipContent>
-      <span id={descriptionId} className="sr-only">
+      <span id={descriptionId} hidden>
         {help}
       </span>
     </Tooltip>

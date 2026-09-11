@@ -461,7 +461,7 @@ export function AgentBridge({ hidden = false }: { hidden?: boolean }) {
                 <Popover.Description>
                   {kind === "share"
                     ? "Anyone with this link can view and edit this canvas."
-                    : "Paste this into your agent's chat. It has everything the agent needs to draw here with you."}
+                    : "Paste the invitation into your agent’s chat."}
                 </Popover.Description>
                 {credentials.key ? (
                   kind === "share" ? (

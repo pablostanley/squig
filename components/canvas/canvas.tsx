@@ -2440,6 +2440,7 @@ export function Canvas() {
       // arrows nudge, Return steps into the words — and none of it could be
       // got at without a click.
       tabIndex={0}
+      role="region"
       // One label, no more. A hand-drawn canvas is never going to be
       // meaningfully navigable by screen reader, and a tree of ARIA saying
       // otherwise would be a promise squig can't keep.

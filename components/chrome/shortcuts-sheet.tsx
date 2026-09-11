@@ -40,7 +40,7 @@ function Sheet() {
         role="dialog"
         aria-modal="true"
         aria-labelledby="keyboard-shortcuts-title"
-        className="animate-in fade-in zoom-in-95 relative flex max-h-full w-full max-w-3xl flex-col overflow-hidden rounded-chrome-lg border border-border/80 bg-background shadow-popup duration-150"
+        className="relative flex max-h-full w-full max-w-3xl flex-col overflow-hidden rounded-chrome-lg border border-border/80 bg-background shadow-popup"
         onPointerDown={(e) => e.stopPropagation()}
         onKeyDownCapture={(e) => {
           if (e.key === "Escape") {

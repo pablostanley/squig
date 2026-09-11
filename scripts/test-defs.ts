@@ -123,6 +123,10 @@ const sizeAt = (def: ComponentDef, s: number) => ({
 // -- rendering --------------------------------------------------------------
 
 for (const def of ALL_DEFS) {
+  check(`${def.kind} keeps format instructions out of labels`,
+    def.controls.every((c) => !c.label.includes("comma-sep")))
+  check(`${def.kind} keeps control help short and meaningful`,
+    def.controls.every((c) => c.help === undefined || (c.help.trim().length > 0 && c.help.length <= 120)))
   const renders: { label: string; w: number; h: number; prims: Prim[] }[] = []
 
   let threw = ""

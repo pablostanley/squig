@@ -491,7 +491,7 @@ export const featureGridDef: ComponentDef = {
     { key: "boxed", label: "Cards", type: "toggle", quick: true },
     { key: "heading", label: "Show headline", type: "toggle" },
     { key: "headline", label: "Headline", type: "text" },
-    { key: "titles", label: "Features (comma-sep)", type: "text" },
+    { key: "titles", label: "Features", help: "Separate items with commas.", type: "text" },
   ],
   render(p, w, h) {
     const prims: Prim[] = []
@@ -837,8 +837,8 @@ export const pricingBlockDef: ComponentDef = {
     { key: "heading", label: "Show headline", type: "toggle", quick: true },
     { key: "billing", label: "Billing toggle", type: "toggle" },
     { key: "headline", label: "Headline", type: "text" },
-    { key: "tierNames", label: "Tier names (comma-sep)", type: "text" },
-    { key: "prices", label: "Prices (comma-sep)", type: "text" },
+    { key: "tierNames", label: "Tier names", help: "Separate items with commas.", type: "text" },
+    { key: "prices", label: "Prices", help: "Separate items with commas.", type: "text" },
   ],
   render(p, w, h) {
     const prims: Prim[] = []
@@ -944,7 +944,7 @@ export const faqDef: ComponentDef = {
     { key: "heading", label: "Show headline", type: "toggle", quick: true },
     { key: "expanded", label: "Expanded", type: "number", min: 0, max: 6 },
     { key: "headline", label: "Headline", type: "text" },
-    { key: "questions", label: "Questions (comma-sep)", type: "text" },
+    { key: "questions", label: "Questions", help: "Separate items with commas.", type: "text" },
   ],
   render(p, w, h) {
     const prims: Prim[] = []
@@ -1008,8 +1008,8 @@ export const statsBandDef: ComponentDef = {
     { key: "count", label: "Stats", type: "number", min: 2, max: 5, quick: true },
     { key: "dividers", label: "Dividers", type: "toggle", quick: true },
     { key: "boxed", label: "Boxed", type: "toggle", quick: true },
-    { key: "values", label: "Values (comma-sep)", type: "text" },
-    { key: "labels", label: "Labels (comma-sep)", type: "text" },
+    { key: "values", label: "Values", help: "Separate items with commas.", type: "text" },
+    { key: "labels", label: "Labels", help: "Separate items with commas.", type: "text" },
   ],
   render(p, w, h) {
     const prims: Prim[] = []
@@ -1232,8 +1232,8 @@ export const footerDef: ComponentDef = {
     { key: "columns", label: "Link columns", type: "number", min: 2, max: 4, quick: true },
     { key: "social", label: "Social row", type: "toggle", quick: true },
     { key: "brand", label: "Brand", type: "text" },
-    { key: "titles", label: "Columns (comma-sep)", type: "text" },
-    { key: "links", label: "Links, simple (comma-sep)", type: "text" },
+    { key: "titles", label: "Columns", help: "Separate items with commas.", type: "text" },
+    { key: "links", label: "Simple links", help: "Separate items with commas.", type: "text" },
   ],
   render(p, w, h) {
     const prims: Prim[] = []
@@ -1315,8 +1315,8 @@ export const teamGridDef: ComponentDef = {
     { key: "heading", label: "Show headline", type: "toggle", quick: true },
     { key: "cards", label: "Cards", type: "toggle", quick: true },
     { key: "headline", label: "Headline", type: "text" },
-    { key: "names", label: "People (comma-sep)", type: "text" },
-    { key: "roles", label: "Roles (comma-sep)", type: "text" },
+    { key: "names", label: "People", help: "Separate items with commas.", type: "text" },
+    { key: "roles", label: "Roles", help: "Separate items with commas.", type: "text" },
   ],
   render(p, w, h) {
     const prims: Prim[] = []
@@ -1534,8 +1534,8 @@ export const blogListDef: ComponentDef = {
     { key: "rows", label: "Posts", type: "number", min: 1, max: 4, quick: true },
     { key: "thumbnails", label: "Thumbnails", type: "toggle", quick: true },
     { key: "tags", label: "Tags", type: "toggle", quick: true },
-    { key: "tagNames", label: "Tags (comma-sep)", type: "text" },
-    { key: "authors", label: "Authors (comma-sep)", type: "text" },
+    { key: "tagNames", label: "Tags", help: "Separate items with commas.", type: "text" },
+    { key: "authors", label: "Authors", help: "Separate items with commas.", type: "text" },
   ],
   render(p, w, h) {
     const prims: Prim[] = []
@@ -1903,7 +1903,7 @@ export const breadcrumbHeaderDef: ComponentDef = {
   },
   controls: [
     { key: "title", label: "Title", type: "text" },
-    { key: "trail", label: "Breadcrumb (comma-sep)", type: "text" },
+    { key: "trail", label: "Breadcrumb", help: "Separate items with commas.", type: "text" },
     { key: "actions", label: "Actions", type: "number", min: 0, max: 2, quick: true },
     { key: "divider", label: "Divider", type: "toggle", quick: true },
     { key: "cta", label: "Button label", type: "text" },

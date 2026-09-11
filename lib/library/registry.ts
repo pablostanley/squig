@@ -19,6 +19,8 @@ export type ControlType = "select" | "toggle" | "text" | "number" | "icon"
 export interface ControlDef {
   key: string
   label: string
+  /** Short, on-demand explanation of this control. */
+  help?: string
   type: ControlType
   options?: string[]
   /** `icon` controls may write the conventional "none" sentinel. */

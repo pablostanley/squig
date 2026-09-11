@@ -71,7 +71,8 @@ conventions worth knowing:
   recovery, and consequences directly. Put non-essential explanation behind a
   delayed tooltip on the relevant label or row, keep it to one precise
   sentence, and make the same help available from the keyboard and to assistive
-  technology. Never hide critical information in a tooltip.
+  technology, with tap access for touch. Use a disclosure for longer guidance.
+  Never hide critical information in a tooltip.
 
 ## Reporting bugs
 

@@ -121,6 +121,7 @@ export function VariantControl({
     const field = (
       <MixedNumberField
         label=""
+        ariaLabel={control.label}
         min={control.min}
         max={control.max}
         className={compact ? "w-16" : "w-[72px]"}
@@ -157,9 +158,10 @@ export function VariantControl({
 
   // text — a label can be long, so it gets the full width under its name
   return (
-    <StackRow label={control.label}>
+    <StackRow label={control.label} help={control.help}>
       <MixedTextField
         ariaLabel={control.label}
+        ariaDescription={control.help}
         shared={asShared(current, (v) => String(v ?? ""))}
         onCommit={(v) => setValue(v)}
       />

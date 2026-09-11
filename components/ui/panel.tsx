@@ -220,6 +220,7 @@ export function Row({
 }) {
   return (
     <div className={cn("flex gap-3", align === "center" ? "items-center" : "items-start", className)}>
+      {help && htmlFor && <label htmlFor={htmlFor} className="sr-only">{label}</label>}
       {label !== undefined && (
         help ? (
           <HelpTooltip

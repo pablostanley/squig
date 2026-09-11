@@ -78,6 +78,11 @@ subject.
   and it is Postgres-backed; see
   [docs/agent-architecture.md](docs/agent-architecture.md).
 - **No emoji in UI copy.**
+- **Keep UI copy concise.** Labels name the control; optional explanation goes
+  in a short, delayed helper on its label. Help must also work with keyboard
+  focus, screen readers and touch. Use a disclosure for longer setup guidance.
+  Keep live status, errors, recovery steps and security or destructive
+  consequences visible. Do not remove accessible names to shorten visible copy.
 - **Use the shared UI type scale.** Sizes, line heights and spacing live in
   `app/globals.css`; [docs/ui-typography.md](docs/ui-typography.md) explains the
   roles. Make room for labels instead of shrinking them.
