@@ -82,6 +82,11 @@ the shape of it.
 
 ## 2. The browser door
 
+In a WebMCP-capable browser, squig registers structured canvas tools
+automatically. Start with `squig_read_canvas`; see [WebMCP](webmcp.md) for
+the tool catalog, compatibility and verification. The console API below
+remains available in other browsers.
+
 With the app open, `window.squig` edits the canvas somebody is watching. Every
 call is synchronous, throws on bad input with a sentence worth reading, lands
 in the undo stack (`⌘Z` takes it back) and autosaves.

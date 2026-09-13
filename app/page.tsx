@@ -6,6 +6,7 @@ import { AgentBridge } from "@/components/agent/bridge"
 import { useEffect, useState } from "react"
 import { useSquig } from "@/lib/store"
 import { installAgentBridge } from "@/lib/agent-bridge"
+import { installWebMCP } from "@/lib/webmcp"
 import { Canvas } from "@/components/canvas/canvas"
 import { LeftRail } from "@/components/chrome/left-rail"
 import { LibraryPanel } from "@/components/chrome/library-panel"
@@ -35,7 +36,9 @@ export default function Home() {
   // only once there's a document to work on — an agent that found window.squig
   // on an empty canvas would be editing a drawing hydrate is about to replace
   useEffect(() => {
-    if (hydrated) installAgentBridge()
+    if (!hydrated) return
+    installAgentBridge()
+    return installWebMCP(window.squig!)
   }, [hydrated])
 
   if (!hydrated) {

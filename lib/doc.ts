@@ -280,6 +280,7 @@ export function shapeNode(shape: ShapeKind, at: ShapeAt): ShapeNode {
     type: "shape",
     shape,
     fill: at.fill ?? "none",
+    ...(at.rotation !== undefined ? { rotation: at.rotation } : {}),
     x: at.x,
     y: at.y,
     w: at.w,
