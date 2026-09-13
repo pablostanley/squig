@@ -7,6 +7,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import { copySelection, pasteFromSystem } from "@/lib/clipboard"
 import { useSquig } from "@/lib/store"
+import { arrangement } from "@/lib/canvas/arrange"
 import { screenToWorld } from "@/lib/types"
 import { hasEditableText } from "@/lib/canvas/edit-target"
 import { isCropped } from "@/lib/canvas/crop"
@@ -70,6 +71,7 @@ export function CanvasContextMenu() {
   const nodes = useSquig((s) => s.nodes)
   const order = useSquig((s) => s.order)
   const selection = useSquig((s) => s.selection)
+  const canAlign = useSquig((s) => arrangement(s).canAlign)
   const contextRow = useSquig((s) => s.contextRow)
   const st = useSquig.getState
   const ref = useRef<HTMLDivElement>(null)
@@ -169,10 +171,10 @@ export function CanvasContextMenu() {
       { separator: true },
       { label: "Flip horizontal", hint: kbd("shift+h"), icon: FlipHorizontalIcon, run: () => st().flipSelected("x") },
       { label: "Flip vertical", hint: kbd("shift+v"), icon: FlipVerticalIcon, run: () => st().flipSelected("y") },
-      ...(selection.length > 1
+      ...(canAlign
         ? ([
             { separator: true },
-            { label: "Tidy up", icon: SquaresFourIcon, run: () => st().tidySelected() },
+            ...(selection.length > 1 ? [{ label: "Tidy up", icon: SquaresFourIcon, run: () => st().tidySelected() }] : []),
             { label: "Align left", icon: AlignLeftSimpleIcon, run: () => st().alignSelected("left") },
             { label: "Align centres", icon: AlignCenterHorizontalSimpleIcon, run: () => st().alignSelected("hcenter") },
             { label: "Align right", icon: AlignRightSimpleIcon, run: () => st().alignSelected("right") },

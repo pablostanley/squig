@@ -142,7 +142,7 @@ export function ContextRow({
 
   return (
     <Panel ref={measure} className="absolute z-20 flex-row items-center gap-3 px-2.5 py-2" style={style}>
-      {multi && <AlignRow count={selectedNodes.length} />}
+      <AlignRow />
       {multi && (quick.length > 0 || showFill || showHead || showText) && <span className="h-4 w-px bg-border" />}
 
       {quick.map((c) => (

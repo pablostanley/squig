@@ -26,7 +26,7 @@ import {
 } from "./canvas/groups"
 import { normalizeRotation } from "./canvas/rotation"
 import { spaceNodes, tidyNodes, type SpacingOptions } from "./canvas/spacing"
-import { alignNodes, distributeNodes } from "./canvas/arrange"
+import { arrangeSelection } from "./canvas/arrange"
 import { breakApart } from "./library/break-apart"
 import {
   applyLook,
@@ -62,8 +62,10 @@ interface DocSnapshot {
   selection: string[]
   /** the group that selection represents, when it is one nested group */
   selectionGroupId: string | null
+  selectionGroups: string[]
   /** selection the edit ended with — what redo puts you back to */
   selAfter?: string[]
+  selGroupsAfter?: string[]
   selGroupAfter?: string | null
   /** the redo stack this checkpoint displaced, so a cancel can hand it back */
   displacedFuture?: DocSnapshot[]
@@ -98,6 +100,8 @@ interface SquigState {
   selection: string[]
   /** the exact group represented by `selection`; needed once groups nest */
   selectionGroupId: string | null
+  /** Explicit group picks; remaining selected leaves are independent units. */
+  selectionGroups: string[]
   viewport: Viewport
   tool: Tool
   shapeKind: ShapeKind
@@ -178,7 +182,7 @@ interface SquigState {
   setPaper: (s: PaperShade) => void
   setGrid: (on: boolean) => void
   setViewport: (v: Viewport) => void
-  setSelection: (ids: string[], groupId?: string | null) => void
+  setSelection: (ids: string[], groupId?: string | null, groups?: string[]) => void
   setCommandOpen: (open: boolean) => void
   setContextMenu: (m: ContextMenuState | null) => void
   setRenamingFile: (on: boolean) => void
@@ -321,12 +325,13 @@ const SAVE_DEBOUNCE_MS = 400
  * quietly, by rewriting history under itself. scripts/test-history.ts is there
  * to say so out loud.
  */
-function snapshot(s: Pick<SquigState, "nodes" | "order" | "selection" | "selectionGroupId">): DocSnapshot {
+function snapshot(s: Pick<SquigState, "nodes" | "order" | "selection" | "selectionGroupId" | "selectionGroups">): DocSnapshot {
   return {
     nodes: s.nodes,
     order: s.order,
     selection: [...s.selection],
     selectionGroupId: s.selectionGroupId,
+    selectionGroups: s.selectionGroups,
   }
 }
 
@@ -336,11 +341,12 @@ function snapshot(s: Pick<SquigState, "nodes" | "order" | "selection" | "selecti
  * the entry ends up describing the finished operation — which is what redo
  * should restore.
  */
-function stampSelAfter(past: DocSnapshot[], selection: string[], selectionGroupId: string | null): void {
+function stampSelAfter(past: DocSnapshot[], selection: string[], selectionGroupId: string | null, groups: string[]): void {
   const top = past[past.length - 1]
   if (top) {
     top.selAfter = [...selection]
     top.selGroupAfter = selectionGroupId
+    top.selGroupsAfter = groups
   }
 }
 
@@ -679,6 +685,7 @@ function adoptDoc(get: () => SquigState) {
     // whatever of the selection survived the other tab's edit, in document order
     selection: selectable(clean.order.filter((id) => held.has(id)), clean.nodes),
     selectionGroupId: null,
+    selectionGroups: [],
     croppingId: s.croppingId && clean.nodes[s.croppingId] ? s.croppingId : null,
     past: [],
     future: [],
@@ -770,6 +777,7 @@ export const useSquig = create<SquigState>((set, get) => ({
   order: [],
   selection: [],
   selectionGroupId: null,
+  selectionGroups: [],
   viewport: { x: 0, y: 0, zoom: 1 },
   tool: "select",
   shapeKind: "rect",
@@ -823,7 +831,7 @@ export const useSquig = create<SquigState>((set, get) => ({
     // this one writes the selection itself, so it also keeps the locked layers
     // out of it — a held-down picture has no crop to step into
     if (n?.type !== "image" || n.locked) return
-    set({ croppingId: id, editingId: null, selection: [id], selectionGroupId: null })
+    set({ croppingId: id, editingId: null, selection: [id], selectionGroupId: null, selectionGroups: [] })
   },
 
   resetCrop: (ids) => {
@@ -883,7 +891,7 @@ export const useSquig = create<SquigState>((set, get) => ({
   // a selection is a set, so store it in one canonical order: document order.
   // everything downstream (clipboard, duplicate, align, the type summary) then
   // behaves the same whether it was built by marquee, shift-click or ⌘A
-  setSelection: (ids, groupId = null) => {
+  setSelection: (ids, groupId = null, groups = groupId ? [groupId] : []) => {
     set((s) => {
       const want = new Set(selectable(ids, s.nodes))
       const next = s.order.filter((id) => want.has(id))
@@ -894,9 +902,14 @@ export const useSquig = create<SquigState>((set, get) => ({
         members.every((id) => want.has(id))
           ? groupId
           : null
+      const nextGroups = [...new Set(groups)].filter((g) => {
+        const members = groupMembers(g, s.nodes, s.order)
+        return members.length > 0 && members.every((id) => want.has(id))
+      })
       // bail when nothing actually changed, so a marquee crossing nothing new
       // doesn't re-render the canvas on every pointermove
       if (
+        nextGroups.length === s.selectionGroups.length && nextGroups.every((g, i) => g === s.selectionGroups[i]) &&
         nextGroup === s.selectionGroupId &&
         next.length === s.selection.length &&
         next.every((id, i) => s.selection[i] === id)
@@ -906,7 +919,7 @@ export const useSquig = create<SquigState>((set, get) => ({
       // how you leave, and leaving keeps the crop you'd dragged so far. This
       // path doesn't have to say so; see the note at the foot of this file,
       // which says it for every path.
-      return { selection: next, selectionGroupId: nextGroup }
+      return { selection: next, selectionGroupId: nextGroup, selectionGroups: nextGroups }
     })
   },
   setCommandOpen: (open) =>
@@ -956,6 +969,7 @@ export const useSquig = create<SquigState>((set, get) => ({
       order: prev.order,
       selection: selectable(prev.selection, prev.nodes),
       selectionGroupId: prev.selectionGroupId,
+      selectionGroups: prev.selectionGroups,
       past: past.slice(0, -1),
       future: prev.displacedFuture ?? get().future,
     })
@@ -1009,7 +1023,7 @@ export const useSquig = create<SquigState>((set, get) => ({
       set({ past, future })
       return false
     }
-    stampSelAfter(after.past, after.selection, after.selectionGroupId)
+    stampSelAfter(after.past, after.selection, after.selectionGroupId, after.selectionGroups)
     scheduleSave(get)
     return true
   },
@@ -1020,13 +1034,15 @@ export const useSquig = create<SquigState>((set, get) => ({
     if (opts.checkpoint !== false) get().checkpoint()
     set((s) => {
       const selection = opts.select !== false ? [id] : s.selection
+      const selectionGroups = opts.select !== false ? [] : s.selectionGroups
       const selectionGroupId = opts.select !== false ? null : s.selectionGroupId
-      stampSelAfter(s.past, selection, selectionGroupId)
+      stampSelAfter(s.past, selection, selectionGroupId, selectionGroups)
       return {
         nodes: settleBinds({ ...s.nodes, [id]: { ...node, id, seed } as SquigNode }),
         order: [...s.order, id],
         selection,
         selectionGroupId,
+        selectionGroups,
       }
     })
     scheduleSave(get)
@@ -1043,9 +1059,10 @@ export const useSquig = create<SquigState>((set, get) => ({
         ids.push(n.id)
       }
       const selection = opts.select !== false ? ids : s.selection
+      const selectionGroups = opts.select !== false ? [] : s.selectionGroups
       const selectionGroupId = opts.select !== false ? null : s.selectionGroupId
-      stampSelAfter(s.past, selection, selectionGroupId)
-      return { nodes: settleBinds(map), order: [...s.order, ...ids], selection, selectionGroupId }
+      stampSelAfter(s.past, selection, selectionGroupId, selectionGroups)
+      return { nodes: settleBinds(map), order: [...s.order, ...ids], selection, selectionGroupId, selectionGroups }
     })
     scheduleSave(get)
   },
@@ -1055,7 +1072,7 @@ export const useSquig = create<SquigState>((set, get) => ({
     set((s) => {
       const cur = s.nodes[id]
       if (!cur) return s
-      stampSelAfter(s.past, s.selection, s.selectionGroupId)
+      stampSelAfter(s.past, s.selection, s.selectionGroupId, s.selectionGroups)
       return { nodes: settleBinds({ ...s.nodes, [id]: { ...cur, ...patch } as SquigNode }) }
     })
     scheduleSave(get)
@@ -1069,7 +1086,7 @@ export const useSquig = create<SquigState>((set, get) => ({
         const cur = map[id]
         if (cur) map[id] = { ...cur, ...patch } as SquigNode
       }
-      stampSelAfter(s.past, s.selection, s.selectionGroupId)
+      stampSelAfter(s.past, s.selection, s.selectionGroupId, s.selectionGroups)
       // every bound arrow catches up here, which is what lets a box drag, a
       // nudge, an align and a resize all pull their connectors along without
       // any of them having to know that bindings exist
@@ -1087,6 +1104,10 @@ export const useSquig = create<SquigState>((set, get) => ({
       const nodes = pruneDegenerateGroups(map)
       const order = s.order.filter((i) => !ids.includes(i))
       const selection = s.selection.filter((i) => !ids.includes(i))
+      const selectionGroups = s.selectionGroups.filter((g) => {
+        const members = groupMembers(g, nodes, order)
+        return members.length > 0 && members.every((id) => selection.includes(id))
+      })
       const groupMembersLeft = s.selectionGroupId
         ? groupMembers(s.selectionGroupId, nodes, order)
         : []
@@ -1096,7 +1117,7 @@ export const useSquig = create<SquigState>((set, get) => ({
         groupMembersLeft.every((id) => selection.includes(id))
           ? s.selectionGroupId
           : null
-      stampSelAfter(s.past, selection, selectionGroupId)
+      stampSelAfter(s.past, selection, selectionGroupId, selectionGroups)
       return {
         // an arrow aimed at something that just went away lets go of it and
         // stays exactly where it was last drawn — see settleBinds
@@ -1104,6 +1125,7 @@ export const useSquig = create<SquigState>((set, get) => ({
         order,
         selection,
         selectionGroupId,
+        selectionGroups,
         // editing a node that just went away would wedge the canvas
         editingId: s.editingId && ids.includes(s.editingId) ? null : s.editingId,
         croppingId: s.croppingId && ids.includes(s.croppingId) ? null : s.croppingId,
@@ -1170,7 +1192,7 @@ export const useSquig = create<SquigState>((set, get) => ({
       get().updateNodes(Object.fromEntries(ids.map((id) => [id, { locked: true } as Partial<SquigNode>])))
       // letting go is part of the edit, and edit() stamps the checkpoint with
       // the selection the whole thing ended on — so redo lands here too
-      set({ selection: [], selectionGroupId: null, croppingId: null })
+      set({ selection: [], selectionGroupId: null, selectionGroups: [], croppingId: null })
     })
     get().setNotice(
       ids.length > 1 ? "locked — right-click one to let that one go" : "locked — right-click it to let it go"
@@ -1190,7 +1212,7 @@ export const useSquig = create<SquigState>((set, get) => ({
   unlockAll: () => get().unlockNodes(lockedIds(get().nodes, get().order)),
 
   duplicateSelected: (offset = 16) => {
-    const { selection, selectionGroupId, nodes, order, dupTrail } = get()
+    const { selection, selectionGroupId, selectionGroups, nodes, order, dupTrail } = get()
     const src = order.filter((id) => selection.includes(id)).map((id) => nodes[id])
     if (!src.length) return []
 
@@ -1204,6 +1226,7 @@ export const useSquig = create<SquigState>((set, get) => ({
       order.map((id) => nodes[id]).filter(Boolean)
     )
     const cloneGroupId = selectionGroupId ? groupMap.get(selectionGroupId) ?? null : null
+    const cloneGroups = selectionGroups.flatMap((g) => groupMap.has(g) ? [groupMap.get(g)!] : [])
     // through edit(), so the checkpoint remembers that the copies are what this
     // ended selected — a redo that handed them back unselected would leave the
     // next ⌘D measuring nothing, and stepping 16px diagonally instead of
@@ -1219,6 +1242,7 @@ export const useSquig = create<SquigState>((set, get) => ({
           order: orderWithClones(s.order, src, clones),
           selection: clones.map((c) => c.id),
           selectionGroupId: cloneGroupId,
+          selectionGroups: cloneGroups,
           // where these copies came from, so the next ⌘D can measure the same way
           dupTrail: {
             ids: clones.map((c) => c.id),
@@ -1266,6 +1290,7 @@ export const useSquig = create<SquigState>((set, get) => ({
       const forward: DocSnapshot = {
         ...snapshot(s),
         selAfter: prev.selAfter ?? s.selection,
+        selGroupsAfter: prev.selGroupsAfter ?? s.selectionGroups,
         selGroupAfter: prev.selGroupAfter !== undefined ? prev.selGroupAfter : s.selectionGroupId,
       }
       return {
@@ -1277,6 +1302,7 @@ export const useSquig = create<SquigState>((set, get) => ({
         // the selection was then, it can't hand back something locked now
         selection: selectable(prev.selection, prev.nodes),
         selectionGroupId: prev.selectionGroupId,
+        selectionGroups: prev.selectionGroups,
         editingId: null,
         // unlike the text editor, the crop overlay is a pure read of the node,
         // so ⌘Z can walk back through a crop without leaving the mode
@@ -1295,11 +1321,12 @@ export const useSquig = create<SquigState>((set, get) => ({
       const restoredGroup = next.selGroupAfter !== undefined ? next.selGroupAfter : next.selectionGroupId
       return {
         future: s.future.slice(0, -1),
-        past: [...s.past, { ...snapshot(s), selAfter: restored, selGroupAfter: restoredGroup }],
+        past: [...s.past, { ...snapshot(s), selAfter: restored, selGroupAfter: restoredGroup, selGroupsAfter: next.selGroupsAfter ?? next.selectionGroups }],
         nodes: next.nodes,
         order: next.order,
         selection: selectable(next.order.filter((id) => restored.includes(id)), next.nodes),
         selectionGroupId: restoredGroup,
+        selectionGroups: next.selGroupsAfter ?? next.selectionGroups,
         editingId: null,
         croppingId: s.croppingId && next.nodes[s.croppingId] ? s.croppingId : null,
       }
@@ -1323,6 +1350,7 @@ export const useSquig = create<SquigState>((set, get) => ({
       order: clean.order,
       selection: [],
       selectionGroupId: null,
+      selectionGroups: [],
       files,
       contextRow: prefs.contextRow,
       bigNudge: prefs.bigNudge,
@@ -1338,7 +1366,7 @@ export const useSquig = create<SquigState>((set, get) => ({
 
   // clearing a canvas that is already clear is the emptiest edit there is
   clearCanvas: () => {
-    get().edit(() => set({ nodes: {}, order: [], selection: [], selectionGroupId: null, editingId: null, croppingId: null }))
+    get().edit(() => set({ nodes: {}, order: [], selection: [], selectionGroupId: null, selectionGroups: [], editingId: null, croppingId: null }))
   },
 
   // -- groups ---------------------------------------------------------------
@@ -1388,6 +1416,7 @@ export const useSquig = create<SquigState>((set, get) => ({
         order: [...before, ...ids, ...after],
         selection: ids,
         selectionGroupId: gid,
+        selectionGroups: [gid],
       }
     }))
   },
@@ -1424,7 +1453,7 @@ export const useSquig = create<SquigState>((set, get) => ({
       // what's being dissolved, and leaving one node stamped with a group that
       // no longer exists would be worse — but it doesn't come out selected
       const next = pruneDegenerateGroups(map)
-      return { nodes: next, selection: selectable(freed, next), selectionGroupId: null }
+      return { nodes: next, selection: selectable(freed, next), selectionGroupId: null, selectionGroups: [] }
     }))
   },
 
@@ -1462,6 +1491,7 @@ export const useSquig = create<SquigState>((set, get) => ({
         order: ord,
         selection: picked.length ? picked : s.selection,
         selectionGroupId: picked.length ? null : s.selectionGroupId,
+        selectionGroups: picked.length ? [] : s.selectionGroups,
       }
     }))
   },
@@ -1577,6 +1607,7 @@ export const useSquig = create<SquigState>((set, get) => ({
           order,
           selection: ids,
           selectionGroupId,
+          selectionGroups: selectionGroupId ? [selectionGroupId] : [],
         }
       })
     )
@@ -1655,7 +1686,7 @@ export const useSquig = create<SquigState>((set, get) => ({
   },
 
   cloneSelectionInPlace: () => {
-    const { selection, selectionGroupId, nodes, order } = get()
+    const { selection, selectionGroupId, selectionGroups, nodes, order } = get()
     const src = order.filter((id) => selection.includes(id)).map((id) => nodes[id]).filter(Boolean)
     const { clones, groupMap } = cloneNodes(
       src,
@@ -1666,8 +1697,9 @@ export const useSquig = create<SquigState>((set, get) => ({
     if (!clones.length) return []
     const ids = clones.map((c) => c.id)
     const cloneGroupId = selectionGroupId ? groupMap.get(selectionGroupId) ?? null : null
+    const cloneGroups = selectionGroups.flatMap((g) => groupMap.has(g) ? [groupMap.get(g)!] : [])
     set((s) => {
-      stampSelAfter(s.past, ids, cloneGroupId)
+      stampSelAfter(s.past, ids, cloneGroupId, cloneGroups)
       return {
         nodes: settleBinds(pruneDegenerateGroups({
           ...s.nodes,
@@ -1676,6 +1708,7 @@ export const useSquig = create<SquigState>((set, get) => ({
         order: orderWithClones(s.order, src, clones),
         selection: ids,
         selectionGroupId: cloneGroupId,
+        selectionGroups: cloneGroups,
       }
     })
     scheduleSave(get)
@@ -1692,10 +1725,7 @@ export const useSquig = create<SquigState>((set, get) => ({
   },
 
   distributeSelected: (axis) => {
-    const { selection, nodes, order } = get()
-    const ids = new Set(selection)
-    const sel = order.filter((id) => ids.has(id)).map((id) => nodes[id]).filter(Boolean)
-    const patches = distributeNodes(sel, axis === "h" ? "x" : "y")
+    const patches = arrangeSelection(get(), axis === "h" ? "distribute-x" : "distribute-y")
     // evening out gaps that are already even is the align case again
     get().edit(() => get().updateNodes(patches))
   },
@@ -1703,13 +1733,17 @@ export const useSquig = create<SquigState>((set, get) => ({
   // every one of these builds a selection straight out of `order` rather than
   // going through setSelection, so each has to remember the locked layers on
   // its own. "All" means all the ones you can have.
-  selectAll: () => set((s) => ({ selection: selectable(s.order, s.nodes), selectionGroupId: null })),
-  selectNone: () => set({ selection: [], selectionGroupId: null, croppingId: null }),
+  selectAll: () => {
+    const s = get()
+    s.setSelection(s.order, null, s.order.flatMap((id) => s.nodes[id]?.groupIds?.slice(0, 1) ?? []))
+  },
+  selectNone: () => set({ selection: [], selectionGroupId: null, selectionGroups: [], croppingId: null }),
 
   invertSelection: () => {
     set((s) => ({
       selection: selectable(s.order.filter((id) => !s.selection.includes(id)), s.nodes),
       selectionGroupId: null,
+      selectionGroups: [],
     }))
   },
 
@@ -1734,6 +1768,7 @@ export const useSquig = create<SquigState>((set, get) => ({
         nodes
       ),
       selectionGroupId: null,
+      selectionGroups: [],
     })
   },
 
@@ -1746,7 +1781,7 @@ export const useSquig = create<SquigState>((set, get) => ({
     const ring = selectable(order, nodes)
     if (!ring.length) return
     if (!selection.length) {
-      set({ selection: [dir === 1 ? ring[0] : ring[ring.length - 1]], selectionGroupId: null })
+      set({ selection: [dir === 1 ? ring[0] : ring[ring.length - 1]], selectionGroupId: null, selectionGroups: [] })
       get().revealSelection()
       return
     }
@@ -1754,7 +1789,7 @@ export const useSquig = create<SquigState>((set, get) => ({
     const anchor = selection[selection.length - 1]
     const i = ring.indexOf(anchor)
     const next = ring[(((i === -1 ? 0 : i) + dir) % ring.length + ring.length) % ring.length]
-    set({ selection: [next], selectionGroupId: null })
+    set({ selection: [next], selectionGroupId: null, selectionGroups: [] })
     // stepping onto something you can't see is the same as not stepping at
     // all. revealSelection holds still when the layer was already on screen,
     // so a walk through a screenful of nodes doesn't lurch on every press
@@ -1762,11 +1797,7 @@ export const useSquig = create<SquigState>((set, get) => ({
   },
 
   alignSelected: (edge) => {
-    const { selection, nodes } = get()
-    if (selection.length < 2) return
-    const sel = selection.map((id) => nodes[id]).filter(Boolean)
-    if (sel.length < 2) return
-    const patches = alignNodes(sel, edge)
+    const patches = arrangeSelection(get(), edge)
     // a selection already flush against that edge writes its own coordinates
     // back onto itself, which edit() reads as the nothing it is
     get().edit(() => get().updateNodes(patches))
@@ -1782,6 +1813,7 @@ export const useSquig = create<SquigState>((set, get) => ({
       order: [],
       selection: [],
       selectionGroupId: null,
+      selectionGroups: [],
       croppingId: null,
       viewport: { x: 0, y: 0, zoom: 1 },
       renamingFile: false,
@@ -1812,6 +1844,7 @@ export const useSquig = create<SquigState>((set, get) => ({
       order: clean.order,
       selection: [],
       selectionGroupId: null,
+      selectionGroups: [],
       croppingId: null,
       viewport: { x: 0, y: 0, zoom: 1 },
       renamingFile: false,
@@ -1844,6 +1877,7 @@ export const useSquig = create<SquigState>((set, get) => ({
       order: [],
       selection: [],
       selectionGroupId: null,
+      selectionGroups: [],
       croppingId: null,
       past: [],
       future: [],
@@ -1877,6 +1911,7 @@ export const useSquig = create<SquigState>((set, get) => ({
       order: doc.order,
       selection: [],
       selectionGroupId: null,
+      selectionGroups: [],
       croppingId: null,
       renamingFile: false,
       linkOpen: false,

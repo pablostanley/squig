@@ -31,6 +31,7 @@ function reset() {
     order: [],
     selection: [],
     selectionGroupId: null,
+    selectionGroups: [],
     clipboard: [],
     past: [],
     future: [],
@@ -215,6 +216,107 @@ for (const [label, duplicate] of [
   check("deep-selection immediately isolates the leaf for dragging", deep.press.ids.join() === "a" && deep.click === null)
   const addDeep = selectionForPress(current, { ids: ["c"], groupId: null }, true, true)
   check("Shift plus deep-selection adds the leaf", addDeep.press.ids.join() === "a,b,c")
+}
+
+
+// Alignment uses selected hierarchy, not the flattened list used for dragging.
+{
+  reset()
+  const a = rect(0, 0), b = rect(60, 40), c = rect(300, 100), d = rect(380, 160)
+  const g = group([a, b]), h = group([c, d])
+  const { press } = selectionForPress(
+    { ids: [a, b], groupId: g }, { ids: [c, d], groupId: h }, true, false
+  )
+  s().setSelection(press.ids, press.groupId, press.groups)
+  const before = JSON.stringify(s().nodes)
+  const depth = s().past.length
+  s().alignSelected("hcenter")
+  check("two group picks align their bounding boxes", s().nodes[a].x === 160 && s().nodes[c].x === 150)
+  check("alignment preserves each group's internal offsets", s().nodes[b].x - s().nodes[a].x === 60 && s().nodes[d].x - s().nodes[c].x === 80)
+  check("alignment leaves the other axis alone", s().nodes[b].y === 40 && s().nodes[d].y === 160)
+  check("group alignment is one undo step", s().past.length === depth + 1)
+  const after = JSON.stringify(s().nodes)
+  s().undo()
+  check("undo restores positions and both selected groups", JSON.stringify(s().nodes) === before && s().selectionGroups.join() === [g, h].join())
+  s().redo()
+  check("redo restores positions and both selected groups", JSON.stringify(s().nodes) === after && s().selectionGroups.join() === [g, h].join())
+  const alignedDepth = s().past.length
+  s().alignSelected("hcenter")
+  check("repeated alignment spends no undo step", s().past.length === alignedDepth)
+  s().undo()
+  s().setSelection([a, b])
+  s().alignSelected("left")
+  check("explicitly selecting all children still aligns the children", s().nodes[a].x === 0 && s().nodes[b].x === 0)
+  check("deep alignment leaves other groups alone", s().nodes[c].x === 300 && s().nodes[d].x === 380)
+}
+
+{
+  reset()
+  const a = rect(0), b = rect(80), c = rect(200), outside = rect(400)
+  const inner = group([a, b]), outer = group([a, b, c])
+  const picked = groupPickForHit(a, [a, b, outside], null, s().nodes, s().order, [inner])
+  check("clicking a subgroup in a mixed selection keeps its depth", picked.groupId === inner)
+  const entered = stepIntoGroup(a, [a, b, outside], null, s().nodes, s().order, [inner])
+  check("double-clicking a subgroup in a mixed selection enters that subgroup", entered.ids.join() === a && entered.groupId === null)
+  s().setSelection([a])
+  s().alignSelected("right")
+  check("a single child aligns inside its immediate parent", s().nodes[a].x === 80 && s().nodes[b].x === 80 && s().nodes[c].x === 200)
+  s().undo()
+  s().setSelection([a, b], inner)
+  s().alignSelected("right")
+  check("a nested group aligns to its parent as a unit", s().nodes[a].x === 120 && s().nodes[b].x === 200)
+  s().undo()
+  s().setSelection([a, outside])
+  s().alignSelected("hcenter")
+  check("a deep child and an outside node align to each other", s().nodes[a].x === 200 && s().nodes[outside].x === 200)
+  check("mixed alignment leaves unselected siblings alone", s().nodes[b].x === 80 && s().nodes[c].x === 200)
+  s().undo()
+  s().setSelection([a, b, c], outer)
+  const before = JSON.stringify(s().nodes), depth = s().past.length
+  s().alignSelected("left")
+  check("a lone top-level group has no alignment target", JSON.stringify(s().nodes) === before && s().past.length === depth)
+  s().setSelection([a, b, c, outside], null, [outer, inner])
+  s().alignSelected("right")
+  check("overlapping parent and subgroup picks move each leaf once", s().nodes[a].x === 200 && s().nodes[b].x === 280 && s().nodes[c].x === 400)
+}
+
+for (const [edge, x, y] of [
+  ["left", 0, 60], ["hcenter", 80, 60], ["right", 160, 60],
+  ["top", 60, 0], ["vcenter", 60, 85], ["bottom", 60, 170],
+] as const) {
+  reset()
+  const background = rect(0), child = rect(60, 60)
+  s().updateNode(background, { w: 200, h: 200, locked: true })
+  s().updateNodes({ [background]: { groupIds: ["parent"] }, [child]: { groupIds: ["parent"] } })
+  s().setSelection([child])
+  s().alignSelected(edge)
+  check(`single child ${edge} uses parent bounds, including locked members`, s().nodes[child].x === x && s().nodes[child].y === y)
+  check(`single child ${edge} does not move its container`, s().nodes[background].x === 0 && s().nodes[background].y === 0)
+}
+
+{
+  reset()
+  const ids = [0, 60, 200, 260, 600, 660].map((x) => rect(x))
+  const groups = [group(ids.slice(0, 2)), group(ids.slice(2, 4)), group(ids.slice(4, 6))]
+  s().selectAll()
+  s().distributeSelected("h")
+  check("select all distributes three whole groups", s().nodes[ids[2]].x === 300 && s().nodes[ids[3]].x === 360)
+  check("group distribution keeps the outer units fixed", s().nodes[ids[0]].x === 0 && s().nodes[ids[5]].x === 660)
+  s().setSelection(ids.slice(0, 4), null, groups.slice(0, 2))
+  const before = JSON.stringify(s().nodes)
+  s().distributeSelected("h")
+  check("two selected groups cannot distribute their four children", JSON.stringify(s().nodes) === before)
+  const clones = s().duplicateSelected()
+  check("duplicating a multi-group selection preserves its units", s().selectionGroups.length === 2 && s().selectionGroups.every((g) => !groups.includes(g)))
+  s().checkpoint()
+  s().cloneSelectionInPlace()
+  const draggedGroups = [...s().selectionGroups]
+  s().undo()
+  s().redo()
+  check("redo of an in-place drag copy restores the copied group units", s().selectionGroups.join() === draggedGroups.join())
+  s().undo()
+  s().alignSelected("left")
+  check("duplicated groups align without collapsing children", s().nodes[clones[1]].x - s().nodes[clones[0]].x === 60)
 }
 
 report("group checks passed")

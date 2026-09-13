@@ -17,6 +17,7 @@
 import { useEffect } from "react"
 
 import { useSquig } from "@/lib/store"
+import { arrangement } from "@/lib/canvas/arrange"
 import type { ArrowNode, ComponentNode, FillTone, ImageNode, InkTone, LineStyle, ShapeNode, SquigNode, StrokeWeight, TextNode } from "@/lib/types"
 import { normalizeFill, normalizeInk, normalizeStroke } from "@/lib/types"
 import { isCropped, trueShapePatch } from "@/lib/canvas/crop"
@@ -317,6 +318,7 @@ function SelectionEditor({ selected }: { selected: SquigNode[] }) {
   const st = useSquig.getState
   const focusedId = useSquig((s) => s.inspectorFocus?.id)
   const focusedKey = useSquig((s) => s.inspectorFocus?.key)
+  const canAlign = useSquig((s) => arrangement(s).canAlign)
   const multi = selected.length > 1
 
   /**
@@ -423,10 +425,10 @@ function SelectionEditor({ selected }: { selected: SquigNode[] }) {
 
         {/* eight icons don't fit beside a label column, so alignment takes the
             full width and flipping — which is always available — keeps the row */}
-        {multi && (
+        {(canAlign || multi) && (
           <StackRow label="Align">
-            <AlignRow count={selected.length} className="justify-between" />
-            <SpacingControls nodes={selected} />
+            <AlignRow className="justify-between" />
+            {multi && <SpacingControls nodes={selected} />}
           </StackRow>
         )}
 

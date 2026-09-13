@@ -9,6 +9,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useSquig } from "@/lib/store"
+import { arrangement } from "@/lib/canvas/arrange"
 import { ALL_DEFS, matches, type ComponentDef } from "@/lib/library/registry"
 import { searchNodes, type NodeHit } from "@/lib/canvas/find"
 import { SketchPrims } from "@/components/canvas/sketch"
@@ -110,6 +111,7 @@ export function CommandPalette() {
 }
 
 function Palette() {
+  const canAlign = useSquig((s) => arrangement(s).canAlign)
   const selection = useSquig((s) => s.selection)
   const nodes = useSquig((s) => s.nodes)
   const order = useSquig((s) => s.order)
@@ -199,12 +201,12 @@ function Palette() {
       { id: "flip-v", label: "Flip vertical", hint: kbd("shift+v"), section: "Arrange", keywords: "mirror reverse", icon: FlipVerticalIcon, disabled: !hasSel, run: () => st().flipSelected("y") },
       { id: "crop", label: "Crop image", hint: kbd("enter"), section: "Arrange", keywords: "photo picture trim frame mask", icon: CropIcon, disabled: !loneImage, run: () => loneImage && st().setCropping(loneImage) },
       { id: "uncrop", label: "Reset crop", section: "Arrange", keywords: "photo picture uncrop restore full", icon: ArrowCounterClockwiseIcon, disabled: !hasCrop, run: () => st().resetCrop() },
-      { id: "align-l", label: "Align left", section: "Arrange", icon: CornersOutIcon, disabled: selection.length < 2, run: () => st().alignSelected("left") },
-      { id: "align-hc", label: "Align centres horizontally", section: "Arrange", icon: CornersOutIcon, disabled: selection.length < 2, run: () => st().alignSelected("hcenter") },
-      { id: "align-r", label: "Align right", section: "Arrange", icon: CornersOutIcon, disabled: selection.length < 2, run: () => st().alignSelected("right") },
-      { id: "align-t", label: "Align top", section: "Arrange", icon: CornersOutIcon, disabled: selection.length < 2, run: () => st().alignSelected("top") },
-      { id: "align-vc", label: "Align middles vertically", section: "Arrange", icon: CornersOutIcon, disabled: selection.length < 2, run: () => st().alignSelected("vcenter") },
-      { id: "align-b", label: "Align bottom", section: "Arrange", icon: CornersOutIcon, disabled: selection.length < 2, run: () => st().alignSelected("bottom") },
+      { id: "align-l", label: "Align left", section: "Arrange", icon: CornersOutIcon, disabled: !canAlign, run: () => st().alignSelected("left") },
+      { id: "align-hc", label: "Align centres horizontally", section: "Arrange", icon: CornersOutIcon, disabled: !canAlign, run: () => st().alignSelected("hcenter") },
+      { id: "align-r", label: "Align right", section: "Arrange", icon: CornersOutIcon, disabled: !canAlign, run: () => st().alignSelected("right") },
+      { id: "align-t", label: "Align top", section: "Arrange", icon: CornersOutIcon, disabled: !canAlign, run: () => st().alignSelected("top") },
+      { id: "align-vc", label: "Align middles vertically", section: "Arrange", icon: CornersOutIcon, disabled: !canAlign, run: () => st().alignSelected("vcenter") },
+      { id: "align-b", label: "Align bottom", section: "Arrange", icon: CornersOutIcon, disabled: !canAlign, run: () => st().alignSelected("bottom") },
 
       { id: "bold", label: "Bold", hint: kbd("mod+b"), section: "Text", icon: TextBIcon, disabled: !hasText, run: () => st().toggleTextStyle("bold") },
       { id: "italic", label: "Italic", hint: kbd("mod+i"), section: "Text", icon: TextItalicIcon, disabled: !hasText, run: () => st().toggleTextStyle("italic") },
@@ -241,7 +243,7 @@ function Palette() {
           run: () => st().openFile(f.id),
         })),
     ],
-    [st, hasSel, hasComponent, hasText, hasGroup, loneImage, hasCrop, lockedCount, canGroup, selection.length, files, docId]
+    [st, hasSel, hasComponent, hasText, hasGroup, loneImage, hasCrop, lockedCount, canGroup, canAlign, files, docId]
   )
 
   const rows = useMemo<Row[]>(() => {

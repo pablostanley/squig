@@ -63,7 +63,7 @@ import { exportDoc } from "@/lib/file-io"
 import { copyAsPngWithNotice } from "@/lib/export-image"
 import { clampGestureZoom, zoomFloor, MAX_ZOOM, MIN_ZOOM } from "@/lib/canvas/navigate"
 import { inViewBox, visibleBox } from "@/lib/canvas/cull"
-import { groupPickForHit, selectionForPress, stepIntoGroup, type GroupPick } from "@/lib/canvas/groups"
+import { groupPickForHit, pickGroups, selectionForPress, stepIntoGroup, type GroupPick } from "@/lib/canvas/groups"
 import { SpacingOverlay } from "./spacing-overlay"
 import { ContextRow } from "./context-row"
 import { CropOverlay, CropStage } from "./crop-overlay"
@@ -159,6 +159,7 @@ export type Gesture =
       sourceIds: string[]
       /** the nested group those leaves represent, when they are one group */
       sourceGroupId: string | null
+      sourceGroups: string[]
       /** positions at gesture start, keyed by source id */
       sourcePos: Record<string, { x: number; y: number }>
       /** visual boxes at gesture start — routed arrows can extend past x/y/w/h */
@@ -186,6 +187,7 @@ export type Gesture =
       exceeded: boolean
       base: string[]
       baseGroupId: string | null
+      baseGroups: string[]
       /** the hollow shape whose middle the press landed in, if any. A press
        *  there reads two ways — a click means "select this shape", a drag
        *  means "marquee, it just happened to start inside" — so the candidate
@@ -610,7 +612,7 @@ export function Canvas() {
         // grazing one member of a group takes the whole group
         const hits = s.expandSelection(pickInRect(s.nodes, s.order, box, v.zoom))
         if (marqueeMode(mods) === "replace") {
-          s.setSelection(hits)
+          s.setSelection(hits, null, hits.flatMap((id) => s.nodes[id]?.groupIds?.slice(0, 1) ?? []))
         } else {
           // symmetric difference against the selection we started from, so
           // sweeping back and forth adds and removes the same things
@@ -619,7 +621,7 @@ export function Canvas() {
           s.setSelection([
             ...g.base.filter((id) => !hitSet.has(id)),
             ...hits.filter((id) => !baseSet.has(id)),
-          ])
+          ], null, [...g.baseGroups, ...hits.flatMap((id) => s.nodes[id]?.groupIds?.slice(0, 1) ?? [])])
         }
         return
       }
@@ -635,14 +637,14 @@ export function Canvas() {
 
         // alt engages and disengages drag-a-copy, live, mid-gesture
         if (mods.alt && !g.cloneIds) {
-          st().setSelection(g.sourceIds, g.sourceGroupId)
+          st().setSelection(g.sourceIds, g.sourceGroupId, g.sourceGroups)
           // put the sources back first so the copies land exactly on them
           st().updateNodes(Object.fromEntries(g.sourceIds.map((id) => [id, { ...g.sourcePos[id] }])))
           const ids = st().cloneSelectionInPlace()
           if (ids.length === g.sourceIds.length) g.cloneIds = ids
         } else if (!mods.alt && g.cloneIds) {
           st().removeNodes(g.cloneIds, { checkpoint: false })
-          st().setSelection(g.sourceIds, g.sourceGroupId)
+          st().setSelection(g.sourceIds, g.sourceGroupId, g.sourceGroups)
           g.cloneIds = null
         }
 
@@ -1236,7 +1238,7 @@ export function Canvas() {
     // a click with no drag inside a bigger selection narrows to what was
     // clicked — already resolved to a group or a single piece at press time
     if (g.kind === "move" && !g.exceeded && g.clickSelection) {
-      s.setSelection(g.clickSelection.ids, g.clickSelection.groupId)
+      s.setSelection(g.clickSelection.ids, g.clickSelection.groupId, pickGroups(g.clickSelection))
     }
 
     // the press sat inside a hollow shape and never became a drag: it was a
@@ -1247,18 +1249,13 @@ export function Canvas() {
       const deep = mods.toggle && !!s.nodes[g.softHitId]?.groupIds?.length
       const picked = deep
         ? { ids: [g.softHitId], groupId: null }
-        : groupPickForHit(g.softHitId, s.selection, s.selectionGroupId, s.nodes, s.order)
-      const hitSet = picked.ids
-      if (!deep && (mods.shift || mods.toggle)) {
-        const sel = s.selection
-        s.setSelection(
-          hitSet.every((id) => sel.includes(id))
-            ? sel.filter((i) => !hitSet.includes(i))
-            : [...new Set([...sel, ...hitSet])]
-        )
-      } else {
-        s.setSelection(hitSet, picked.groupId)
-      }
+        : groupPickForHit(g.softHitId, s.selection, s.selectionGroupId, s.nodes, s.order, s.selectionGroups)
+      const result = selectionForPress(
+        { ids: s.selection, groupId: s.selectionGroupId, groups: s.selectionGroups },
+        picked, mods.shift || (!deep && mods.toggle), deep
+      )
+      const next = result.click ?? result.press
+      s.setSelection(next.ids, next.groupId, pickGroups(next))
     }
 
     // an ⌥-drag copy hands ⌘D the distance it travelled, so the next one
@@ -1283,7 +1280,7 @@ export function Canvas() {
     stopAutoPan()
 
     if (g.kind === "marquee") {
-      s.setSelection(g.base, g.baseGroupId)
+      s.setSelection(g.base, g.baseGroupId, g.baseGroups)
     } else if ((g.kind === "move" || g.kind === "resize" || g.kind === "rotate" || g.kind === "crop" || g.kind === "endpoint" || g.kind === "route") && g.dirty) {
       // Escape undoes this drag, not the whole crop — you stay in the mode
       s.revertToCheckpoint()
@@ -1811,17 +1808,17 @@ export function Canvas() {
         // that isn't a design tool.
         const deep = mods.toggle && grouped
         const picked = !hitId
-          ? { ids: s.selection, groupId: s.selectionGroupId }
+          ? { ids: s.selection, groupId: s.selectionGroupId, groups: s.selectionGroups }
           : deep
             ? { ids: [hitId], groupId: null }
-            : groupPickForHit(hitId, s.selection, s.selectionGroupId, s.nodes, s.order)
+            : groupPickForHit(hitId, s.selection, s.selectionGroupId, s.nodes, s.order, s.selectionGroups)
         const { press, click: clickSelection } = selectionForPress(
-          { ids: s.selection, groupId: s.selectionGroupId }, picked,
+          { ids: s.selection, groupId: s.selectionGroupId, groups: s.selectionGroups }, picked,
           !!hitId && (mods.shift || (!deep && mods.toggle)), deep
         )
         const sel = press.ids
         const sourceGroupId = press.groupId
-        s.setSelection(sel, sourceGroupId)
+        s.setSelection(sel, sourceGroupId, pickGroups(press))
 
         const sourcePos: Record<string, { x: number; y: number }> = {}
         const sourceBounds: Record<string, Bounds> = {}
@@ -1844,6 +1841,7 @@ export function Canvas() {
           wy,
           sourceIds,
           sourceGroupId,
+          sourceGroups: pickGroups(press),
           sourcePos,
           sourceBounds,
           cloneIds: null,
@@ -1865,6 +1863,7 @@ export function Canvas() {
         wy,
         base: s.selection,
         baseGroupId: s.selectionGroupId,
+        baseGroups: s.selectionGroups,
         softHitId,
       }, e)
     },
@@ -1907,7 +1906,7 @@ export function Canvas() {
       // group in store is what makes G/A/B reachable as G, then A, then B,
       // rather than jumping from the outside straight to the leaf.
       if (n.groupIds?.length && (s.selectionGroupId || s.selection.length !== 1 || s.selection[0] !== hitId)) {
-        const next = stepIntoGroup(hitId, s.selection, s.selectionGroupId, s.nodes, s.order)
+        const next = stepIntoGroup(hitId, s.selection, s.selectionGroupId, s.nodes, s.order, s.selectionGroups)
         s.setSelection(next.ids, next.groupId)
         return
       }
@@ -1963,7 +1962,7 @@ export function Canvas() {
       // locked layer is never selected, so the menu targets it directly and
       // whatever was selected before is left alone
       if (hitId && !locked && !s.selection.includes(hitId)) {
-        const picked = groupPickForHit(hitId, s.selection, s.selectionGroupId, s.nodes, s.order)
+        const picked = groupPickForHit(hitId, s.selection, s.selectionGroupId, s.nodes, s.order, s.selectionGroups)
         s.setSelection(picked.ids, picked.groupId)
       }
       if (!hitId) s.setSelection([])

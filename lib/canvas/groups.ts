@@ -12,6 +12,8 @@ import type { SquigNode } from "../types"
 export interface GroupPick {
   ids: string[]
   groupId: string | null
+  /** Selected group units in a mixed pick; omitted for a single group/leaf. */
+  groups?: string[]
 }
 
 /** Defer destructive click changes until release so a press can still move. */
@@ -26,14 +28,16 @@ export function selectionForPress(
     if (contained) {
       return {
         press: current,
-        click: { ids: current.ids.filter((id) => !picked.ids.includes(id)), groupId: null },
+        click: { ids: current.ids.filter((id) => !picked.ids.includes(id)), groupId: null, groups: pickGroups(current) },
       }
     }
-    return { press: { ids: [...new Set([...current.ids, ...picked.ids])], groupId: null }, click: null }
+    return { press: { ids: [...new Set([...current.ids, ...picked.ids])], groupId: null, groups: [...new Set([...pickGroups(current), ...pickGroups(picked)])] }, click: null }
   }
   if (deep || !contained || current.ids.length === picked.ids.length) return { press: picked, click: null }
   return { press: current, click: picked }
 }
+
+export const pickGroups = (pick: GroupPick): string[] => pick.groups ?? (pick.groupId ? [pick.groupId] : [])
 
 const pathOf = (n: SquigNode | undefined): readonly string[] => n?.groupIds ?? []
 
@@ -80,11 +84,18 @@ export function groupPickForHit(
   selection: readonly string[],
   selectedGroupId: string | null,
   nodes: Record<string, SquigNode>,
-  order: readonly string[]
+  order: readonly string[],
+  selectedGroups: readonly string[] = []
 ): GroupPick {
   const n = nodes[hitId]
   if (!n || n.locked) return { ids: [], groupId: null }
   const path = pathOf(n)
+
+  const held = path.find((g) => selectedGroups.includes(g))
+  if (held) {
+    const ids = groupMembers(held, nodes, order)
+    if (ids.every((id) => selection.includes(id))) return { ids, groupId: held }
+  }
 
   if (selectedGroupId && path.includes(selectedGroupId)) {
     const ids = groupMembers(selectedGroupId, nodes, order)
@@ -104,14 +115,16 @@ export function stepIntoGroup(
   selection: readonly string[],
   selectedGroupId: string | null,
   nodes: Record<string, SquigNode>,
-  order: readonly string[]
+  order: readonly string[],
+  selectedGroups: readonly string[] = []
 ): GroupPick {
   const n = nodes[hitId]
   if (!n || n.locked) return { ids: [], groupId: null }
   const path = pathOf(n)
   if (!path.length) return { ids: [hitId], groupId: null }
 
-  let at = selectedGroupId ? path.indexOf(selectedGroupId) : -1
+  const held = selectedGroupId ?? path.find((g) => selectedGroups.includes(g))
+  let at = held ? path.indexOf(held) : -1
   if (at < 0 && sameSet(groupMembers(path[0], nodes, order), selection)) at = 0
   // A leaf reached with Cmd-click is already all the way inside.
   if (at < 0 && selection.length === 1 && selection[0] === hitId) {

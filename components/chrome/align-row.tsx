@@ -1,8 +1,7 @@
 "use client"
 
 // ---------------------------------------------------------------------------
-// Align + distribute cluster. Appears once there's more than one thing
-// selected — until then there is nothing to align anything to.
+// Align selected units to each other, or a single unit to its parent.
 // ---------------------------------------------------------------------------
 
 import {
@@ -18,6 +17,7 @@ import {
 } from "@phosphor-icons/react"
 
 import { useSquig } from "@/lib/store"
+import { arrangement } from "@/lib/canvas/arrange"
 import { cn } from "@/lib/utils"
 import { IconAction } from "@/components/ui/segmented"
 
@@ -32,16 +32,17 @@ const ALIGN: { edge: Edge; label: string; icon: PhosphorIcon }[] = [
   { edge: "bottom", label: "Align bottom", icon: AlignBottomSimpleIcon },
 ]
 
-export function AlignRow({ count, className }: { count: number; className?: string }) {
+export function AlignRow({ className }: { className?: string }) {
   const st = useSquig.getState
-  if (count < 2) return null
-  // evening out gaps needs a gap on both sides of something
-  const canDistribute = count >= 3
+  const canAlign = useSquig((s) => arrangement(s).canAlign)
+  const canDistribute = useSquig((s) => arrangement(s).canDistribute)
+  const toParent = useSquig((s) => !!arrangement(s).parent)
+  if (!canAlign) return null
 
   return (
     <div className={cn("flex items-center gap-0.5", className)}>
       {ALIGN.map(({ edge, label, icon: Icon }) => (
-        <IconAction key={edge} className="size-ctl-sm" label={label} onClick={() => st().alignSelected(edge)}>
+        <IconAction key={edge} className="size-ctl-sm" label={toParent ? `${label} in group` : label} onClick={() => st().alignSelected(edge)}>
           <Icon className="size-3.5" />
         </IconAction>
       ))}
