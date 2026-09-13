@@ -284,6 +284,15 @@ const arranged = applyOperations(
     { op: "flip", ids: ["c"], axis: "x" },
   ]),
 ).document
+const exactSpacing = applyOperations(arranged, operation.array().parse([{ op: "spacing", ids: ["a", "b", "c"], axis: "x", gap: 24 }])).document
+check("agent exact spacing uses visible widths", exactSpacing.nodes.b.x - exactSpacing.nodes.a.x - exactSpacing.nodes.a.w === 24)
+check("agent rejects invalid spacing order", refused(() => applyOperations(arranged, operation.array().parse([{ op: "spacing", ids: ["a", "b", "c"], axis: "x", gap: 24, order: ["a", "a", "b"] }]))))
+check("spacing schema rejects negative gaps", !operation.safeParse({ op: "spacing", ids: ["a", "b"], axis: "x", gap: -1 }).success)
+const resizedSpacing = applyOperations(exactSpacing, operation.array().parse([{ op: "spacing_resize", ids: ["a", "b", "c"], marked: ["a"], axis: "x", delta: 20 }])).document
+check("agent marked resizing preserves gap", resizedSpacing.nodes.a.w === exactSpacing.nodes.a.w + 20 && resizedSpacing.nodes.b.x - resizedSpacing.nodes.a.x - resizedSpacing.nodes.a.w === 24)
+check("agent refuses marked nodes outside selection", refused(() => applyOperations(exactSpacing, operation.array().parse([{ op: "spacing_resize", ids: ["a", "b", "c"], marked: ["missing"], axis: "x", delta: 20 }]))))
+const tidyAgent = applyOperations(arranged, operation.array().parse([{ op: "tidy", ids: ["a", "b", "c"], gap: 16 }])).document
+check("agent tidy applies equal gaps", tidyAgent.nodes.b.x - tidyAgent.nodes.a.x - tidyAgent.nodes.a.w === 16)
 check("aligned to the same top", arranged.nodes.a.y === arranged.nodes.c.y)
 check("brought to the front", arranged.order.at(-1) === "a")
 check("flipped on x", arranged.nodes.c.flipX === true)

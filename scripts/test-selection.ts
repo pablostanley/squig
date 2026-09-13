@@ -1,3 +1,4 @@
+import { equalGap, spaceNodes, tidyNodes, changeMatchingGaps, resizeSpacedNodes, spacingReorder } from "../lib/canvas/spacing.ts"
 // ---------------------------------------------------------------------------
 // Checks for the "what do these N nodes have in common?" layer that the
 // inspector's mixed-value fields are built on.
@@ -201,5 +202,26 @@ check("an empty selection reads as mixed", shared([]).mixed === true)
 }
 
 // ---------------------------------------------------------------------------
+
+
+const spaced = [rect("s1", 0, 0, 20), rect("s2", 30, 0, 40), rect("s3", 80, 0, 10)]
+check("unequal widths still have an equal gap", equalGap(spaced, "x") === 10)
+const spacedPatches = spaceNodes(spaced, { axis: "x", gap: 24 })
+check("exact gap anchors the first object", spacedPatches.s1.x === 0 && spacedPatches.s2.x === 44 && spacedPatches.s3.x === 108)
+check("negative spacing is refused", Object.keys(spaceNodes(spaced, { gap: -1 })).length === 0)
+check("locked selections do not move", Object.keys(spaceNodes([{ ...spaced[0], locked: true }, ...spaced.slice(1)], { gap: 5 })).length === 0)
+check("bad spatial order is refused", Object.keys(spaceNodes(spaced, { order: ["s1", "s1", "s3"] })).length === 0)
+const reorder = spaceNodes(spaced, { gap: 10, order: ["s3", "s1", "s2"] })
+check("reorder preserves gaps with unequal widths", reorder.s3.x === 0 && reorder.s1.x === 20 && reorder.s2.x === 50)
+check("ring crosses an item midpoint", spacingReorder(spaced, "x", "s1", 60).index === 1)
+const grid = [rect("g1", 0, 0), rect("g2", 30, 2), rect("g3", 1, 40), rect("g4", 36, 42)]
+const tidy = tidyNodes(grid, 16)
+check("tidy preserves two rows", tidy.g1.x === 0 && tidy.g2.x === 26 && tidy.g3.y === 26 && tidy.g4.x === 26)
+const cleanGrid = grid.map((n) => ({ ...n, ...tidy[n.id] }) as SquigNode)
+const changedGrid = changeMatchingGaps(cleanGrid, "x", 16, 32)
+check("all matching row gaps change together", changedGrid.g2.x === 42 && changedGrid.g4.x === 42)
+const resized = resizeSpacedNodes(spaced, ["s1"], "x", 20)
+check("marked resize keeps original gap", resized.s1.w === 40 && resized.s2.x === 50 && resized.s3.x === 100)
+check("spacing leaves the source untouched", spaced[1].x === 30 && spaced[0].w === 20)
 
 report("selection checks passed")

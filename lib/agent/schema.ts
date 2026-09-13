@@ -166,6 +166,9 @@ export const operation = z.discriminatedUnion("op", [
     ids: z.array(id).min(2),
     edge: z.enum(["left", "right", "top", "bottom", "hcenter", "vcenter"]),
   }),
+  z.object({ op: z.literal("spacing_resize"), ids: z.array(id).min(2), marked: z.array(id).min(1), axis: z.enum(["x", "y"]), delta: finite }),
+  z.object({ op: z.literal("tidy"), ids: z.array(id).min(2), gap: finite.min(0).optional() }),
+  z.object({ op: z.literal("spacing"), ids: z.array(id).min(2), axis: z.enum(["x", "y"]), gap: finite.min(0), order: z.array(id).min(2).optional() }),
   z.object({
     op: z.literal("distribute"),
     ids: z.array(id).min(3),
@@ -238,7 +241,7 @@ export const tools = {
   },
   edit_document: {
     description:
-      "Atomically edit the canvas at an expected revision. Supports all six node types, all component properties, geometry, crop, text styles, connectors, locking, grouping, detach, duplication, alignment, distribution, stacking, flips, notes and variations. Use update for any node field; locked nodes must be explicitly unlocked first. Returns the new revision plus only the nodes this batch created, changed or deleted; read get_document for the whole canvas. A 409 means read latest and reconcile.",
+      "Atomically edit the canvas at an expected revision. Supports all six node types, all component properties, geometry, crop, text styles, connectors, locking, grouping, detach, duplication, alignment, tidy up, exact spacing and spatial reordering, distribution, stacking, flips, notes and variations. Use update for any node field; locked nodes must be explicitly unlocked first. Returns the new revision plus only the nodes this batch created, changed or deleted; read get_document for the whole canvas. A 409 means read latest and reconcile.",
     schema: z.object({
       documentId: id,
       revision: z.number().int().positive(),

@@ -172,6 +172,7 @@ export function CanvasContextMenu() {
       ...(selection.length > 1
         ? ([
             { separator: true },
+            { label: "Tidy up", icon: SquaresFourIcon, run: () => st().tidySelected() },
             { label: "Align left", icon: AlignLeftSimpleIcon, run: () => st().alignSelected("left") },
             { label: "Align centres", icon: AlignCenterHorizontalSimpleIcon, run: () => st().alignSelected("hcenter") },
             { label: "Align right", icon: AlignRightSimpleIcon, run: () => st().alignSelected("right") },

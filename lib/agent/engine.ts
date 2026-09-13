@@ -1,3 +1,4 @@
+import { resizeSpacedNodes, spaceNodes, tidyNodes } from "@/lib/canvas/spacing"
 import { lookSchema, nodeFields } from "./schema"
 import { nanoid } from "nanoid"
 import {
@@ -313,6 +314,23 @@ export function applyOperations(
       case "align": {
         const ns = members(op.ids)
         const patches = alignNodes(ns, op.edge)
+        ns.forEach((n) => Object.assign(n, patches[n.id]))
+        break
+      }
+      case "spacing_resize": {
+        const ns = members(op.ids)
+        if (op.marked.some((id) => !ns.some((n) => n.id === id))) throw new AgentError(400, "Marked IDs must belong to the spacing selection")
+        const patches = resizeSpacedNodes(ns, op.marked, op.axis, op.delta)
+        ns.forEach((n) => Object.assign(n, patches[n.id]))
+        break
+      }
+      case "tidy":
+      case "spacing": {
+        const ns = members(op.ids)
+        if (op.op === "spacing" && op.order && (op.order.length !== ns.length || new Set(op.order).size !== ns.length || op.order.some((id) => !ns.some((n) => n.id === id)))) {
+          throw new AgentError(400, "Spacing order must contain every selected ID exactly once")
+        }
+        const patches = op.op === "tidy" ? tidyNodes(ns, op.gap) : spaceNodes(ns, op)
         ns.forEach((n) => Object.assign(n, patches[n.id]))
         break
       }

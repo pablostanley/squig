@@ -64,6 +64,7 @@ import { copyAsPngWithNotice } from "@/lib/export-image"
 import { clampGestureZoom, zoomFloor, MAX_ZOOM, MIN_ZOOM } from "@/lib/canvas/navigate"
 import { inViewBox, visibleBox } from "@/lib/canvas/cull"
 import { groupPickForHit, selectionForPress, stepIntoGroup, type GroupPick } from "@/lib/canvas/groups"
+import { SpacingOverlay } from "./spacing-overlay"
 import { ContextRow } from "./context-row"
 import { CropOverlay, CropStage } from "./crop-overlay"
 import { EmptyCanvas } from "./empty-canvas"
@@ -2642,6 +2643,8 @@ export function Canvas() {
           interactive={tool === "select" && !placing}
         />
       )}
+
+      {!cropNode && !editingId && !gestureKind && tool === "select" && !placing && <SpacingOverlay key={selection.join(",")} nodes={selectedNodes} viewport={v} />}
 
       {/* smart guides — transient alignment hairlines and equal-gap measures */}
       {(guides.length > 0 || snapDistances.length > 0) && (

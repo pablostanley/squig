@@ -27,6 +27,7 @@ import { scaleNodes, MIN_SIZE } from "@/lib/canvas/transform"
 import { fitTextBox, setTextBoxed, setTextBoxSize, setTextHeight, setTextWidth } from "@/lib/canvas/text-reflow"
 import { VariantControl } from "./variant-controls"
 import { MixedNumberField, MixedSwitch, MixedTextField } from "./mixed-fields"
+import { SpacingControls } from "./spacing-controls"
 import { AlignRow } from "./align-row"
 import {
   ALIGN_OPTIONS,
@@ -425,6 +426,7 @@ function SelectionEditor({ selected }: { selected: SquigNode[] }) {
         {multi && (
           <StackRow label="Align">
             <AlignRow count={selected.length} className="justify-between" />
+            <SpacingControls nodes={selected} />
           </StackRow>
         )}
 

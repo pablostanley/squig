@@ -34,6 +34,7 @@ import {
   type SquigDocument,
   type TextAt,
 } from "./doc"
+import { resizeSpacedNodes, spaceNodes, tidyNodes, type SpacingOptions, type SpacingAxis } from "./canvas/spacing"
 import { renderSvg } from "./sketch/svg"
 import { lookOf, useSquig } from "./store"
 import type { Box, ShapeKind, SquigNode } from "./types"
@@ -58,6 +59,9 @@ export interface SquigAgentApi {
   /** z-order: later is drawn on top, so a backdrop goes to the back */
   toFront(ids: string[]): void
   toBack(ids: string[]): void
+  resizeSpaced(ids: string[], marked: string[], axis: SpacingAxis, delta: number): void
+  tidy(ids: string[], gap?: number): void
+  spacing(ids: string[], options: SpacingOptions): void
   select(ids: string[]): void
   selection(): string[]
   zoomToFit(): void
@@ -88,6 +92,18 @@ function current(): SquigDocument {
 
 const api: SquigAgentApi = {
   version: 1,
+  resizeSpaced(ids, marked, axis, delta) {
+    const s = useSquig.getState()
+    s.edit(() => s.updateNodes(resizeSpacedNodes(ids.map((id) => s.nodes[id]).filter(Boolean), marked, axis, delta)))
+  },
+  tidy(ids, gap) {
+    const s = useSquig.getState()
+    s.edit(() => s.updateNodes(tidyNodes(ids.map((id) => s.nodes[id]).filter(Boolean), gap)))
+  },
+  spacing(ids, options) {
+    const s = useSquig.getState()
+    s.edit(() => s.updateNodes(spaceNodes(ids.map((id) => s.nodes[id]).filter(Boolean), options)))
+  },
 
   doc: () => structuredClone(current()),
   serialize: () => useSquig.getState().serialize(),

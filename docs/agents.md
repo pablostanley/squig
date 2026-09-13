@@ -177,3 +177,46 @@ Then a person can move the idea instead of eleven rectangles.
 
 **Lock the background.** If you draw a big rectangle behind everything, give it
 `"locked": true` so nobody grabs it by accident when they start editing.
+
+### Tidy up and exact spacing
+
+Use `squig_edit_document` (MCP) or `POST /api/v1/tools/edit_document`
+(REST) with the normal document ID and expected revision, and these operations:
+
+```json
+[
+  { "op": "tidy", "ids": ["a", "b", "c"], "gap": 16 },
+  { "op": "spacing", "ids": ["a", "b", "c"], "axis": "x", "gap": 24 },
+  { "op": "spacing", "ids": ["a", "b", "c"], "axis": "x", "gap": 24, "order": ["c", "a", "b"] }
+]
+```
+
+Tidy infers rows from vertical overlap, aligns row tops, and uses a uniform gap.
+Omit `gap` to use the median nonnegative existing gap (16 px when none exists).
+Spacing measures visual bounds, supports unequal sizes, and anchors the leading
+edge. `axis` is `x` or `y`; `gap` must be finite and nonnegative. Spatial `order`
+must contain every selected ID exactly once. It changes positions, not layer
+stacking. Locked nodes must be unlocked first. These commands need at least two
+nodes and are atomic, revision checked edits. The generated `/openapi.json`
+includes these operation schemas.
+
+In the browser, use `window.squig.tidy(ids, gap?)` and
+`window.squig.spacing(ids, { axis, gap, order? })`. Each call is one undo step.
+
+On the canvas, select two or more objects and choose **Tidy up** from the
+selection’s bottom-right grid button, inspector, or context menu. Hover a uniform
+gap to reveal its pink handle; dragging changes matching gaps on the same axis.
+The live label shows pixels. Arrow keys adjust a focused gap by 1 px, or 10 with
+Shift. Enter exact horizontal or vertical gaps in the inspector, including when
+existing gaps differ. Drag a centre ring to reorder within its row or column.
+Click rings to mark items, then drag **Resize width** or **Resize height** to
+resize the marked items while retaining the gaps. Escape cancels a drag;
+undo restores the whole gesture. Spacing is geometry, not a persistent layout
+constraint: ordinary move/resize controls still work freely.
+
+For marked resizing through MCP or REST, use
+`{ "op": "spacing_resize", "ids": ["a", "b", "c"], "marked": ["b"], "axis": "x", "delta": 20 }`.
+`marked` must be a subset of `ids`; `axis` chooses width (`x`) or height (`y`).
+The browser equivalent is `window.squig.resizeSpaced(ids, marked, axis, delta)`.
+Focused rings reorder with arrow keys; focused resize controls change sizes by
+1 px with arrow keys, or 10 px with Shift.

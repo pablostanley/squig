@@ -25,6 +25,7 @@ import {
   pruneDegenerateGroups,
 } from "./canvas/groups"
 import { normalizeRotation } from "./canvas/rotation"
+import { spaceNodes, tidyNodes, type SpacingOptions } from "./canvas/spacing"
 import { alignNodes, distributeNodes } from "./canvas/arrange"
 import { breakApart } from "./library/break-apart"
 import {
@@ -210,6 +211,8 @@ interface SquigState {
   cloneSelectionInPlace: () => string[]
   /** remember copies and their origins, so ⌘D can repeat the move that followed */
   rememberDuplicate: (ids: string[], from: DupTrail["from"]) => void
+  spaceSelected: (options: SpacingOptions) => void
+  tidySelected: () => void
   distributeSelected: (axis: "h" | "v") => void
   selectAll: () => void
   selectNone: () => void
@@ -1677,6 +1680,15 @@ export const useSquig = create<SquigState>((set, get) => ({
     })
     scheduleSave(get)
     return ids
+  },
+
+  spaceSelected: (options) => {
+    const s = get()
+    s.edit(() => s.updateNodes(spaceNodes(s.selection.map((id) => s.nodes[id]).filter(Boolean), options)))
+  },
+  tidySelected: () => {
+    const s = get()
+    s.edit(() => s.updateNodes(tidyNodes(s.selection.map((id) => s.nodes[id]).filter(Boolean))))
   },
 
   distributeSelected: (axis) => {
