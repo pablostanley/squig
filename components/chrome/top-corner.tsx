@@ -10,7 +10,7 @@
 // same setting is how a menu turns into a junk drawer, so appearance has one.
 // ---------------------------------------------------------------------------
 
-import { useRef } from "react"
+import { useRef, useState } from "react"
 import { useSquig } from "@/lib/store"
 import { exportDoc, importDoc } from "@/lib/file-io"
 import { saveImageWithNotice } from "@/lib/export-image"
@@ -26,17 +26,24 @@ import {
 import { Panel } from "@/components/ui/panel"
 import { kbd } from "@/lib/shortcuts"
 import { RecentFiles } from "@/components/chrome/recent-files"
+import { ConfirmationDialog } from "@/components/ui/confirmation-dialog"
+import type { FileMeta } from "@/lib/files"
 
 export function TopCorner() {
   const st = useSquig.getState
   // Rename hands focus to the floating name field, so the menu must not yank
   // focus back to its trigger on the way out.
   const keepFocus = useRef(false)
+  const menuTrigger = useRef<HTMLButtonElement>(null)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [removeOpen, setRemoveOpen] = useState(false)
+  const [fileToRemove, setFileToRemove] = useState<FileMeta | null>(null)
 
   return (
     <Panel className="absolute top-4 left-4 z-30 flex-row items-center gap-1 p-1">
-      <DropdownMenu>
+      <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
         <DropdownMenuTrigger
+          ref={menuTrigger}
           title="file menu"
           className="flex items-center gap-1.5 rounded-chrome-sm px-2.5 py-1.5 outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-[var(--sq-ink)]/40"
         >
@@ -62,7 +69,12 @@ export function TopCorner() {
           }}
         >
           <DropdownMenuItem onClick={() => st().newFile()}>New file</DropdownMenuItem>
-          <RecentFiles />
+          <RecentFiles onRemoveFile={(file) => {
+            keepFocus.current = true
+            setFileToRemove(file)
+            setMenuOpen(false)
+            setRemoveOpen(true)
+          }} />
           <DropdownMenuItem onClick={importDoc}>Open from disk…</DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem onClick={() => st().saveNow()}>
@@ -132,6 +144,21 @@ export function TopCorner() {
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+      <ConfirmationDialog
+        open={removeOpen}
+        onOpenChange={setRemoveOpen}
+        title={fileToRemove?.agentId ? "Remove from recent files?" : "Delete drawing?"}
+        confirmLabel={fileToRemove?.agentId ? "Remove" : "Delete"}
+        destructive={!fileToRemove?.agentId}
+        finalFocus={menuTrigger}
+        onConfirm={() => {
+          if (fileToRemove) st().deleteFile(fileToRemove.id)
+        }}
+      >
+        {fileToRemove?.agentId
+          ? `Remove “${fileToRemove.name}” from this browser’s recent files? The shared canvas stays online. You can reopen it with its link.`
+          : `Delete “${fileToRemove?.name}” from this browser? This cannot be undone. Export a copy first if you want to keep it.`}
+      </ConfirmationDialog>
     </Panel>
   )
 }

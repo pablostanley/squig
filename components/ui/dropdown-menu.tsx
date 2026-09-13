@@ -5,6 +5,7 @@ import { Menu } from "@base-ui/react/menu"
 
 import { cn } from "@/lib/utils"
 import { CaretRightIcon } from "@phosphor-icons/react"
+import { SelectionIndicator } from "@/components/ui/selection-indicator"
 
 const POPUP =
   "max-h-(--available-height) min-w-52 origin-(--transform-origin) overflow-y-auto overscroll-contain rounded-chrome-lg bg-popover p-1.5 text-popover-foreground shadow-popup ring-1 ring-foreground/10 outline-none transition-[transform,opacity] duration-100 data-starting-style:scale-95 data-starting-style:opacity-0 data-ending-style:scale-95 data-ending-style:opacity-0"
@@ -50,19 +51,46 @@ function DropdownMenuContent({
 function DropdownMenuItem({
   className,
   variant = "default",
+  selected,
+  action,
+  children,
   ...props
-}: React.ComponentProps<typeof Menu.Item> & { variant?: "default" | "destructive" }) {
-  return (
+}: React.ComponentProps<typeof Menu.Item> & {
+  variant?: "default" | "destructive"
+  /** Pass a boolean on every selectable row to reserve the check's rightmost slot. */
+  selected?: boolean
+  /** A sibling control before the check; null reserves its space on other rows. */
+  action?: React.ReactNode
+}) {
+  const item = (
     <Menu.Item
       data-slot="dropdown-menu-item"
       data-variant={variant}
+      aria-current={selected || undefined}
       className={cn(
         ITEM,
         variant === "destructive" && "text-destructive data-highlighted:bg-destructive/10 data-highlighted:text-destructive",
-        className
+        className,
+        selected !== undefined && "pr-8",
+        action !== undefined && (selected !== undefined ? "pr-16" : "pr-10")
       )}
       {...props}
-    />
+    >
+      {children}
+      {selected !== undefined && <SelectionIndicator selected={selected} />}
+    </Menu.Item>
+  )
+
+  // A nested button also activates the menu item; keep row actions as siblings.
+  return action === undefined ? item : (
+    <div data-slot="dropdown-menu-item-row" className="group/row relative">
+      {item}
+      {action && (
+        <div className={cn("absolute top-1/2 -translate-y-1/2", selected !== undefined ? "right-8" : "right-1.5")}>
+          {action}
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -70,7 +98,7 @@ function DropdownMenuSeparator({ className, ...props }: React.ComponentProps<"di
   return <div data-slot="dropdown-menu-separator" className={cn("-mx-1.5 my-1.5 h-px bg-border", className)} {...props} />
 }
 
-/** Right-aligned hint — a shortcut, a file extension, a tick. */
+/** Right-aligned hint — a shortcut or a file extension. */
 function DropdownMenuShortcut({ className, ...props }: React.ComponentProps<"span">) {
   return (
     <span

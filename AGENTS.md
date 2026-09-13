@@ -86,6 +86,10 @@ subject.
 - **Use the shared UI type scale.** Sizes, line heights and spacing live in
   `app/globals.css`; [docs/ui-typography.md](docs/ui-typography.md) explains the
   roles. Make room for labels instead of shrinking them.
+- **List selection checks belong at the far right.** Use `DropdownMenuItem`'s
+  `selected` and `action` props or `SelectItem`; both share `SelectionIndicator`.
+  Reserve the check's slot on unselected rows too, with row actions immediately
+  before it, so selecting an item never shifts its label.
 
 ## The big files
 

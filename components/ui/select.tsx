@@ -4,7 +4,8 @@ import * as React from "react"
 import { Select as SelectPrimitive } from "@base-ui/react/select"
 
 import { cn } from "@/lib/utils"
-import { CaretDownIcon, CheckIcon } from "@phosphor-icons/react"
+import { CaretDownIcon } from "@phosphor-icons/react"
+import { SelectionIndicator } from "@/components/ui/selection-indicator"
 
 function Select(props: React.ComponentProps<typeof SelectPrimitive.Root>) {
   return <SelectPrimitive.Root data-slot="select" {...props} />
@@ -85,10 +86,8 @@ function SelectItem({ className, children, ...props }: React.ComponentProps<type
       )}
       {...props}
     >
-      <SelectPrimitive.ItemIndicator className="pointer-events-none absolute right-2 flex size-4 items-center justify-center">
-        <CheckIcon className="size-3.5" weight="bold" />
-      </SelectPrimitive.ItemIndicator>
       <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
+      <SelectPrimitive.ItemIndicator render={<SelectionIndicator />} />
     </SelectPrimitive.Item>
   )
 }

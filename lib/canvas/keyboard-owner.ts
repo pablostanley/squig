@@ -23,7 +23,7 @@
 // NOT `[role=combobox]`: that is Radix's Select *trigger*, which sits in the
 // inspector permanently and keeps focus after use — matching it would kill the
 // keyboard for good. The open listbox it portals in is what matters.
-const KEYBOARD_OWNERS = "[role=dialog],[role=menu],[role=listbox]"
+const KEYBOARD_OWNERS = "[role=dialog],[role=alertdialog],[role=menu],[role=listbox]"
 
 export function canvasOwnsKeyboard(target: EventTarget | null): boolean {
   const el = target as HTMLElement | null

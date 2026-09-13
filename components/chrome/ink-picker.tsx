@@ -11,7 +11,7 @@
 
 import { useSquig } from "@/lib/store"
 import { THEMES, THEME_NAMES, type ThemeName } from "@/lib/theme"
-import { CaretDownIcon, CheckIcon } from "@phosphor-icons/react"
+import { CaretDownIcon } from "@phosphor-icons/react"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -38,12 +38,11 @@ function InkMenuItems() {
   return (
     <>
       {THEME_NAMES.map((name) => (
-        <DropdownMenuItem key={name} onClick={() => st().setTheme(name)}>
+        <DropdownMenuItem key={name} selected={theme === name} onClick={() => st().setTheme(name)}>
           <span className="flex items-center gap-2">
             <InkSwatch name={name} />
             {THEMES[name].label}
           </span>
-          {theme === name && <CheckIcon className="ml-auto size-3.5 text-muted-foreground" weight="bold" />}
         </DropdownMenuItem>
       ))}
     </>
