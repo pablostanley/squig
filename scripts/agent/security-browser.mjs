@@ -2,6 +2,7 @@
 // Start pnpm dev, then run pnpm test:agent:security-browser.
 import { chromium, expect } from "@playwright/test"
 import { randomBytes } from "node:crypto"
+import { mkdir } from "node:fs/promises"
 const base = process.env.SQUIG_TEST_URL ?? "http://localhost:3000"
 const owner = `sq_${randomBytes(32).toString("base64url")}`
 const saved = `sq_canvas_${randomBytes(32).toString("base64url")}`
@@ -54,6 +55,7 @@ try {
     await expect(invalid.page.getByLabel("Editable canvas link", { exact: true })).toHaveCount(0)
     await invalid.page.waitForTimeout(1200)
     expect(await invalid.page.evaluate((slot) => localStorage.getItem(slot), slot)).toBe(saved)
+    expect(await invalid.page.evaluate(() => localStorage.getItem("squig:shared-files:v1"))).toBeNull()
     expect(invalid.calls.every((c) => c.method === "GET" && c.key === `Bearer ${candidate}`)).toBe(true)
     if (fragment !== candidate) expect(invalid.calls).toEqual([])
     const stoppedAt = invalid.calls.length
@@ -94,6 +96,104 @@ try {
   await expect(valid.page.getByLabel("Editable canvas link", { exact: true })).toHaveCount(0)
   expect(valid.calls.every((c) => c.method === "GET" && c.key === `Bearer ${candidate}`)).toBe(true)
   await valid.context.close()
+
+  let sharedDocument = { ...document, fileName: "Agent recent canvas" }
+  const localFile = { id: "local", name: "Local recent drawing", updatedAt: 1, nodes: document.nodes, order: document.order, look: document.look }
+  let recentRevoked = false
+  const recent = await fixture({
+    "squig:files:v1": JSON.stringify([{ id: localFile.id, name: localFile.name, updatedAt: localFile.updatedAt }]),
+    "squig:file:local": JSON.stringify(localFile),
+  }, async (route) => {
+    if (recentRevoked) return route.fulfill({ status: 401, json: { error: "Invalid or revoked canvas key" } })
+    if (route.request().method() === "POST") sharedDocument = route.request().postDataJSON().document
+    await route.fulfill({ json: { id: "one", revision: 1, document: sharedDocument } })
+  })
+  const openRecents = async () => {
+    await recent.page.getByRole("button", { name: "squig", exact: true }).click()
+    await recent.page.getByRole("menuitem", { name: "Open recent", exact: true }).hover()
+    await expect(recent.page.getByRole("menuitem", { name: /Local recent drawing/ })).toBeVisible()
+  }
+  await recent.page.goto(`${base}/?agent=one#${candidate}`)
+  await expect(recent.page.locator(".agent-sync")).toHaveAttribute("data-connected", "true")
+  await openRecents()
+  await expect(recent.page.getByRole("menuitem", { name: /Agent recent canvas shared/ })).toBeVisible()
+  await mkdir("test-results/agent-recents", { recursive: true })
+  await recent.page.screenshot({ path: "test-results/agent-recents/menu.png" })
+  await recent.page.getByRole("menuitem", { name: /Local recent drawing/ }).click()
+  await expect(recent.page.locator(".agent-sync")).toHaveAttribute("data-connected", "false")
+  expect(new URL(recent.page.url()).search).toBe("")
+  await recent.page.reload()
+  await openRecents()
+  sharedDocument = { ...sharedDocument, fileName: "Latest agent canvas" }
+  await recent.page.getByRole("menuitem", { name: /Agent recent canvas shared/ }).click()
+  await expect(recent.page.locator(".agent-sync")).toHaveAttribute("data-connected", "true")
+  await expect(recent.page.getByRole("button", { name: "Latest agent canvas", exact: true })).toBeVisible()
+  expect(new URL(recent.page.url()).search).toBe("?agent=one")
+  expect(recent.calls.every((c) => c.key === `Bearer ${candidate}` && c.method === "GET")).toBe(true)
+  expect(await recent.page.evaluate(() => JSON.parse(localStorage.getItem("squig:shared-files:v1")).length)).toBe(1)
+  expect(await recent.page.evaluate(() => localStorage.getItem("squig:file:agent_one"))).toBeNull()
+  // Both remote and local renames update the shortcut without another visit.
+  sharedDocument = { ...sharedDocument, fileName: "Remote rename" }
+  await expect(recent.page.getByRole("button", { name: "Remote rename", exact: true })).toBeVisible()
+  await recent.page.getByRole("button", { name: "Remote rename", exact: true }).click()
+  await recent.page.getByRole("textbox", { name: "file name", exact: true }).fill("Renamed shared canvas")
+  await recent.page.getByRole("textbox", { name: "file name", exact: true }).press("Enter")
+  await expect.poll(() => sharedDocument.fileName).toBe("Renamed shared canvas")
+  await expect.poll(() => recent.page.evaluate(() => JSON.parse(localStorage.getItem("squig:shared-files:v1"))[0].name)).toBe("Renamed shared canvas")
+  // Another tab's drawer refresh must not detach this live canvas.
+  const otherTab = await recent.context.newPage()
+  await otherTab.goto(base)
+  await otherTab.waitForFunction(() => !!window.squig)
+  await otherTab.evaluate(() => window.squig.addText("Another tab's local edit", { x: 80, y: 80 }))
+  await expect.poll(() => otherTab.evaluate(() => JSON.parse(localStorage.getItem("squig:file:local")).order.length)).toBe(localFile.order.length + 1)
+  await expect(recent.page.locator(".agent-sync")).toHaveAttribute("data-connected", "true")
+  await otherTab.close()
+  await openRecents()
+  await recent.page.getByRole("menuitem", { name: /Local recent drawing/ }).click()
+  await recent.page.getByRole("button", { name: /^Search / }).click()
+  await recent.page.getByRole("textbox", { name: "Search commands, layers, components, blocks, and icons" }).fill("Renamed shared canvas")
+  await recent.page.getByRole("button", { name: /Renamed shared canvas/ }).click()
+  await expect(recent.page.locator(".agent-sync")).toHaveAttribute("data-connected", "true")
+  await openRecents()
+  await recent.page.getByRole("menuitem", { name: /Local recent drawing/ }).click()
+  recentRevoked = true
+  await openRecents()
+  await recent.page.getByRole("menuitem", { name: /Renamed shared canvas shared/ }).click()
+  await expect(recent.page.getByText("Invalid or revoked canvas key", { exact: true })).toBeVisible()
+  await expect(recent.page.getByRole("button", { name: "Local recent drawing", exact: true })).toBeVisible()
+  await openRecents()
+  await recent.page.getByRole("button", { name: "remove Renamed shared canvas from recent files", exact: true }).click()
+  await expect(recent.page.getByRole("menuitem", { name: /Renamed shared canvas shared/ })).toHaveCount(0)
+  expect(await recent.page.evaluate(() => JSON.parse(localStorage.getItem("squig:shared-files:v1")))).toEqual([])
+  expect(await recent.page.evaluate(() => localStorage.getItem("squig:file:local"))).not.toBeNull()
+  expect(await recent.page.evaluate((slot) => localStorage.getItem(slot), slot)).toBe(candidate)
+  expect(recent.calls.some((c) => c.method === "DELETE")).toBe(false)
+  await recent.context.close()
+
+  const unsaved = await fixture({
+    "squig:files:v1": JSON.stringify([{ id: localFile.id, name: localFile.name, updatedAt: localFile.updatedAt }]),
+    "squig:file:local": JSON.stringify(localFile),
+    "squig:shared-files:v1": JSON.stringify([{ id: "agent_one", agentId: "one", name: "Shared shortcut", updatedAt: 2 }]),
+    [slot]: candidate,
+  })
+  await unsaved.page.goto(base)
+  await unsaved.page.waitForFunction(() => !!window.squig)
+  await unsaved.page.evaluate(() => {
+    const set = Storage.prototype.setItem
+    Storage.prototype.setItem = function (key, value) {
+      if (key.startsWith("squig:file:")) throw new DOMException("Full", "QuotaExceededError")
+      return set.call(this, key, value)
+    }
+  })
+  await unsaved.page.evaluate(() => window.squig.addText("Unsaved local work", { x: 40, y: 40 }))
+  await unsaved.page.getByRole("button", { name: "squig", exact: true }).click()
+  await unsaved.page.getByRole("menuitem", { name: "Open recent", exact: true }).hover()
+  await unsaved.page.getByRole("menuitem", { name: /Shared shortcut shared/ }).click()
+  await expect(unsaved.page.getByText("Export this drawing before opening a shared canvas. Its changes could not be saved.", { exact: true })).toBeVisible()
+  expect(new URL(unsaved.page.url()).search).toBe("")
+  expect(unsaved.calls).toEqual([])
+  expect(await unsaved.page.evaluate(() => Object.values(window.squig.doc().nodes).some((n) => n.text === "Unsaved local work"))).toBe(true)
+  await unsaved.context.close()
 
   const poisoned = await fixture({ "squig:agent-key": owner, [slot]: owner })
   await poisoned.page.goto(`${base}/?agent=one`)
@@ -149,7 +249,7 @@ try {
   expect(await connect.page.evaluate(() => localStorage.getItem("squig:agent-key"))).toBeNull()
   await connect.context.close()
   expect(errors).toEqual([])
-  console.log("✓ Browser security regressions passed: local persistence without API calls, framing, unvalidated invitations, pending/revoked keys, workspace separation")
+  console.log("✓ Browser security regressions passed: local persistence, shared recents and live reopening, renames, quota protection, framing, invitation validation, revoked keys, workspace separation")
 } finally {
   await browser.close()
 }

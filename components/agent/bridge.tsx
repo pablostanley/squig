@@ -82,6 +82,7 @@ export function AgentBridge({ hidden = false }: { hidden?: boolean }) {
       stopped = false
     let baseline: Snapshot,
       localId = "",
+      rememberedName = "",
       revision = 0
     const openingId = useSquig.getState().docId
     function detach() {
@@ -204,6 +205,8 @@ export function AgentBridge({ hidden = false }: { hidden?: boolean }) {
           }
           attaching.current = null
           useSquig.setState({ docId: `agent_${id}` })
+          useSquig.getState().rememberSharedFile(id!)
+          rememberedName = useSquig.getState().fileName
           localId = useSquig.getState().docId
           baseline = keepCurrent ? editable(row.document) : snapshot()
           revision = row.revision
@@ -280,6 +283,11 @@ export function AgentBridge({ hidden = false }: { hidden?: boolean }) {
           setStatus(
             remoteChanged ? "Live canvas · new changes" : "Live canvas",
           )
+        }
+        const latestName = useSquig.getState().fileName
+        if (latestName !== rememberedName) {
+          useSquig.getState().rememberSharedFile(id!)
+          rememberedName = latestName
         }
       } catch (e) {
         if (!active) return

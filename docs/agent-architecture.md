@@ -14,6 +14,12 @@ coherent batches. An existing local drawing becomes shared through **Connect
 agent** in the editor, retaining its objects and the user's current view.
 Share provides the editable invitation. Connect agent provides the key and MCP config. Both are popovers in the top-right toolbar, beside the sidebar toggle.
 
+Successfully opened shared canvases appear in Open recent and the command
+palette. This browser remembers their names and IDs separately from local
+drawings; reopening fetches the live canvas with the saved invitation or
+workspace key. Removing a shared entry only forgets the shortcut. It does not
+delete the online canvas or revoke its invitation.
+
 Any Streamable HTTP MCP client can connect to `/mcp`; any HTTP agent can use
 `/api/v1/tools/{name}` with identical inputs. The catalog is Squig’s actual
 component registry. All six node types and canvas operations use the same

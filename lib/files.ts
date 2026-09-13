@@ -24,6 +24,8 @@ export interface FileMeta {
   id: string
   name: string
   updatedAt: number
+  /** A shortcut to a shared canvas; its contents and credentials live elsewhere. */
+  agentId?: string
 }
 
 export interface StoredDoc {
@@ -48,6 +50,7 @@ export interface Prefs {
 
 /** exported so another tab writing the drawer can be noticed */
 export const INDEX_KEY = "squig:files:v1"
+export const SHARED_INDEX_KEY = "squig:shared-files:v1"
 const PREFS_KEY = "squig:prefs:v1"
 const LEGACY_KEY = "squig:doc:v1"
 /** exported so a tab can notice another one writing the document it has open */
@@ -104,6 +107,34 @@ export function listFiles(): FileMeta[] {
   const parsed = readJSON(INDEX_KEY)
   if (!Array.isArray(parsed)) return []
   return parsed.filter(isMeta).sort(byRecent)
+}
+
+function listSharedFiles(): FileMeta[] {
+  const parsed = readJSON(SHARED_INDEX_KEY)
+  if (!Array.isArray(parsed)) return []
+  return parsed.filter((f): f is FileMeta =>
+    isMeta(f) && typeof f.agentId === "string" &&
+    /^[A-Za-z0-9_-]{1,80}$/.test(f.agentId) && f.id === `agent_${f.agentId}`,
+  ).sort(byRecent)
+}
+
+export function listRecentFiles(): FileMeta[] {
+  const shared = process.env.NEXT_PUBLIC_SQUIG_OFFLINE === "1" ? [] : listSharedFiles()
+  return [...listFiles(), ...shared].sort(byRecent)
+}
+
+/** Keep shortcuts separate so visiting shared canvases never evicts local drawings. */
+export function rememberSharedFile(agentId: string, name: string, updatedAt = Date.now()): boolean {
+  if (!/^[A-Za-z0-9_-]{1,80}$/.test(agentId)) return false
+  const id = `agent_${agentId}`
+  return writeJSON(SHARED_INDEX_KEY, [
+    { id, agentId, name, updatedAt },
+    ...listSharedFiles().filter((f) => f.id !== id),
+  ].slice(0, MAX_FILES))
+}
+
+export function forgetSharedFile(id: string): boolean {
+  return writeJSON(SHARED_INDEX_KEY, listSharedFiles().filter((f) => f.id !== id))
 }
 
 /** Same contract as writeJSON: false when the browser refused it. */

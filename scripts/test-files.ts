@@ -14,10 +14,17 @@
 // saveFile itself, over a localStorage that can be told to say no to one key.
 import {
   INDEX_KEY,
+  SHARED_INDEX_KEY,
   MAX_FILES,
+  deleteFile,
+  fileKey,
+  forgetSharedFile,
   listFiles,
+  listRecentFiles,
   loadPrefs,
   planSave,
+  readFile,
+  rememberSharedFile,
   saveFile,
   savePrefs,
   type FileMeta,
@@ -203,5 +210,54 @@ function meta(id: string, updatedAt = 20_000, name = "in hand"): FileMeta {
 }
 
 // ---------------------------------------------------------------------------
+
+{
+  const store = new Map<string, string>()
+  let refuse = false
+  ;(globalThis as { localStorage?: unknown }).localStorage = {
+    getItem: (key: string) => store.get(key) ?? null,
+    setItem: (key: string, value: string) => {
+      if (refuse && key === SHARED_INDEX_KEY) throw new Error("QuotaExceededError")
+      store.set(key, value)
+    },
+    removeItem: (key: string) => void store.delete(key),
+  }
+  const local: StoredDoc = { id: "local", name: "Local drawing", nodes: {}, order: [], updatedAt: 10 }
+  saveFile(local, null)
+  check("a visited shared canvas can be remembered", rememberSharedFile("one", "Agent drawing", 20))
+  check("recents includes shared and local drawings by recency", ids(listRecentFiles()) === "agent_one,local")
+  check("a shared shortcut has no local document snapshot", !store.has(fileKey("agent_one")))
+  check("the local drawer still contains only its own documents", ids(listFiles()) === "local")
+  rememberSharedFile("two", "Another canvas", 30)
+  rememberSharedFile("one", "Renamed canvas", 40)
+  check("reopening a shared canvas updates its name and moves it first without duplicates",
+    ids(listRecentFiles()) === "agent_one,agent_two,local" && listRecentFiles()[0].name === "Renamed canvas")
+  check("shared recents store metadata only", Object.keys(JSON.parse(store.get(SHARED_INDEX_KEY)!)[0]).sort().join(",") === "agentId,id,name,updatedAt")
+  const credential = "saved invitation"
+  store.set("squig:canvas-key:one", credential)
+  forgetSharedFile("agent_one")
+  check("forgetting a shared canvas removes its shortcut", !listRecentFiles().some((f) => f.id === "agent_one"))
+  check("forgetting a shortcut keeps the invitation credential", store.get("squig:canvas-key:one") === credential)
+  check("forgetting a shared canvas preserves local drawings", readFile("local")?.name === local.name)
+  refuse = true
+  const before = store.get(SHARED_INDEX_KEY)
+  check("a refused shared index write reports failure", !rememberSharedFile("three", "No room", 50))
+  check("failed remembering preserves the previous recents", store.get(SHARED_INDEX_KEY) === before)
+  check("a refused removal reports failure", !forgetSharedFile("agent_two"))
+  refuse = false
+  for (let i = 0; i <= MAX_FILES; i++) rememberSharedFile(`canvas${i}`, `Canvas ${i}`, 100 + i)
+  check("shared shortcuts have their own bounded history", listRecentFiles().filter((f) => f.agentId).length === MAX_FILES)
+  check("visiting many shared canvases never evicts a local drawing", readFile("local")?.name === local.name && ids(listFiles()) === "local")
+  deleteFile("local")
+  check("deleting a local drawing keeps shared recents", listRecentFiles().length === MAX_FILES)
+  check("invalid shared ids cannot become navigation targets", !rememberSharedFile("../other", "Invalid"))
+  store.set(SHARED_INDEX_KEY, JSON.stringify([
+    { id: "agent_good", agentId: "good", name: "Good", updatedAt: 1 },
+    { id: "agent_bad", agentId: "../bad", name: "Bad", updatedAt: 2 },
+    { id: "mismatch", agentId: "good", name: "Bad", updatedAt: 3 },
+    null,
+  ]))
+  check("unreadable or malformed shared entries are ignored", ids(listRecentFiles()) === "agent_good")
+}
 
 report("drawer checks passed")

@@ -38,12 +38,16 @@ import {
 } from "./theme"
 import {
   INDEX_KEY,
+  SHARED_INDEX_KEY,
   deleteFile as dropFile,
   fileKey,
+  forgetSharedFile,
   listFiles,
+  listRecentFiles,
   loadPrefs,
   migrateLegacyDoc,
   readFile,
+  rememberSharedFile,
   saveFile,
   savePrefs,
   type FileMeta,
@@ -276,6 +280,7 @@ interface SquigState {
   newFile: () => void
   /** swap the canvas to another file in the drawer, saving this one first */
   openFile: (id: string) => void
+  rememberSharedFile: (agentId: string) => void
   deleteFile: (id: string) => void
   /** write to the drawer right now instead of waiting out the debounce */
   saveNow: () => void
@@ -597,7 +602,7 @@ function flushSave(get: () => SquigState, force = false) {
   const known = s.files.some((f) => f.id === s.docId)
   if (!s.order.length && !known && !force) return
   const at = Date.now()
-  const { index, full, stale } = saveFile(
+  const { full, stale } = saveFile(
     {
       id: s.docId,
       name: s.fileName,
@@ -621,7 +626,7 @@ function flushSave(get: () => SquigState, force = false) {
   // be saying the same thing about the same drawing. The line under the file
   // name carries it from there, for as long as it lasts.
   if (full && !s.drawerFull) s.setNotice("no room left in this browser — export this one to keep it")
-  useSquig.setState({ files: index, drawerFull: full })
+  useSquig.setState({ files: listRecentFiles(), drawerFull: full })
   // a refused write leaves the drawing unsaved, so it stays owed: the next
   // edit, or the tab closing, tries again — which is how squig comes back on
   // its own once the user has made room
@@ -736,8 +741,8 @@ function watchWindow(get: () => SquigState) {
     if (document.visibilityState === "hidden") save()
   })
   window.addEventListener("storage", (e) => {
-    if (e.key === INDEX_KEY) {
-      useSquig.setState({ files: listFiles() })
+    if (e.key === INDEX_KEY || e.key === SHARED_INDEX_KEY) {
+      useSquig.setState({ files: listRecentFiles() })
       return
     }
     const s = get()
@@ -1351,7 +1356,7 @@ export const useSquig = create<SquigState>((set, get) => ({
       selection: [],
       selectionGroupId: null,
       selectionGroups: [],
-      files,
+      files: listRecentFiles(),
       contextRow: prefs.contextRow,
       bigNudge: prefs.bigNudge,
       hydrated: true,
@@ -1830,10 +1835,22 @@ export const useSquig = create<SquigState>((set, get) => ({
   openFile: (id) => {
     if (id === get().docId) return
     flushSave(get)
+    const recent = listRecentFiles().find((f) => f.id === id)
+    if (recent?.agentId) {
+      if (!get().docId.startsWith("agent_") && dirty && (get().drawerFull || get().stale)) {
+        get().setNotice("Export this drawing before opening a shared canvas. Its changes could not be saved.")
+        return
+      }
+      // A fresh connection fetches the current revision using this browser's
+      // saved credential, and keeps the bridge's unsaved-work unload guard.
+      window.location.assign(`/?agent=${encodeURIComponent(recent.agentId)}`)
+      return
+    }
     const doc = readFile(id)
     if (!doc) {
       // the index knew about it but the document itself is gone
-      set({ files: dropFile(id) })
+      dropFile(id)
+      set({ files: listRecentFiles() })
       return
     }
     const clean = sanitizeDoc(doc.nodes, doc.order)
@@ -1864,8 +1881,21 @@ export const useSquig = create<SquigState>((set, get) => ({
     flushSave(get)
   },
 
+  rememberSharedFile: (agentId) => {
+    if (get().docId !== `agent_${agentId}`) return
+    if (!rememberSharedFile(agentId, get().fileName))
+      get().setNotice("Could not remember this canvas. Keep its invitation link to reopen it.")
+    set({ files: listRecentFiles() })
+  },
+
   deleteFile: (id) => {
-    const files = dropFile(id)
+    if (listRecentFiles().some((f) => f.id === id && f.agentId)) {
+      if (!forgetSharedFile(id)) get().setNotice("Could not remove this canvas from recent files.")
+      set({ files: listRecentFiles() })
+      return
+    }
+    dropFile(id)
+    const files = listRecentFiles()
     set({ files })
     if (id !== get().docId) return
     // The file you had open just went away. Let go of it before landing

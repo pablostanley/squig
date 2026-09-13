@@ -1,9 +1,8 @@
 "use client"
 
 // ---------------------------------------------------------------------------
-// The recent files submenu. Everything squig has saved in this browser, newest
-// first — click one to open it, or arm the trash twice to let it go. Deleting
-// takes two clicks on purpose: this list is the only copy.
+// Local drawings and visited shared canvases, newest first. Local deletion
+// takes two clicks because this list holds the only copy of those drawings.
 // ---------------------------------------------------------------------------
 
 import { useEffect, useRef, useState } from "react"
@@ -30,7 +29,7 @@ export function RecentFiles() {
   return (
     <DropdownMenuSub>
       <DropdownMenuSubTrigger>Open recent</DropdownMenuSubTrigger>
-      <DropdownMenuSubContent className="w-72">
+      <DropdownMenuSubContent className="w-80">
         {files.length === 0 ? (
           <p className="px-2.5 py-1.5 text-row text-muted-foreground">nothing saved yet</p>
         ) : (
@@ -69,6 +68,7 @@ function FileRow({ file, current }: { file: FileMeta; current: boolean }) {
       <DropdownMenuItem className="flex-1 gap-2 pr-8" onClick={() => st().openFile(file.id)}>
         {current && <CheckIcon className="size-3.5 shrink-0 text-muted-foreground" weight="bold" />}
         <span className="min-w-0 flex-1 truncate">{file.name}</span>
+        {file.agentId && <span className="shrink-0 text-label text-muted-foreground">shared</span>}
         <span className={`shrink-0 text-label ${armed ? "text-destructive" : "text-muted-foreground"}`}>
           {armed ? "click again" : relativeTime(file.updatedAt)}
         </span>
@@ -77,9 +77,9 @@ function FileRow({ file, current }: { file: FileMeta; current: boolean }) {
       {!current && (
         <button
           type="button"
-          aria-label={armed ? `delete ${file.name} for good` : `delete ${file.name}`}
-          title={armed ? "click again to delete" : "delete"}
-          onClick={() => (armed ? st().deleteFile(file.id) : arm())}
+          aria-label={file.agentId ? `remove ${file.name} from recent files` : armed ? `delete ${file.name} for good` : `delete ${file.name}`}
+          title={file.agentId ? "remove from recent files" : armed ? "click again to delete" : "delete"}
+          onClick={() => (file.agentId || armed ? st().deleteFile(file.id) : arm())}
           className={`absolute right-1.5 flex size-6 items-center justify-center rounded-chrome-sm transition-opacity ${
             armed
               ? "text-destructive opacity-100"
