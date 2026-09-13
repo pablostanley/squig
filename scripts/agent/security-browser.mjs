@@ -152,7 +152,7 @@ try {
   await recent.page.getByRole("menuitem", { name: /Local recent drawing/ }).click()
   await recent.page.getByRole("button", { name: /^Search / }).click()
   await recent.page.getByRole("textbox", { name: "Search commands, layers, components, blocks, and icons" }).fill("Renamed shared canvas")
-  await recent.page.getByRole("button", { name: /Renamed shared canvas/ }).click()
+  await recent.page.getByRole("dialog", { name: "Search Squig", exact: true }).getByRole("button", { name: /Renamed shared canvas/ }).click()
   await expect(recent.page.locator(".agent-sync")).toHaveAttribute("data-connected", "true")
   await openRecents()
   await recent.page.getByRole("menuitem", { name: /Local recent drawing/ }).click()
