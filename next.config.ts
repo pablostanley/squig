@@ -5,18 +5,20 @@ import { fileURLToPath } from "node:url";
 // Webxdc packaging (`make build-xdc`) needs a fully static site at out/.
 // Normal `pnpm build` keeps the default Next server output for squig.sh.
 const webxdc = process.env.WEBXDC === "1";
+const localEditor = process.env.SQUIG_LOCAL_EXPORT === "1";
+const staticExport = webxdc || localEditor;
 
 const nextConfig: NextConfig = {
   env: { NEXT_PUBLIC_SQUIG_OFFLINE: webxdc ? "1" : "0" },
-  ...(webxdc ? { pageExtensions: ["tsx"] } : {}),
-  ...(webxdc
+  ...(staticExport ? { pageExtensions: ["tsx"] } : {}),
+  ...(staticExport
     ? {}
     : {
         async headers() {
           return [{
             source: "/:path*",
             headers: [
-              // Sharing grants editing access; don't let another site overlay its controls.
+              // Canvas controls must not be overlaid by another site.
               { key: "Content-Security-Policy", value: "frame-ancestors 'none'" },
               { key: "X-Frame-Options", value: "DENY" },
               { key: "Referrer-Policy", value: "no-referrer" },
@@ -56,7 +58,7 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: path.dirname(fileURLToPath(import.meta.url)),
   },
-  ...(webxdc
+  ...(staticExport
     ? {
         output: "export" as const,
         // next/image optimizers need a server; webxdc ships plain files.

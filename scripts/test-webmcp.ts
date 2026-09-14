@@ -1,4 +1,5 @@
 import { check, report } from "./harness.ts"
+import { useCanvasSyncIssue } from "../lib/agent/sync-status.ts"
 import type { ModelContext, WebMCPTool } from "../lib/webmcp.ts"
 ;(globalThis as { window?: unknown }).window = {
   innerWidth: 1440,
@@ -365,10 +366,12 @@ check(
   !!(await run("read_canvas")).isError
 )
 useSquig.setState({ docId: "agent_invited" })
-check(
-  "connected invitation exposes its loaded canvas",
-  !(await run("read_canvas")).isError
-)
+check("old hosted state remains blocked until recovery finishes", !!(await run("read_canvas")).isError)
+;(globalThis as { location?: unknown }).location = { search: "?local=1" }
+check("pending local session cannot expose the previous drawing", !!(await run("read_canvas")).isError)
+useCanvasSyncIssue.setState({ localFile: { docId: "agent_invited", path: "/canvas.squig.json", status: "Saved to local file" } })
+check("ready local session exposes its drawing", !(await run("read_canvas")).isError)
+useCanvasSyncIssue.setState({ localFile: null })
 delete (globalThis as { location?: unknown }).location
 useSquig.setState({ docId: target.documentId })
 check(

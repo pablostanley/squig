@@ -16,15 +16,21 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs"
 import { basename, resolve } from "node:path"
 import { parseArgs } from "node:util"
 import {
-  DocError, addNodes, arrowNode, bringToFront, componentNode, describeComponent, docBounds,
-  emptyDoc, groupNodes, listComponents, nodeRow, nodesOf, parseDoc, removeNodes, sendToBack,
-  serializeDoc, shapeNode, textNode, updateNode, type ArrowEnd, type SquigDocument,
+  DocError, arrowNode, componentNode, describeComponent, docBounds,
+  listComponents, nodeRow, nodesOf, parseDoc,
+  shapeNode, textNode, type ArrowEnd, type SquigDocument,
 } from "@/lib/doc"
+import { AgentError, emptyDocument } from "@/lib/agent/engine"
+import { createLocalStore } from "@/lib/agent/local-store"
+import { executeLocal } from "@/lib/agent/local-service"
+import type { Operation } from "@/lib/agent/schema"
 import { loadIconsFor, renderSvg } from "@/lib/sketch/svg"
 import type { InkTone, LineStyle, ShapeKind, SquigNode, TextAlign } from "@/lib/types"
 
 const USAGE = `squig — draw wireframes from a terminal
 
+  serve <file> [--port N]                    open a local editor and HTTP MCP server
+  mcp <file> [--port N]                      local editor plus stdio MCP (use node directly in MCP config)
   components [query]                          the library, one line each
   describe <kind>                             one component's props in full
   new <file> [--name "..."] [--force]         a blank document
@@ -43,6 +49,7 @@ const bool = { type: "boolean" } as const
 const OPTIONS = {
   name: str, id: str, x: str, y: str, w: str, h: str, props: str, size: str, align: str,
   ink: str, fill: str, from: str, to: str, style: str, patch: str, out: str,
+  port: str,
   force: bool, bold: bool, dashed: bool, "no-head": bool, transparent: bool,
 } as const
 
@@ -108,10 +115,16 @@ function readDoc(file: string): SquigDocument {
   return doc
 }
 
-/** Write the document back and say which nodes wore the change. */
-function touch(file: string, doc: SquigDocument, ids: readonly string[], verb: string): void {
-  writeFileSync(resolve(file), serializeDoc(doc) + "\n")
-  console.log(`${verb} ${ids.join(" ")}`)
+/** The CLI shares the companion's lock, atomic save and metadata retention. */
+async function touch(file: string, change: (doc: SquigDocument) => { operations: Operation[]; ids: string[]; verb: string }): Promise<void> {
+  if (!existsSync(resolve(file))) throw new DocError(`no file at ${resolve(file)}`)
+  const store = await createLocalStore(file)
+  try {
+    const before = await store.read()
+    const { operations, ids, verb } = change(before.document)
+    await executeLocal("edit_document", { documentId: store.documentId, revision: before.revision, operations }, store)
+    console.log(`${verb} ${ids.join(" ")}`)
+  } finally { await store.close() }
 }
 
 /** Columns that line up, with the last one left ragged. */
@@ -188,6 +201,13 @@ function built(command: string, args: string[], doc: SquigDocument): SquigNode {
 
 async function run(command: string | undefined, args: string[]): Promise<void> {
   switch (command) {
+    case "serve":
+    case "mcp": {
+      if (args.length !== 1) throw new DocError("Supply exactly one local .squig.json file")
+      const { runLocalAgent } = await import("./agent/local")
+      await runLocalAgent(command, need(args[0], "a local file"), { port: flag.port === undefined ? undefined : num(flag.port, "--port") })
+      return
+    }
     case "components": {
       const found = listComponents(args[0] ?? "")
       if (!found.length) throw new DocError(`nothing in the library matches "${args[0]}"`)
@@ -204,8 +224,11 @@ async function run(command: string | undefined, args: string[]): Promise<void> {
     case "new": {
       const file = need(args[0], "a file to write")
       if (existsSync(resolve(file)) && !flag.force) throw new DocError(`${resolve(file)} is already there — pass --force to replace it`)
-      const doc = emptyDoc(flag.name ?? (basename(file).replace(/\.squig\.json$/, "") || undefined))
-      writeFileSync(resolve(file), serializeDoc(doc) + "\n")
+      const store = await createLocalStore(file)
+      try {
+        const before = await store.read()
+        await store.mutate(before.revision, () => ({ document: emptyDocument(flag.name ?? (basename(file).replace(/\.squig\.json$/, "") || "untitled scribbles")), comments: [] }))
+      } finally { await store.close() }
       console.log(`wrote ${resolve(file)}`)
       return
     }
@@ -219,16 +242,17 @@ async function run(command: string | undefined, args: string[]): Promise<void> {
     case "shape":
     case "arrow": {
       const file = need(args[0], "a document")
-      const doc = readDoc(file)
-      const node = built(command, args, doc)
-      touch(file, addNodes(doc, [node]), [node.id], "added")
+      await touch(file, (doc) => {
+        const node = built(command, args, doc)
+        return { operations: [{ op: "add", nodes: [{ ...node }] }], ids: [node.id], verb: "added" }
+      })
       return
     }
     case "set": {
       const file = need(args[0], "a document")
       const id = need(args[1], "a node id")
       const patch = json(need(flag.patch, "--patch"), "patch") as Partial<SquigNode>
-      touch(file, updateNode(readDoc(file), id, patch), [id], "changed")
+      await touch(file, () => ({ operations: [{ op: "update", patches: [{ id, patch }] }], ids: [id], verb: "changed" }))
       return
     }
     case "rm":
@@ -238,16 +262,14 @@ async function run(command: string | undefined, args: string[]): Promise<void> {
       const file = need(args[0], "a document")
       const ids = args.slice(1)
       if (!ids.length) throw new DocError("name at least one node id")
-      const doc = readDoc(file)
-      for (const id of ids) if (!doc.nodes[id]) throw new DocError(`no node called "${id}"`)
-      if (command === "rm") touch(file, removeNodes(doc, ids), ids, "removed")
-      else if (command === "front") touch(file, bringToFront(doc, ids), ids, "brought to front")
-      else if (command === "back") touch(file, sendToBack(doc, ids), ids, "sent to back")
-      else {
-        const grouped = groupNodes(doc, ids)
-        if (!grouped) throw new DocError("nothing to group — that's fewer than two nodes, or a group that's already whole")
-        touch(file, grouped.doc, ids, `grouped as ${grouped.groupId}:`)
-      }
+      await touch(file, (doc) => {
+        for (const id of ids) if (!doc.nodes[id]) throw new DocError(`no node called "${id}"`)
+        const operation: Operation = command === "rm" ? { op: "delete", ids }
+          : command === "group" ? { op: "group", ids }
+          : { op: "reorder", ids, position: command }
+        const verb = command === "rm" ? "removed" : command === "group" ? "grouped" : command === "front" ? "brought to front" : "sent to back"
+        return { operations: [operation], ids, verb }
+      })
       return
     }
     case "render": {
@@ -281,8 +303,8 @@ async function run(command: string | undefined, args: string[]): Promise<void> {
 try {
   await run(positionals[0], positionals.slice(1))
 } catch (err) {
-  if (err instanceof DocError) {
-    console.error(err.message)
+  if (err instanceof DocError || err instanceof AgentError || positionals[0] === "serve" || positionals[0] === "mcp") {
+    console.error(err instanceof Error ? err.message : "Unable to run Squig")
     process.exit(1)
   }
   throw err

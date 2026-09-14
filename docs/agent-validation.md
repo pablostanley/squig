@@ -1,73 +1,96 @@
-# Shared canvas validation
+# Local agent validation
 
-The correction makes the normal Squig canvas the human/agent workspace.
-Wireframes and notes are editable nodes on that canvas. The separate review
-page and approval API were removed.
+The supported workflow is a local file, the full editor served on loopback,
+and an external agent connected to that file through MCP or local HTTP.
+No database or cloud workspace is required to verify it.
 
-## Coverage
+## Required gates
 
-- `pnpm test`: existing canvas geometry, selection, text, groups, connectors,
-  clipboard, files, history, navigation and other regression suites.
-- `pnpm test:agent`: 225 checks, including all 155 library definitions, all six
-  node types, atomic operations, validation, rendering and concurrent merges.
-- `scripts/agent/smoke.mjs`: real Neon database and official MCP SDK. Tests
-  workspace isolation, canvas key scopes, MCP editing, stale writes, atomic
-  rollback, concurrent CAS, history, rendering, key rotation and deletion.
-  51 checks pass, including compact edit responses and scoped text metrics.
-- `scripts/agent/browser.mjs`: clean-browser invitation opens the normal
-  editor without workspace credentials; real text objects are visible.
-  Human changes save to the shared document, agent edits arrive in the editor,
-  and a second browser sees both. An injected concurrent write on a different
-  node merges. A competing filename edit preserves a downloadable draft.
-  An existing local drawing can be connected in place. Also checks docs SEO,
-  mobile overflow and browser errors. Sharing and agent setup have separate
-  popovers; browser checks cover outside-click and Escape dismissal, clipboard
-  contents, temporary copy checkmarks and sidebar visibility. Shared canvases
-  ignore local drawer quota/staleness warnings; a simulated cloud outage shows
-  one error beneath the filename and clears it after reconnecting. The new
-  invitation is copied with one action, and hiding the chrome leaves sync active.
-  Delayed canvas loads and connection saves cannot attach or overwrite a file
-  opened while those requests are in flight. Switching files immediately clears
-  the previous canvas invitation, including when synchronization has stopped.
-  An idle imported canvas keeps the same revision across successive polls;
-  omitted optional JSON fields are not treated as edits.
-
-The tests use isolated workspaces and delete their fixtures. Run the browser
-suite with a running server and DATABASE_URL in .env.local. Install Chromium
-with `pnpm exec playwright install chromium`. SQUIG_TEST_URL defaults to
-http://localhost:3001.
-
-For protected preview verification, use:
-
-```sh
-SQUIG_PREVIEW_URL=https://YOUR-PREVIEW.vercel.app \
-  node --env-file=.env.local scripts/agent/preview-smoke.mjs
+```bash
+pnpm lint
+pnpm test
+pnpm test:agent
+pnpm build
+pnpm build:local
+pnpm exec playwright install chromium
+pnpm test:agent:browser
+make build-xdc
 ```
 
-The proxy uses `vercel curl` without disabling protection and keeps credentials
-in temporary private files, removed after each request.
+`pnpm test` includes type checking and the plain Node suites in `scripts/`.
+Canvas geometry, undo/redo, groups, connectors, clipboard, the agent engine,
+merge behavior and WebMCP remain part of the regression bar. Local filesystem
+and transport suites use temporary files and remove their fixtures.
 
-## Practical boundaries
+`pnpm test:agent:browser` runs the real local companion and Chromium against a
+temporary file. It checks both directions of browser/file editing, metadata
+preservation, stable revisions while idle, reload, pending-edit protection,
+conflict recovery, setup without upload, legacy read-only recovery and the
+absence of requests outside loopback. It also verifies a recovery draft stays
+available when browser storage is full. Screenshots go to
+`test-results/local-agent`. The suite cleans up its process and file fixtures.
+CI installs Chromium after `pnpm build:local` and runs this browser suite as
+part of the launch gate.
 
-Synchronization checks once per second and defers updates during active text
-edits or transforms. Independent edits merge; same-field conflicts require
-reconciliation. This is not character-level collaborative text editing and
-has no cursor avatars. Canvas keys are editing capabilities, not named users.
-There is no OAuth or account recovery. PNG rendering uses the vendored canvas fonts and real advance widths. Text
-metrics flag missing glyphs and overflow; component labels and italic ink
-bounds still need visual inspection. WebP pixel rendering is tested. Implementing the selected design remains the external agent’s job.
 
+Build the local editor again after `make build-xdc` before starting a
+companion: both exports use `out/`, and the companion requires the local
+editor build marker. Webxdc remains its own offline browser package.
 
-## Deployment review
+## Persistence and tool checks
 
-Production's DATABASE_URL was compared privately with the migrated preview
-connection and matches. A read-only schema query confirmed document, revision
-and canvas_hash; there is no outstanding migration on the connected database.
-No production write or deployment was needed for this check.
+Use a temporary `.squig.json` file and a directory outside the repository.
+Confirm that an absent file is created, an existing valid file opens, and an
+invalid file is preserved with an actionable error. Read the file after a
+successful edit and after restarting the process. Check that no-op saves do
+not create history, stale revisions reject writes, external edits are detected,
+and a second process cannot own the same file.
 
-The existing preview URL remains SSO-protected. Vercel rejected a domain-only
-protection exception because this account lacks Advanced Deployment Protection.
-No paid add-on was purchased and project-wide protection was left unchanged.
-External agents need an explicitly authorized Vercel bypass for this preview,
-or the public Squig endpoint after the PR ships. The local and protected-preview
-integration scripts exercise the same API and MCP implementation.
+Exercise component discovery; every node type; atomic batches; grouping,
+spacing, variations and notes; structured comments and resolution; restoration;
+SVG and PNG rendering; text measurement; and portable export. Check variations
+and comments after browser saves and reopen. Add enough snapshots to verify
+both the 50-entry cap and the 16 MiB history cap. Verify render fonts resolve
+from the installation even when the command starts in another project.
+
+Connect with the official MCP SDK over stdio and local Streamable HTTP.
+Stdio stdout must contain only protocol messages. Invalid Host, browser Origin,
+missing tokens, traversal attempts, and oversized requests must be rejected.
+Static file serving must expose only built editor assets. Public hosted tools
+must reject writes, while authenticated legacy recovery can still read/export.
+
+## Browser check
+
+Start `pnpm squig serve /absolute/path/test.squig.json` after `pnpm build:local`.
+Open its printed editor URL. Add and move objects by hand; inspect the disk
+file. Edit through MCP or HTTP and watch the changes arrive in the same editor.
+Check selections, zoom, undo, text edits and transforms during incoming edits.
+Two independent edits should merge; a same-field conflict must preserve the
+browser draft and provide recovery. Stop the process, confirm unsaved changes
+are visible, restart it and reopen the saved file.
+
+On the public editor, **Connect agent** should explain browser-agent access
+and the local-file workflow without uploading a drawing. Export a browser
+canvas, start a companion with that downloaded file, and verify it remains
+editable. Old cloud links should recover local documents without continuing
+cloud writes. Browser local storage is separate from the companion file;
+reloading one must not overwrite the other.
+
+Use the browser network panel during a local session: document saves,
+rendering and agent tool calls must remain on loopback. Inspect the normal
+canvas and `/kitchen-sink` for rendering regressions. Verify popup keyboard
+access, copy feedback, mobile layout and errors as well as type safety.
+
+## Practical limits
+
+The companion must keep running for live updates. A local link is accessible
+only on the same computer; it is not a public invitation. Browser WebMCP
+availability depends on the browser and agent. Revision merging is not
+character-level collaborative text editing. History is bounded; separate
+backups remain useful. Structured comments are accessible to agents but do
+not have a canvas comment UI, so visible feedback belongs in note nodes.
+
+Legacy database maintenance scripts remain for recovery operators. They are
+not launch requirements for local files. The retired hosted write smoke and
+browser scripts have been removed; verify current behavior through the local
+filesystem, transport and browser suites.

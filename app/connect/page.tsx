@@ -3,7 +3,7 @@ import { Connect } from "@/components/agent/connect"
 export const metadata: Metadata = {
   title: "Connect an agent to Squig",
   description:
-    "Give Codex, Claude and other MCP clients a shared wireframing canvas. Create a workspace key and start sketching together.",
+    "Connect your own agent to a local Squig file. Use MCP or a browser agent and sketch together without an account or cloud canvas storage.",
   alternates: { canonical: "/connect" },
 }
 export default function Page() {

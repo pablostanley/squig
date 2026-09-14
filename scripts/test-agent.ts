@@ -944,18 +944,14 @@ try {
   check("workspace authentication has no document scope", same(await authenticate(req(workspaceSecret)), { workspaceId: "w" }))
   check("canvas authentication retains its document scope", same(await authenticate(req(canvasSecret)), scopedPrincipal))
   const rest = await import("../app/api/v1/[...path]/route.ts")
-  const rotate = await rest.POST(new Request("https://squig.sh/api/v1/workspace/rotate-key", {
-    method: "POST", headers: { Authorization: `Bearer ${canvasSecret}`, "Content-Type": "application/json" }, body: "{}",
-  }), { params: Promise.resolve({ path: ["workspace", "rotate-key"] }) })
-  check("REST workspace rotation refuses canvas keys", rotate.status === 403)
+  const beforeRetirement = queries
+  check("public writes are retired", rest.POST().status === 410)
   const mcp = await import("../app/mcp/route.ts")
-  const request = new Request("https://squig.sh/mcp", {
-    method: "POST", headers: { Authorization: `Bearer ${canvasSecret}`, "Content-Type": "application/json", Accept: "application/json, text/event-stream" },
-    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "squig_get_document", arguments: { documentId: "two" } } }),
-  })
-  const response = await mcp.POST(request)
-  const rpc = await response.json()
-  check("MCP enforces the same document boundary", rpc.result?.isError === true && JSON.parse(rpc.result.content[0].text).status === 404)
+  const response = mcp.POST()
+  check("public MCP is retired", response.status === 410)
+  check("retired endpoints never access storage", queries === beforeRetirement)
+  await authenticate(req(canvasSecret), { readOnly: true })
+  check("recovery authentication performs only its lookup", queries === beforeRetirement + 1)
   check("MCP responses carrying private data cannot be cached", response.headers.get("cache-control") === "no-store" && response.headers.get("referrer-policy") === "no-referrer")
 } finally {
   neonConfig.fetchFunction = previousFetch

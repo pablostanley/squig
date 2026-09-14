@@ -87,7 +87,7 @@ declare global {
 /** The store's document, borrowed — safe to hand to lib/doc, which never mutates. */
 function current(): SquigDocument {
   const s = useSquig.getState()
-  return { fileName: s.fileName, look: lookOf(s), nodes: s.nodes, order: s.order }
+  return { fileName: s.fileName, look: lookOf(s), nodes: s.nodes, order: s.order, variations: s.variations, comments: s.comments }
 }
 
 const api: SquigAgentApi = {

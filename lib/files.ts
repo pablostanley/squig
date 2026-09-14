@@ -15,7 +15,8 @@
 // never makes room by throwing out a drawing the user didn't choose to lose.
 // ---------------------------------------------------------------------------
 
-import type { SquigNode } from "./types"
+import type { SquigDoc, SquigNode } from "./types"
+import { documentMetadata } from "./doc"
 import { canWrite } from "./tabs"
 import { DEFAULT_BIG_NUDGE, normalizeBigNudge } from "./nudge"
 import { DEFAULT_LOOK, knownLook, type FontMode, type Look, type ThemeName } from "./theme"
@@ -28,7 +29,7 @@ export interface FileMeta {
   agentId?: string
 }
 
-export interface StoredDoc {
+export interface StoredDoc extends Pick<SquigDoc, "variations" | "comments"> {
   id: string
   name: string
   nodes: Record<string, SquigNode>
@@ -145,8 +146,11 @@ function writeIndex(list: FileMeta[]): boolean {
 export function readFile(id: string): StoredDoc | null {
   const doc = readJSON(fileKey(id)) as StoredDoc | null
   if (!doc || typeof doc !== "object" || !doc.nodes || !Array.isArray(doc.order)) return null
+  const metadata = documentMetadata(doc)
   return {
     ...doc,
+    variations: metadata.variations,
+    comments: metadata.comments,
     id,
     name: typeof doc.name === "string" ? doc.name : "untitled scribbles",
     // a document written before looks existed has none; the caller keeps the

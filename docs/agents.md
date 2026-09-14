@@ -2,21 +2,108 @@
 
 squig is a wireframing tool: an infinite canvas of UI components that render as
 a hand-drawn sketch. A document is a flat map of nodes saved as
-[`.squig.json`](format.md), and everything below writes exactly that same file.
+[`.squig.json`](format.md), with browser and agent edits using the same node model.
 
-There are three doors. Use the first one that fits.
+Choose the connection that matches where the drawing lives.
 
-1. **The file door.** You have a shell and you want a `.squig.json` on disk
-   that a person can open. This is almost always the one.
-2. **The browser door.** The app is already open and you are driving the canvas
-   somebody is looking at.
-3. **The library door.** You are writing TypeScript in this repo.
+1. **The local companion.** Human and agent edit one disk file in the full
+   editor, with MCP or HTTP tools and live updates. Use this for working together.
+2. **The file CLI.** You have a shell and want to create or edit a file directly.
+3. **The browser door.** An agent drives the open canvas through WebMCP or
+   `window.squig`. The ordinary website saves to browser storage.
+4. **The library door.** You are writing TypeScript in this repo.
 
 ---
 
-## 1. The file door
+## 1. The local companion
 
-### The CLI
+Clone this repository, use Node.js 24 and pnpm 10, then build the editor once:
+
+```bash
+git clone https://github.com/pablostanley/squig.git
+cd squig
+pnpm install --frozen-lockfile
+pnpm build:local
+pnpm squig serve /absolute/path/canvas.squig.json
+```
+
+The command prints a local editor URL and connection details. Open that URL
+before drawing so the user can watch. A missing file is created; existing
+files are validated before editing. The selected file is the source of truth.
+Keep the process running. It binds only to `127.0.0.1` and serves the editor,
+HTTP tools and MCP from that local origin. No database or account is involved.
+
+If the drawing is already open on squig.sh, export a `.squig.json` copy and
+start the companion for that file. The website cannot infer its absolute
+path or silently connect a browser draft to a download.
+
+### MCP clients
+
+Use a stdio server entry with absolute paths in your client's MCP config:
+
+```json
+{
+  "mcpServers": {
+    "squig": {
+      "command": "node",
+      "args": [
+        "--experimental-strip-types",
+        "--disable-warning=MODULE_TYPELESS_PACKAGE_JSON",
+        "--import", "/absolute/squig/scripts/register-loader.mjs",
+        "/absolute/squig/scripts/squig.ts",
+        "mcp", "/absolute/path/canvas.squig.json"
+      ]
+    }
+  }
+}
+```
+
+Replace both the checkout and document paths. The client starts the companion;
+it also serves a local editor. Use the returned editor URL to work together.
+Do not launch another `serve` or `mcp` process for the same file. To connect
+another client to an already running companion, use that session's HTTP MCP
+address and bearer token. Launch Node directly for stdio: package-manager
+banners on stdout would corrupt the MCP protocol.
+
+There is no published `npx squig` package. The optional Squig plugin supplies
+a workflow skill; the checkout and selected file supply the runtime.
+
+### Full agent tools
+
+MCP prefixes tool names with `squig_`. The local HTTP equivalent is
+`POST /api/v1/tools/{name}` with the same JSON input and the session's bearer
+token. Use the actual loopback URL printed by the companion, never squig.sh.
+
+- `local_session`: the editor URL, selected file path and connection addresses.
+- `catalog`, `documents`, `get_document`: discover components and read the file.
+- `edit_document`, `replace_document`: validated, atomic edits using the current revision.
+- `history`, `restore`: bounded local snapshots and revision-checked restoration.
+- `comment`, `resolve_comment`: feedback stored with the local document.
+- `measure_text`, `render_document`, `export_document`: local measurement, SVG/PNG and portable JSON.
+
+Call `squig_local_session` for the editor URL and connection details.
+Start with `documents`, read `get_document`, then return the editor URL before
+editing. Use explicit node IDs and small batches. Re-read after a stale revision
+error; revision tokens describe content and must not be incremented by the client.
+No-op saves add no snapshots. The companion keeps at most 50 history entries
+and 16 MiB of history beside the file in a `.squig.json.history` directory;
+older history expires. Save a separate copy or
+use your own backup tools for versions you must keep.
+
+The full engine supports all six node types, layouts, grouping, connector
+bindings, locks, variations and notes. Put feedback the user must see on the
+canvas with `note`; structured comments are available to tools but have no
+canvas comment UI. Rendering and font measurement run on the computer.
+Your external agent's model calls still follow that agent's provider and billing.
+
+Direct file edits made outside the companion are detected. Prefer MCP/HTTP
+while a session is active so edits are serialized and history is retained.
+Do not edit the selected file using the direct CLI at the same time.
+
+Existing cloud canvas links are for read-only recovery. Export a local copy;
+new workspaces and public editing are retired.
+
+## 2. The file CLI
 
 ```bash
 pnpm squig <command> [...]
@@ -61,26 +148,9 @@ pnpm squig validate signin.squig.json
 Every mutating command prints the ids it touched. Anything you got wrong prints
 one sentence on stderr and exits 1.
 
-### The hosted MCP
-
-A canvas can also live on squig.sh instead of on your disk, and then a person
-watches it fill in while you draw. squig.sh serves an MCP over Streamable HTTP
-at `https://squig.sh/mcp`, where every tool is prefixed `squig_`; an agent
-without an MCP client runs the same commands over plain HTTP at
-`POST /api/v1/tools/{name}`.
-
-Setup is one paste. In the editor, **Connect agent** then **Copy for your
-agent** hands over the canvas link, a key scoped to that canvas, and both
-addresses. The client configs are at
-[squig.sh/docs/mcp](https://squig.sh/docs/mcp), the machine-readable schema at
-[/openapi.json](https://squig.sh/openapi.json), and the whole workflow at
-[/llms-full.txt](https://squig.sh/llms-full.txt). Running your own needs a
-Postgres `DATABASE_URL`; [agent-architecture.md](agent-architecture.md) has
-the shape of it.
-
 ---
 
-## 2. The browser door
+## 3. The browser door
 
 In a WebMCP-capable browser, squig registers structured canvas tools
 automatically. Start with `squig_read_canvas`; see [WebMCP](webmcp.md) for
@@ -124,10 +194,10 @@ squig.zoomToFit()
 
 ---
 
-## 3. The library door
+## 4. The library door
 
-From node or a test inside this repo, [`lib/doc.ts`](../lib/doc.ts) is the
-whole API the other two doors are built on. It is pure: every function returns
+From node or a test inside this repo, [`lib/doc.ts`](../lib/doc.ts) provides
+the shared node operations. It is pure: every function returns
 a new document and leaves its input alone.
 
 ```ts
@@ -186,7 +256,7 @@ Then a person can move the idea instead of eleven rectangles.
 ### Tidy up and exact spacing
 
 Use `squig_edit_document` (MCP) or `POST /api/v1/tools/edit_document`
-(REST) with the normal document ID and expected revision, and these operations:
+(local HTTP) with the document ID and expected revision, and these operations:
 
 ```json
 [

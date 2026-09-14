@@ -80,6 +80,16 @@ const button = (id: string, x = 0, y = 0) => componentNode("button", { id, seed:
   check("…its look", JSON.stringify(back?.look) === JSON.stringify(LOOK))
   check("…and its nodes, in order", JSON.stringify(back?.order) === JSON.stringify(["btn", "box"]))
   check("…node for node", JSON.stringify(back?.nodes) === JSON.stringify(doc.nodes))
+
+  doc.variations = [{ id: "direction", title: "A", description: "Keep this direction", nodeIds: ["btn"] }]
+  doc.comments = [{ id: "feedback", text: "Keep the button label", author: "agent", resolved: false, createdAt: "2026-09-13T00:00:00.000Z", nodeId: "btn" }]
+  const metadata = parseDoc(serializeDoc(doc))
+  check("portable variations survive a file round trip", JSON.stringify(metadata?.variations) === JSON.stringify(doc.variations))
+  check("portable comments survive a file round trip", JSON.stringify(metadata?.comments) === JSON.stringify(doc.comments))
+  const malformedMetadata = parseDoc(JSON.stringify({ ...doc, variations: [null, { id: "bad" }, ...doc.variations], comments: [null, { text: 123 }, ...doc.comments] }))
+  check("malformed metadata cannot corrupt the drawing or valid feedback", malformedMetadata?.order.length === 2 && malformedMetadata.variations?.length === 1 && malformedMetadata.comments?.length === 1)
+  const recovered = parseDoc(JSON.stringify({ ...doc, comments: [{ ...doc.comments[0], nodeId: null, variationId: null }] }))
+  check("legacy hosted feedback with nullable references remains portable", recovered?.comments?.[0]?.text === doc.comments[0].text && recovered.comments[0].nodeId === undefined && recovered.comments[0].variationId === undefined)
 }
 
 // -- what a document has to survive -----------------------------------------

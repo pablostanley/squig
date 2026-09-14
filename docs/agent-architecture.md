@@ -1,141 +1,123 @@
-# Shared canvas architecture
+# Local agent architecture
 
-Squig’s normal browser editor is the shared workspace. External agents use
-MCP or REST to read and mutate that same document; no model runs inside Squig.
-The user watches real editable nodes arrive and can draw alongside the agent.
-There is no separate review application.
+Squig's optional companion runs on the user's computer and owns one explicitly
+selected `.squig.json` file. It serves the normal editor on `127.0.0.1` and
+exposes the same canvas engine through MCP and local HTTP. Human and agent
+edit the same file. There is no public collaboration service, signup or model
+hosted by Squig.
 
-## Connections
+## Three places a drawing can live
 
-A workspace bearer key can create canvases. `create_document` returns a
-`canvasUrl` opening the normal editor, plus a `canvasKey` scoped to that one
-canvas. Agents should send the link before drawing, then work in small,
-coherent batches. An existing local drawing becomes shared through **Connect
-agent** in the editor, retaining its objects and the user's current view.
-Share provides the editable invitation. Connect agent provides the key and MCP config. Both are popovers in the top-right toolbar, beside the sidebar toggle.
+The ordinary website autosaves drafts in browser storage. A downloaded
+`.squig.json` is a separate portable copy. A companion session reads and writes
+a chosen disk file, so browser edits and agent edits persist to that file.
+Opening a website draft does not give the website access to its downloaded
+copy. The user exports the draft and starts the companion with its file path.
+A browser agent can also edit the open tab through `window.squig` or WebMCP;
+those tools use whichever document the tab currently has open.
 
-Successfully opened shared canvases appear in Open recent and the command
-palette. This browser remembers their names and IDs separately from local
-drawings; reopening fetches the live canvas with the saved invitation or
-workspace key. Removing a shared entry only forgets the shortcut. It does not
-delete the online canvas or revoke its invitation.
+## Local runtime
 
-Any Streamable HTTP MCP client can connect to `/mcp`; any HTTP agent can use
-`/api/v1/tools/{name}` with identical inputs. The catalog is Squig’s actual
-component registry. All six node types and canvas operations use the same
-validated, atomic command engine.
+`pnpm build:local` exports the editor assets. `pnpm squig serve /path/file.squig.json`
+starts the loopback editor and HTTP transport. `pnpm squig mcp /path/file.squig.json`
+adds stdio MCP for a client that launches its own process. Use direct Node
+arguments in an MCP configuration so package-manager output cannot enter the
+protocol stream. Startup details go to stderr for stdio sessions.
 
-Canvas keys can inspect and edit only their document. They cannot create or
-delete canvases, rotate keys, or access siblings in the workspace. Workspace
-keys can manage those actions. Keys are random and stored as SHA-256 hashes.
-The invitation secret is in the URL fragment. The editor removes it from the
-address bar before reading storage, and saves or shares it only after the server
-confirms access to that document. A supplied invitation never falls back to the
-browser's workspace key. Rejected or revoked invitations stop synchronization
-and clear the displayed sharing credential, preserving the local draft.
-Workspace and canvas keys have separate formats and storage slots; the workspace
-connection form accepts only workspace keys. The server receives keys as bearer headers.
-`rotate_canvas_link` revokes the previous canvas key without rotating the
-workspace key. Treat invitations as editing credentials.
+Run one companion per file. Its tools can access only the selected document;
+there are no workspace creation, document deletion or key-rotation tools.
+The process does not expose arbitrary filesystem paths, command execution or
+external URL fetching. A new file is created only when the chosen path is
+absent. An existing invalid file produces an error and stays intact.
 
-## Synchronization and concurrent editing
+The HTTP listener binds to loopback, validates Host and Origin, and requires
+an unpredictable session token for document access. The editor and API share
+an origin; the public website does not contact a localhost API behind the
+user's back. Treat the local editor link as a session credential. It works
+only on the computer running the companion while the process remains active.
+Stopping the process ends live access and leaves the file on disk.
 
-The browser checks for changes every second while connected. It preserves
-pan, zoom and surviving selections. Saves wait until a text edit or transform
-finishes. Each mutation uses an expected revision; a single PostgreSQL CTE
-updates the JSON and inserts its immutable history record. A stale writer
-receives 409 and must reconcile with the latest document.
-The save locks the expected revision before comparing JSON. An identical
-document returns that revision and timestamp without writing another snapshot;
-an identical payload with a stale revision still receives 409. Server-normalized
-fields are applied back to the browser after saving, including when local edits
-arrive during the request, so normalization cannot trigger endless resaves.
+## Persistence and history
 
-The editor uses a three-way merge between its last synchronized document,
-local changes and the remote document. Independent objects and fields merge;
-concurrent additions keep both sets of nodes. Competing edits to the same
-field preserve the local draft and offer download and explicit reload.
-Edits made during a save remain pending. Undo snapshots are rebased for
-independent remote changes; snapshots that would overwrite remote edits are
-discarded. Unsaved changes trigger the browser’s leave-page warning.
+The selected file is the source of truth. Mutations are serialized, validate
+the complete result, then save with a temporary file and rename in the same
+directory. A per-file session lock rejects a second companion. Revision tokens
+are derived from file content: agents read the current token and pass it back,
+never calculate the next revision. External file changes invalidate stale
+writes. Filesystem failures surface as actionable errors instead of a
+successful save; no cloud fallback is used.
 
-This is revision-based collaboration, not a character-level CRDT. Incoming
-changes are deferred during active text editing and transforms. There are no
-remote cursor avatars or named presence identities. The canvas status reports
-connection, saves, incoming changes and errors.
+A no-op save returns the same revision without another snapshot. History is
+stored beside the file in a `.squig.json.history` directory, with an active
+`.squig.json.lock` file identifying its companion session. History is bounded to 50 entries and 16 MiB per file, so embedded images and
+frequent edits cannot accumulate unlimited history. Older snapshots expire.
+History is a convenience, not an unlimited backup service; users can copy the
+portable file or use their own backup and version-control tools.
 
-## Modules
+Variations and structured comments are kept with the portable document.
+Browser updates replace editable fields while preserving this metadata.
+Restoration creates a new current state after checking the expected revision.
+The engine still enforces node counts, request/document sizes, operation
+limits, locks and valid geometry.
 
-- `app/mcp/route.ts`: official MCP SDK, tools, guide resource and workflow prompt.
-- `app/api/v1/[...path]/route.ts`: REST commands and workspace key management.
-- `lib/agent/schema.ts`, `engine.ts`: schemas and atomic canvas operations.
-- `lib/agent/service.ts`, `db.ts`: capability scopes, storage, quotas and CAS.
+## Synchronization
+
+The local editor checks for incoming changes while connected. It preserves
+pan, zoom and surviving selections, and defers incoming changes during active
+text edits and transforms. A three-way merge compares the last synchronized
+state, the browser's edits and the latest file. Independent changes merge.
+Competing edits preserve the browser draft and offer explicit recovery.
+
+Edits made during a save remain pending. Canonicalized saved fields become
+the new baseline, preventing normalization from triggering a save loop.
+Undo snapshots are rebased where independent incoming edits permit it.
+Unsaved changes trigger a leave-page warning. This is revision-based merging;
+it does not provide character-level collaborative text editing or presence.
+
+## Engine and transports
+
+- `lib/agent/schema.ts` and `engine.ts`: validated atomic node operations.
+- `lib/agent/local-store.ts` and `local-service.ts`: filesystem persistence and tools.
+- `scripts/agent/local.ts`: local editor, HTTP and stdio MCP transport.
 - `lib/agent/merge.ts`: browser-independent concurrent edit merging.
-- `components/agent/bridge.tsx`: in-canvas connection and synchronization.
+- `components/agent/bridge.tsx`: connection and editor synchronization.
+- `lib/agent/render.ts` and `text-metrics.ts`: local rendering and measurement.
 
-Render tools use the canvas drawing paths and primitives. PNGs use resvg and
-vendored Patrick Hand, Geist and Source Serif 4 fonts. Fontkit supplies real
-advance widths to the shared wrapping function; measurement stays local to a
-request, so parallel canvases cannot switch each other's font. `measure_text`
-reports text-node overflow and missing glyphs; component labels and italic
-ink bounds still need visual inspection. Embedded WebP images are converted
-to PNG before resvg sees them, with a 16-million-pixel input limit.
+The catalog is the actual component registry. All six node types, arrange
+operations, variations, notes, comments, export, history and restoration are
+available to local MCP clients. Browser WebMCP has a smaller canvas-focused
+catalog; it remains useful when a browser agent already controls the tab.
 
-Sync stays mounted when the user hides the editor chrome. The agent invitation
-is one copy action; raw credentials and manual MCP configuration are optional
-details. Edit responses return changed/deleted nodes instead of echoing the
-full canvas. An empty catalog query returns a compact index.
-No arbitrary code or external URL fetching is exposed. Images are embedded
-raster data. Requests, geometry, node counts and batches are bounded.
+SVG and PNG use the same drawing paths as the canvas. Vendored Patrick Hand,
+Geist and Source Serif 4 fonts are resolved from the application installation.
+Fontkit provides real text advances. Measurement reports text-node overflow
+and missing glyphs; component labels and italic ink bounds still need visual
+inspection. Embedded WebP is converted locally before PNG rendering, subject
+to the image pixel limit. No rendering request goes to a hosted Squig service.
 
-The migration is additive and rerunnable. Existing unused review columns are
-retained for migration compatibility; no review interface or endpoint is
-exposed. Database backups, retention and operating budgets belong to the host.
-The Webxdc package keeps the offline canvas and excludes hosted connections.
+## Retiring hosted collaboration
 
-Before promoting a deployment, run `pnpm db:check` with that deployment's
-`DATABASE_URL` and database role. It is a read-only preflight: required columns
-in all five tables, table privileges and the nullable `review_hash` upgrade.
-It also rejects read-only storage and Neon clusters at least 90% full. The Neon
-check includes every database in the cluster; other Postgres hosts must monitor
-their provider's capacity. This is a point-in-time check, not ongoing monitoring.
-It emits JSON and exits nonzero when storage is not ready. Run `pnpm db:migrate`
-and repeat the check for a schema failure. Both commands accept environment
-variables directly and optionally load `.env.local`. They are intentionally
-separate from ordinary local builds: the editor and offline package need no database.
-The REST/MCP preview smoke suite remains the check for actual writes.
+Public hosted writes and new workspace creation are disabled. Old authenticated
+canvas reads and exports remain temporarily available for recovery. Opening
+an old link recovers a local copy instead of restarting cloud synchronization.
+Existing data is preserved for export; it is not silently deleted during this
+migration. The remaining recovery storage is separate from all new local work.
 
-Vercel's build command is `pnpm build:hosted`: migrate, check readiness, then
-build. Schema upgrades happen automatically before the new deployment can
-receive traffic. A missing database or failed migration stops the deployment;
-so that release cannot replace the working live site. Other
-hosts can use the same command. Keep migrations additive and compatible with
-the currently serving release. Runtime requests never run migrations.
+Ordinary website and companion builds need no database. The old database code
+and operator scripts exist only to maintain recovery data. Do not run them
+as a prerequisite to building or launching the local app. A database outage
+cannot prevent the editor or local companion from saving local files.
 
-REST and MCP return sanitized 503 diagnostics with stable `AGENT_STORAGE_*`
-codes for missing configuration, migration, permissions, availability, full
-storage (`53100`) and read-only storage (`25006`). Unexpected errors keep their
-SQLSTATE in structured server logs, alongside the transport, tool name and an
-error ID returned to the caller. Database error text, credentials and query
-details are never returned or logged.
-Failed connections retain the local canvas and show a retry action. Legacy SVG
-images are rasterized in the browser for sharing; failed uploads leave the
-local document unchanged. Newly pasted SVGs are also stored as raster images.
+The public website still incurs normal hosting traffic. The companion's
+storage, rendering and agent traffic use the user's computer. Model usage
+belongs to the external agent's provider and can still cost money; Squig
+neither supplies nor pays for that model.
 
 ## Verification
 
-Run `pnpm test`, `pnpm test:agent`, `pnpm lint`, `pnpm build` and `make build-xdc`.
-With the app running, `pnpm test:agent:security-browser` checks invitation
-validation, credential storage, revocation, framing headers and the local canvas
-with an intercepted API, requiring no database. Set `SQUIG_TEST_URL` to override
-the default `http://localhost:3000`.
-With the app running and DATABASE_URL loaded, run the real REST/MCP integration
-suite and `pnpm test:agent:browser`. These create isolated fixtures and clean
-them up. Browser coverage includes direct invitations, existing local files,
-two live editors, independent concurrent writes and conflicting draft recovery.
-
-For rollout regressions without a database, start `DATABASE_URL='' pnpm dev
---port 3011`, then run `pnpm test:agent:rollout`. This checks the real missing
-configuration response, then uses isolated HTTP fixtures for an unmigrated
-database and recovery. It covers retry, preserved local editing, legacy SVG
-sharing and SVG paste. Screenshots are saved under `test-results/agent-rollout`.
+Run `pnpm lint`, `pnpm test`, `pnpm test:agent`, `pnpm build`,
+`pnpm build:local` and `make build-xdc`. Test the local companion from outside
+the repository directory too: assets, fonts and loaders must resolve from
+the installation. Verify live browser-to-file and agent-to-browser edits,
+stale writes, external edits, lock contention, metadata, history limits and
+restart persistence. See [agent-validation.md](agent-validation.md).

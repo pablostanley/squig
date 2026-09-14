@@ -31,6 +31,7 @@ export function FileName() {
   const docId = useSquig((s) => s.docId)
   const syncIssue = useCanvasSyncIssue((s) => s.issue?.docId === docId ? s.issue.message : null)
   const shared = docId.startsWith("agent_")
+  const localFile = useCanvasSyncIssue((s) => s.localFile?.docId === docId ? s.localFile : null)
   const fileName = useSquig((s) => s.fileName)
   const renaming = useSquig((s) => s.renamingFile)
   const full = useSquig((s) => s.drawerFull)
@@ -90,8 +91,8 @@ export function FileName() {
   // stories, but the line is not the place for the story. The flash that
   // arrived with each said which it was; this says the part that outlives it,
   // which is the same part either way.
-  const stuck = !!syncIssue || (!shared && (full || stale))
-  const note = syncIssue || (shared ? "" : stuck ? "not saved — export to keep this one" : saved ? "saved to this browser" : "")
+  const stuck = !!syncIssue || (!shared && !localFile && (full || stale))
+  const note = syncIssue || localFile?.status || (shared ? "" : stuck ? "not saved — export to keep this one" : saved ? "saved to this browser" : "")
 
   // renaming and the note both outrank the duck: neither should vanish because
   // the other hand started a drag
@@ -120,7 +121,7 @@ export function FileName() {
       )}
       <span
         aria-live="polite"
-        className={`absolute top-full left-1/2 mt-1 -translate-x-1/2 text-micro whitespace-nowrap transition-opacity duration-200 ${
+        className={`absolute top-full left-1/2 mt-1 -translate-x-1/2 w-max max-w-[70vw] text-center text-micro transition-opacity duration-200 ${
           stuck ? "text-destructive" : "text-muted-foreground"
         }`}
         style={{ opacity: note ? 1 : 0 }}

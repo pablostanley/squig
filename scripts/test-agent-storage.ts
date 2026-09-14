@@ -1,8 +1,9 @@
+import { readFileSync } from "node:fs"
 import { isDeepStrictEqual } from "node:util"
 import { spawnSync } from "node:child_process"
 import { neonConfig } from "@neondatabase/serverless"
 import { check, report } from "./harness.ts"
-import { db } from "../lib/agent/db.ts"
+import { db, save } from "../lib/agent/db.ts"
 import { failure } from "../lib/agent/http.ts"
 import { StorageError, storageFailure } from "../lib/agent/storage.ts"
 import { checkReadiness, requiredColumns } from "../lib/agent/readiness.ts"
@@ -30,13 +31,11 @@ async function diagnostic(response: Response, code: string) {
 }
 try {
   delete process.env.DATABASE_URL
-  await diagnostic(await rest(request("workspaces", { name: "Test" }), context("workspaces")), "AGENT_STORAGE_UNCONFIGURED")
+  check("public workspace creation is retired without needing a database", rest().status === 410)
+  check("public MCP is retired without needing a database", mcp().status === 410)
   await diagnostic(await get(request("documents"), context("documents")), "AGENT_STORAGE_UNCONFIGURED")
-  await diagnostic(await mcp(request("mcp", {})), "AGENT_STORAGE_UNCONFIGURED")
   const unauthorized = await get(new Request("http://localhost/api/v1/documents"), context("documents"))
-  check("missing credentials remain a 401", unauthorized.status === 401)
-  const invalid = await rest(request("workspaces", { name: "" }), context("workspaces"))
-  check("invalid input remains a 400", invalid.status === 400)
+  check("missing recovery credentials remain a 401", unauthorized.status === 401)
   process.env.DATABASE_URL = "not-a-connection-string-private-secret"
   try { db(); check("invalid connection refused", false) } catch (error) {
     check("invalid connection has sanitized guidance", storageFailure(error)?.code === "AGENT_STORAGE_UNAVAILABLE")
@@ -53,22 +52,10 @@ try {
     ["53100", "AGENT_STORAGE_FULL", {}],
   ] as const) {
     neonConfig.fetchFunction = async () => Response.json({ code, message: "private-secret SQL details", ...extra }, { status: 400 })
-    await diagnostic(await rest(request("workspaces", { name: "Test" }), context("workspaces")), expected)
-    await diagnostic(await mcp(request("mcp", {})), expected)
+    await diagnostic(await get(request("documents"), context("documents")), expected)
   }
   neonConfig.fetchFunction = async () => { throw new Error("network private-secret") }
   await diagnostic(await get(request("documents"), context("documents")), "AGENT_STORAGE_UNAVAILABLE")
-  let calls = 0
-  neonConfig.fetchFunction = async (_url: string, options?: RequestInit) => {
-    calls++
-    check("database requests have a timeout", options?.signal instanceof AbortSignal)
-    const query = JSON.parse(String(options?.body)).query as string
-    return Response.json(query.includes("agent_limits")
-      ? { fields: [{ name: "count", dataTypeID: 23 }], rows: [["1"]] }
-      : { fields: [], rows: [] })
-  }
-  const healthy = await rest(request("workspaces", { name: "Test" }), context("workspaces"))
-  check("configured workspace creation still succeeds", healthy.status === 201 && (await healthy.json()).key.startsWith("sq_") && calls === 2)
   check("conflicts remain 409", failure(new AgentError(409, "Revision conflict")).status === 409)
   check("unrelated constraints are not mislabeled as rollout failures", storageFailure({ code: "23502", table: "elsewhere", column: "name" }) === null)
   const unexpected = await failure(new TypeError("private-secret")).json()
@@ -104,17 +91,14 @@ try {
       return Response.json(query.includes("FROM agent_documents") ? stored : { fields: [], rows: [] })
     }
     check(`${sqlState}: authenticated reads still succeed`, (await get(request("documents/canvas"), context("documents/canvas"))).status === 200)
-    const args = { documentId: "canvas", revision: 10, operations: [{ op: "rename", name: "Changed" }] }
-    const response = await rest(request("tools/edit_document", args), context("tools/edit_document"))
+    let response: Response
+    try { await save("workspace", "canvas", 10, emptyDocument("Changed")); throw new Error("Expected failed save") }
+    catch (error) { response = failure(error, { transport: "rest", tool: "edit_document" }) }
     const data = await response.json()
     const log = JSON.parse(logs.at(-1)!)
-    check(`${sqlState}: REST diagnoses the save failure`, response.status === status && data.code === expected && saves === 1)
-    check(`${sqlState}: logs identify SQLSTATE, tool and error ID`, log.sqlState === sqlState && log.tool === "edit_document" && log.transport === "rest" && log.errorId === data.errorId)
-    check(`${sqlState}: REST does not expose write details`, !JSON.stringify(data).includes("private-secret"))
-    const rpc = await mcp(request("mcp", { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "squig_edit_document", arguments: args } }))
-    const result = (await rpc.json()).result
-    const diagnostic = JSON.parse(result.content[0].text)
-    check(`${sqlState}: MCP diagnoses tool execution failures`, result.isError === true && diagnostic.status === status && diagnostic.code === expected && diagnostic.errorId === JSON.parse(logs.at(-1)!).errorId)
+    check(`${sqlState}: legacy save diagnoses failures`, response.status === status && data.code === expected && saves === 1)
+    check(`${sqlState}: logs identify SQLSTATE and error ID`, log.sqlState === sqlState && log.errorId === data.errorId)
+    check(`${sqlState}: diagnostics do not expose write details`, !JSON.stringify(data).includes("private-secret"))
     check(`${sqlState}: failed save leaves the readable revision intact`, (await (await get(request("documents/canvas"), context("documents/canvas"))).json()).revision === 10)
   }
   check("server logs contain no driver secrets", logs.every((line) => !line.includes("private-secret")))
@@ -155,10 +139,8 @@ try {
     encoding: "utf8", env: { ...process.env, DATABASE_URL: "" },
   })
   check("preflight exits nonzero without configuration", cli.status === 1 && cli.stderr.includes("AGENT_STORAGE_UNCONFIGURED") && cli.stderr.includes('"ready":false'))
-  const hosted = spawnSync("pnpm", ["build:hosted"], {
-    encoding: "utf8", env: { ...process.env, DATABASE_URL: "" },
-  })
-  check("hosted build stops before compiling without storage", hosted.status !== 0 && !hosted.stdout.includes("> next build"))
+  const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"))
+  check("website builds have no database prerequisite", pkg.scripts["build:hosted"] === "pnpm build")
 
   const original = emptyDocument("Legacy SVG")
   original.nodes.logo = { id: "logo", type: "image", x: 10, y: 20, w: 200, h: 100, seed: 1,

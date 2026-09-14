@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "build:hosted": "pnpm db:migrate && pnpm db:check && pnpm build",
+    "build:hosted": "pnpm build",
     "build:xdc": "make build-xdc",
     "start": "next start",
     "squig": "node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-loader.mjs scripts/squig.ts",
@@ -14,18 +14,17 @@
     "typecheck": "tsc --noEmit && tsc --noEmit -p scripts/tsconfig.json",
     "test": "pnpm typecheck && node --experimental-strip-types --import ./scripts/register-loader.mjs scripts/test.ts",
     "test:agent": "node --experimental-strip-types --import ./scripts/register-loader.mjs scripts/test.ts agent",
-    "test:agent:integration": "node scripts/agent/smoke.mjs",
-    "test:agent:security-browser": "node scripts/agent/security-browser.mjs",
+    "test:agent:integration": "node --experimental-strip-types --import ./scripts/register-loader.mjs scripts/test.ts local-",
     "test:spacing": "node scripts/ui/spacing-browser.mjs",
     "test:ui": "node scripts/ui/helpers-browser.mjs",
-    "test:agent:browser": "node --env-file=.env.local scripts/agent/browser.mjs",
-    "test:agent:rollout": "node scripts/agent/rollout-browser.mjs",
+    "test:agent:browser": "node scripts/agent/local-browser.mjs",
     "db:migrate": "node --env-file-if-exists=.env.local scripts/agent/migrate.mjs",
     "db:check": "node --env-file-if-exists=.env.local --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-loader.mjs scripts/agent/check.ts",
     "verify": "pnpm lint && pnpm test && pnpm build",
     "bench:history": "node --expose-gc --experimental-strip-types --import ./scripts/register-loader.mjs scripts/bench-history.ts",
     "gen:icons": "node scripts/gen-icons.mjs",
-    "gen:doodle": "node scripts/gen-doodle.mjs scripts/doodle.squig.json"
+    "gen:doodle": "node scripts/gen-doodle.mjs scripts/doodle.squig.json",
+    "build:local": "node scripts/agent/build-local.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",

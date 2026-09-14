@@ -5,4 +5,6 @@ import { create } from "zustand"
 // switching files cannot carry a cloud error into an unrelated local sketch.
 export const useCanvasSyncIssue = create<{
   issue: { docId: string; message: string } | null
-}>(() => ({ issue: null }))
+  localFile: { docId: string; path: string; status: string } | null
+  canLeaveLocalFile: (() => boolean) | null
+}>(() => ({ issue: null, localFile: null, canLeaveLocalFile: null }))

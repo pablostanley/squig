@@ -2,6 +2,8 @@ import { drawNodes, esc } from "@/lib/sketch/svg"
 import { bgOf, paletteOf } from "@/lib/theme"
 import { AgentError, type CanvasDocument } from "./engine"
 import path from "node:path"
+import { existsSync } from "node:fs"
+import { fileURLToPath } from "node:url"
 import { textMeasurer } from "./text-metrics"
 
 // More margin than the editor's export leaves: this picture is looked at on
@@ -41,17 +43,18 @@ export function renderSvg(document: CanvasDocument, variationId?: string) {
   }
 }
 
-// Vercel functions have no system fonts, so a PNG rasterised there renders
-// every glyph as a tofu box. Ship the editor's own faces next to the code and
-// hand resvg their absolute paths; resolving from cwd is what lets Next's file
-// tracer see them and bundle them into the function.
+// Local agents run from their own project directories. Source runs find fonts
+// beside this module; Next's traced deployment still carries them under cwd.
 const FONT_FILES = [
   "PatrickHand-Regular.ttf",
   "Geist-Regular.ttf",
   "Geist-Bold.ttf",
   "SourceSerif4-Regular.ttf",
   "SourceSerif4-Bold.ttf",
-].map((file) => path.join(process.cwd(), "lib/agent/fonts", file))
+].map((file) => {
+  const local = path.join(path.dirname(fileURLToPath(import.meta.url)), "fonts", file)
+  return existsSync(local) ? local : path.join(process.cwd(), "lib/agent/fonts", file)
+})
 
 export async function renderPng(svg: string): Promise<Buffer> {
   const { Resvg } = await import("@resvg/resvg-js")

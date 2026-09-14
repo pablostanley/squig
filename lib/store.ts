@@ -2,7 +2,7 @@
 
 import { create } from "zustand"
 import { nanoid } from "nanoid"
-import type { ComponentNode, ImageNode, SquigNode, TextAlign, TextNode, TextVerticalAlign, Tool, Viewport, ShapeKind } from "./types"
+import type { ComponentNode, ImageNode, SquigComment, SquigVariation, SquigNode, TextAlign, TextNode, TextVerticalAlign, Tool, Viewport, ShapeKind } from "./types"
 import { screenToWorld, unionBox } from "./types"
 import { componentNode, DocError, parseDoc, sanitizeDoc, serializeDoc } from "./doc"
 import { remapBinds, settleBinds } from "./canvas/arrow-binding"
@@ -54,6 +54,7 @@ import {
 } from "./files"
 import { planTabSync } from "./tabs"
 import { DEFAULT_BIG_NUDGE, normalizeBigNudge } from "./nudge"
+import { useCanvasSyncIssue } from "./agent/sync-status"
 
 // ---------------------------------------------------------------------------
 // Store — flat node map + z-order, selection, viewport, tool, history.
@@ -95,6 +96,8 @@ interface SquigState {
   /** which file in the drawer this canvas is — every doc has one */
   docId: string
   fileName: string
+  variations: SquigVariation[]
+  comments: SquigComment[]
   /** the drawer, newest first; kept in state so menus re-render as it changes */
   files: FileMeta[]
   /** bumped by an explicit save, so the file name can say so out loud */
@@ -285,7 +288,7 @@ interface SquigState {
   /** write to the drawer right now instead of waiting out the debounce */
   saveNow: () => void
   serialize: () => string
-  loadDoc: (json: string) => boolean
+  loadDoc: (json: string, id?: string) => boolean
 }
 
 const MAX_HISTORY = 100
@@ -608,6 +611,8 @@ function flushSave(get: () => SquigState, force = false) {
       name: s.fileName,
       nodes: s.nodes,
       order: s.order,
+      variations: s.variations,
+      comments: s.comments,
       updatedAt: at,
       look: lookOf(s),
     },
@@ -685,6 +690,8 @@ function adoptDoc(get: () => SquigState) {
   const held = new Set(s.selection)
   useSquig.setState({
     fileName: doc.name,
+    variations: doc.variations ?? [],
+    comments: doc.comments ?? [],
     nodes: clean.nodes,
     order: clean.order,
     // whatever of the selection survived the other tab's edit, in document order
@@ -776,6 +783,8 @@ function watchWindow(get: () => SquigState) {
 export const useSquig = create<SquigState>((set, get) => ({
   docId: nanoid(8),
   fileName: "untitled scribbles",
+  variations: [],
+  comments: [],
   files: [],
   saveFlash: 0,
   nodes: {},
@@ -1351,6 +1360,8 @@ export const useSquig = create<SquigState>((set, get) => ({
     set({
       docId: doc?.id ?? nanoid(8),
       fileName: doc?.name ?? "untitled scribbles",
+      variations: doc?.variations ?? [],
+      comments: doc?.comments ?? [],
       nodes: clean.nodes,
       order: clean.order,
       selection: [],
@@ -1809,11 +1820,14 @@ export const useSquig = create<SquigState>((set, get) => ({
   },
 
   newFile: () => {
+    if (useCanvasSyncIssue.getState().canLeaveLocalFile?.() === false) return
     // the file you were on keeps its place in the drawer — this is a new one
     flushSave(get)
     set({
       docId: nanoid(8),
       fileName: "untitled scribbles",
+      variations: [],
+      comments: [],
       nodes: {},
       order: [],
       selection: [],
@@ -1834,6 +1848,7 @@ export const useSquig = create<SquigState>((set, get) => ({
 
   openFile: (id) => {
     if (id === get().docId) return
+    if (useCanvasSyncIssue.getState().canLeaveLocalFile?.() === false) return
     flushSave(get)
     const recent = listRecentFiles().find((f) => f.id === id)
     if (recent?.agentId) {
@@ -1857,6 +1872,8 @@ export const useSquig = create<SquigState>((set, get) => ({
     set({
       docId: doc.id,
       fileName: doc.name,
+      variations: doc.variations ?? [],
+      comments: doc.comments ?? [],
       nodes: clean.nodes,
       order: clean.order,
       selection: [],
@@ -1889,6 +1906,7 @@ export const useSquig = create<SquigState>((set, get) => ({
   },
 
   deleteFile: (id) => {
+    if (id === get().docId && useCanvasSyncIssue.getState().canLeaveLocalFile?.() === false) return
     if (listRecentFiles().some((f) => f.id === id && f.agentId)) {
       if (!forgetSharedFile(id)) get().setNotice("Could not remove this canvas from recent files.")
       set({ files: listRecentFiles() })
@@ -1903,6 +1921,8 @@ export const useSquig = create<SquigState>((set, get) => ({
     set({
       docId: nanoid(8),
       fileName: "untitled scribbles",
+      variations: [],
+      comments: [],
       nodes: {},
       order: [],
       selection: [],
@@ -1925,18 +1945,21 @@ export const useSquig = create<SquigState>((set, get) => ({
 
   serialize: () => {
     const s = get()
-    return serializeDoc({ fileName: s.fileName, look: lookOf(s), nodes: s.nodes, order: s.order })
+    return serializeDoc({ fileName: s.fileName, look: lookOf(s), nodes: s.nodes, order: s.order, variations: s.variations, comments: s.comments })
   },
 
-  loadDoc: (json) => {
+  loadDoc: (json, id) => {
     const doc = parseDoc(json, "imported scribbles", lookOf(get()))
     if (!doc) return false
+    if (useCanvasSyncIssue.getState().canLeaveLocalFile?.() === false) return false
     // an opened file joins the drawer as its own document, so importing
     // never writes over whatever was on the canvas
     flushSave(get)
     set({
-      docId: nanoid(8),
+      docId: id ?? nanoid(8),
       fileName: doc.fileName,
+      variations: doc.variations ?? [],
+      comments: doc.comments ?? [],
       nodes: doc.nodes,
       order: doc.order,
       selection: [],
@@ -1948,9 +1971,9 @@ export const useSquig = create<SquigState>((set, get) => ({
       past: [],
       future: [],
     })
-    // a fresh id, so this lands as its own document however the last one was
-    // getting on with the rest of the browser
-    nowSeeing(null)
+    // A companion reuses its file's cache identity across reconnects. Imports
+    // still get a new drawing; neither case bypasses the drawer's timestamp guard.
+    nowSeeing(id ? readFile(id)?.updatedAt ?? null : null)
     wearLook(set, doc.look)
     // an imported file was drawn wherever its author left it — go there,
     // or the canvas looks empty when it isn't

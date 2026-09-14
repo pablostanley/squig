@@ -23,6 +23,8 @@ import type {
   ShapeKind,
   ShapeNode,
   SquigDoc,
+  SquigComment,
+  SquigVariation,
   SquigNode,
   StrokeWeight,
   TextAlign,
@@ -113,6 +115,28 @@ export function sanitizeDoc(nodes: unknown, order: unknown): { nodes: Record<str
   return { nodes: settleBinds(pruneDegenerateGroups(clean)), order: ord }
 }
 
+/** Agent feedback travels with a drawing even when the editor has no panel for
+ * it. Validate the portable fields without pulling Node's agent engine into UI. */
+export function documentMetadata(value: { variations?: unknown; comments?: unknown }): Pick<SquigDoc, "variations" | "comments"> {
+  const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value)
+  const id = (value: unknown): value is string => typeof value === "string" && ID_PATTERN.test(value) && !RESERVED_IDS.has(value)
+  const text = (value: unknown, max: number): value is string => typeof value === "string" && value.length <= max
+  const metadata: Pick<SquigDoc, "variations" | "comments"> = {}
+  if (Array.isArray(value.variations)) metadata.variations = value.variations.slice(0, 1000).filter((item): item is SquigVariation =>
+    record(item) && id(item.id) && text(item.title, 120) && text(item.description, 4000) &&
+    Array.isArray(item.nodeIds) && item.nodeIds.length <= 5000 && item.nodeIds.every(id),
+  ).map((item) => ({ id: item.id, title: item.title, description: item.description, nodeIds: [...item.nodeIds] }))
+  if (Array.isArray(value.comments)) metadata.comments = value.comments.slice(0, 1000).filter((item): item is SquigComment =>
+    record(item) && id(item.id) && text(item.text, 4000) && text(item.author, 80) && text(item.createdAt, 80) &&
+    typeof item.resolved === "boolean" && (item.nodeId == null || id(item.nodeId)) &&
+    (item.variationId == null || id(item.variationId)),
+  ).map((item) => ({
+    id: item.id, text: item.text, author: item.author, resolved: item.resolved, createdAt: item.createdAt,
+    ...(item.nodeId ? { nodeId: item.nodeId } : {}), ...(item.variationId ? { variationId: item.variationId } : {}),
+  }))
+  return metadata
+}
+
 /**
  * A document from JSON, or null for anything that isn't one.
  *
@@ -143,12 +167,13 @@ export function parseDoc(
     look: knownLook(d.look, fallbackLook),
     nodes: clean.nodes,
     order: clean.order,
+    ...documentMetadata(d),
   }
 }
 
 export function serializeDoc(doc: SquigDocument): string {
-  const { fileName, look, nodes, order } = doc
-  return JSON.stringify({ app: "squig", version: DOC_VERSION, fileName, look, nodes, order }, null, 2)
+  const { fileName, look, nodes, order, variations, comments } = doc
+  return JSON.stringify({ app: "squig", version: DOC_VERSION, fileName, look, nodes, order, variations, comments }, null, 2)
 }
 
 /** The nodes in draw order, which is the only order anything should read them in. */

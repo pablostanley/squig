@@ -31,6 +31,7 @@ export interface AgentPrincipal {
 }
 export async function authenticate(
   request: Request,
+  options: { readOnly?: boolean } = {},
 ): Promise<AgentPrincipal> {
   const bearer = request.headers
     .get("authorization")
@@ -38,7 +39,7 @@ export async function authenticate(
   if (!bearer)
     throw new AgentError(
       401,
-      "Supply Authorization: Bearer <key>. Get a canvas key from Connect agent in the editor, or a workspace key at /connect.",
+      "Supply your original canvas or workspace key to recover an existing online canvas.",
     )
   const kind = keyKind(bearer)
   if (!kind) throw new AgentError(401, "Invalid key format")
@@ -47,7 +48,7 @@ export async function authenticate(
       await db()`SELECT id, workspace_id FROM agent_documents WHERE canvas_hash = ${hash(bearer)}`
     if (!rows.length)
       throw new AgentError(401, "Invalid or revoked canvas key")
-    await rateLimit(`canvas:${rows[0].id}`, 600)
+    if (!options.readOnly) await rateLimit(`canvas:${rows[0].id}`, 600)
     return {
       workspaceId: rows[0].workspace_id as string,
       documentId: rows[0].id as string,
@@ -57,7 +58,7 @@ export async function authenticate(
     await db()`SELECT id FROM agent_workspaces WHERE key_hash = ${hash(bearer)}`
   if (!rows.length)
     throw new AgentError(401, "Invalid or revoked workspace key")
-  await rateLimit(`workspace:${rows[0].id}`, 240)
+  if (!options.readOnly) await rateLimit(`workspace:${rows[0].id}`, 240)
   return { workspaceId: rows[0].id as string }
 }
 export async function rateLimit(key: string, limit: number, seconds = 60) {

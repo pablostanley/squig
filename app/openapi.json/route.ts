@@ -1,5 +1,5 @@
 import { z } from "zod"
-import { tools } from "@/lib/agent/schema"
+import { localTools as tools } from "@/lib/agent/local-service"
 export const dynamic = "force-static"
 export function GET() {
   const jsonContent = (schema: object) => ({
@@ -23,7 +23,7 @@ export function GET() {
   const responses = {
     "200": {
       description:
-        "Command result. Canvas mutations return id, revision and editorUrl; edit_document returns createdIds, changed nodes and deletedIds instead of the whole document, while reads and replace_document return the full document. Create and rotate_canvas_link also return canvasUrl and canvasKey for the normal editable canvas.",
+        "Command result. Canvas mutations return id, revision and editorUrl; edit_document returns createdIds, changed nodes and deletedIds instead of the whole document, while reads and replace_document return the full document. The companion exposes only the explicitly selected local file.",
       content: jsonContent({ type: "object", additionalProperties: true }),
     },
     ...Object.fromEntries(
@@ -39,13 +39,8 @@ export function GET() {
     required: true,
     schema: { type: "string" },
   }
-  const nameBody = requestBody({
-    type: "object",
-    required: ["name"],
-    properties: { name: { type: "string", minLength: 1, maxLength: 100 } },
-  })
   const paths: Record<string, unknown> = Object.fromEntries(
-    Object.entries(tools).map(([name, t]) => [
+    Object.entries(tools).filter(([name]) => !["create_document", "delete_document", "rotate_canvas_link"].includes(name)).map(([name, t]) => [
       `/tools/${name}`,
       {
         post: {
@@ -59,57 +54,7 @@ export function GET() {
       },
     ]),
   )
-  paths["/workspaces"] = {
-    post: {
-      operationId: "create_workspace",
-      summary: "Create a workspace; returns its bearer key once",
-      security: [],
-      requestBody: nameBody,
-      responses: {
-        ...responses,
-        "201": {
-          description: "Workspace id and key",
-          content: jsonContent({
-            type: "object",
-            required: ["id", "key"],
-            properties: {
-              id: { type: "string" },
-              key: { type: "string" },
-              message: { type: "string" },
-            },
-          }),
-        },
-      },
-    },
-  }
-  paths["/workspace/rotate-key"] = {
-    post: {
-      operationId: "rotate_workspace_key",
-      summary: "Revoke the current key and return its replacement",
-      responses,
-    },
-  }
-  paths["/catalog"] = {
-    get: {
-      operationId: "search_catalog",
-      summary: "Search component metadata",
-      parameters: [
-        { name: "q", in: "query", schema: { type: "string" } },
-        { name: "kind", in: "query", schema: { type: "string" } },
-      ],
-      responses,
-    },
-  }
-  paths["/documents"] = {
-    get: { operationId: "list_documents", responses },
-    post: {
-      operationId: "create_canvas",
-      requestBody: requestBody(
-        z.toJSONSchema(tools.create_document.schema, { io: "input" }),
-      ),
-      responses: { ...responses, "201": responses["200"] },
-    },
-  }
+  paths["/documents"] = { get: { operationId: "list_documents", responses } }
   paths["/documents/{id}"] = {
     get: {
       operationId: "read_document",
@@ -120,20 +65,20 @@ export function GET() {
   return Response.json({
     openapi: "3.1.0",
     info: {
-      title: "Squig Agent API",
-      version: "1.0.0",
+      title: "Squig Local Agent API",
+      version: "2.0.0",
       description:
-        "Shared editable canvases for humans and any compatible agent. MCP tools use squig_ plus the command operationId.",
+        "Tools for one local .squig.json file. Start the local companion and use its printed port and session token. Hosted writes at squig.sh are retired. MCP tools use squig_ plus the operationId. Revision numbers are opaque tokens; never increment or infer their ordering.",
     },
-    servers: [{ url: "/api/v1" }],
-    security: [{ workspaceKey: [] }],
+    servers: [{ url: "http://127.0.0.1:{port}/api/v1", variables: { port: { default: "49152", description: "Replace with the port printed by your local Squig companion." } } }],
+    security: [{ sessionToken: [] }],
     components: {
       securitySchemes: {
-        workspaceKey: {
+        sessionToken: {
           type: "http",
           scheme: "bearer",
           description:
-            "Canvas key from Connect agent in the editor, or workspace key from /connect to create canvases. Keep it private.",
+            "Temporary bearer token from your local session. Keep it on this computer.",
         },
       },
     },

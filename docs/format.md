@@ -29,10 +29,40 @@ When the two disagree, the code is right.
 | `look` | how the whole sheet prints. Every field falls back if it is missing or no longer known. |
 | `nodes` | every layer, keyed by id. The key is the name the rest of the file uses. |
 | `order` | z-order, bottom to top. |
+| `variations` | optional named compositions with member node IDs. |
+| `comments` | optional structured feedback, preserved by browser import/export and local tools. |
 
 `look.theme` is one of `internet-blue`, `riso-red`, `terminal-green`, `plum`,
 `marigold`, `graphite`. `look.paper` is `white`, `subtle` or `shaded`.
 `look.font` is `hand`, `sans` or `serif`. `look.grid` is the canvas dot grid.
+
+## Agent metadata
+
+A local companion keeps optional `variations` and `comments` in this same
+portable file. Browser saves, exports and direct CLI edits preserve them.
+Existing files without these fields remain valid.
+
+```json
+{
+  "variations": [
+    { "id": "meeting-first", "title": "Meeting first", "description": "Lead with the next gathering.", "nodeIds": ["go"] }
+  ],
+  "comments": [
+    { "id": "feedback-1", "text": "Make the date easier to find.", "author": "Pablo", "nodeId": "go", "resolved": false, "createdAt": "2026-09-13T18:00:00.000Z" }
+  ]
+}
+```
+
+A variation has `id`, `title`, `description` and `nodeIds`. A comment has `id`,
+`text`, `author`, `resolved` and an ISO `createdAt`; `nodeId` and `variationId`
+are optional references. Comments are available to agent tools, but do not
+have a canvas comment UI. Use a text note for feedback people must see on the
+canvas.
+
+The companion's revision token and history are not required document fields.
+Local history lives in a sibling `.squig.json.history` directory, capped at
+50 snapshots and 16 MiB per file. Copy the document to transfer its current
+canvas, variations and comments; copy retained history separately if needed.
 
 ## Every node
 

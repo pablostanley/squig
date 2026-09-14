@@ -1,8 +1,8 @@
 # WebMCP in squig
 
-Squig exposes the **open browser canvas** as WebMCP tools. This is separate
-from the hosted MCP server at `/mcp`: WebMCP runs in the user's tab and uses
-the local canvas store. It needs no account, API key, server workspace, or
+Squig exposes the **open browser canvas** as WebMCP tools. WebMCP runs in the user's tab and uses
+the canvas store. The local companion MCP server is a separate connection
+for agents that need a selected disk file, rendering and durable local history. It needs no account, API key, server workspace, or
 network request to edit a local document.
 
 ## Readiness assessment
@@ -14,20 +14,19 @@ capabilities, not something a website can enable for every visitor.
 
 | Area | Before | Implementation |
 | --- | --- | --- |
-| Browser discovery | Only `window.squig` and hosted MCP | Tools registered on `document.modelContext`; fallback to older `navigator.modelContext` |
+| Browser discovery | `window.squig` and local companion MCP | Tools registered on `document.modelContext`; fallback to older `navigator.modelContext` |
 | Structured inputs | TypeScript console methods | JSON Schema generated from Zod, with runtime validation |
 | Shared human/agent state | Already present | Reuses the bridge and store for selection, undo, redo, autosave and rendering |
 | Lifecycle | No WebMCP registrations | Registers after hydration; aborts registrations on unmount; handles Strict Mode and asynchronous failures |
 | Cancellation | No WebMCP callbacks | Aborted calls cannot start edits; disposed callbacks cannot execute |
-| Editing safeguards | Console access | Rejects stale document IDs, locked targets, missing IDs and active gestures; waits for shared invitations |
+| Editing safeguards | Console access | Rejects stale document IDs, locked targets, missing IDs and active gestures; waits for the selected document to finish opening |
 | Results | Console values | Text content containing JSON; actionable `isError` results; read-only and untrusted-content annotations |
 | Compatibility | No browser protocol | No-op on unsupported/insecure contexts; legacy explicit cleanup without clearing another app's tools |
 | Verification | Existing bridge/store suites | Dedicated WebMCP regression suite plus browser discovery, invocation and visual/keyboard checks |
 
 The canvas is drawn by JavaScript, so the imperative API is the appropriate
 integration. Adding declarative form attributes to canvas controls would not
-make it more complete. No polyfill, cross-origin exposure, authentication
-prompt, or hosted MCP connection is added.
+make it more complete. No polyfill or cross-origin tool exposure is added.
 
 ## Available tools
 
@@ -62,8 +61,9 @@ Canvas reads and exports contain user-authored content. Their annotations
 mark it as untrusted; clients must not treat canvas text as instructions.
 Browser permissions mediate tool discovery and execution. Squig does not
 expose workspace credentials, other local files, or sharing/publication tools.
-If the user already connected a canvas to the hosted workspace, the existing
-sync process handles WebMCP edits just like manual edits.
+In a companion editor, local synchronization handles WebMCP edits like
+manual edits and saves them to the selected disk file. On squig.sh, edits
+remain in browser storage until the user exports a copy.
 
 ## Example with the current draft
 
@@ -87,7 +87,7 @@ await document.modelContext.executeTool(add, {
 Browser agents normally discover and invoke these tools through the browser's
 own interface. They do not need to run this JavaScript themselves. If no
 model context is exposed, use the documented `window.squig` console API or
-the hosted MCP server instead.
+the local companion MCP server instead. See [the agent guide](agents.md).
 
 ## Verification and limits
 

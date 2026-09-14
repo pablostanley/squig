@@ -5,6 +5,7 @@ import type { SquigAgentApi } from "./agent-bridge"
 import { id, nodeFields, nodeInput } from "./agent/schema"
 import { vouchNode } from "./doc"
 import { useSquig } from "./store"
+import { useCanvasSyncIssue } from "./agent/sync-status"
 
 // Keep the draft's types local until lib.dom ships them. Older Chromium builds
 // used navigator.modelContext and explicit unregistration instead of a signal.
@@ -106,14 +107,10 @@ export function createWebMCPTools(api: SquigAgentApi): WebMCPTool[] {
             throw new Error(
               "The canvas is still opening. Try again once it is ready."
             )
-          const invitation =
-            typeof location === "undefined"
-              ? null
-              : new URLSearchParams(location.search).get("agent")
-          if (invitation !== null && state.docId !== `agent_${invitation}`)
-            throw new Error(
-              "The shared canvas is still opening or its invitation is unavailable. Wait for the connection before using canvas tools."
-            )
+          const search = typeof location === "undefined" ? null : new URLSearchParams(location.search)
+          if (search?.has("agent")) throw new Error("The old canvas is still being recovered. Wait for it to open locally before using canvas tools.")
+          if (search?.has("local") && useCanvasSyncIssue.getState().localFile?.docId !== state.docId)
+            throw new Error("The local file is still opening. Wait for the connection before using canvas tools.")
           if (!readOnly) {
             if ((value as { documentId: string }).documentId !== state.docId)
               throw new Error(

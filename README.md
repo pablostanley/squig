@@ -83,8 +83,8 @@ pnpm dev
 ```
 
 The local canvas needs no environment variables, database, or accounts — those
-documents live in browser storage. The optional agent workspace server uses
-Postgres; see Squig for agents below. `pnpm test` type-checks and runs every
+documents live in browser storage. For a live agent session, the local companion
+saves to a chosen file on your computer; see Squig for agents below. `pnpm test` type-checks and runs every
 suite under `scripts/test-*.ts`, and `pnpm test crop text` runs just the ones
 whose names match. `pnpm verify` is lint, test and build in one go — the thing
 to run before you push.
@@ -110,8 +110,8 @@ To add a component, write a `ComponentDef` and add it to an array. See
 
 ```
 app/                     the single page (and /kitchen-sink)
-app/mcp/route.ts         the hosted MCP at squig.sh/mcp
-app/api/v1/              the same commands over REST
+app/mcp/route.ts         explains the move to local MCP
+app/api/v1/              read-only recovery of old online canvases
 components/canvas/       canvas, interactions, rough.js renderer
 components/chrome/       rail, panels, inspector, ⌘K, menus
 components/agent/        connect an agent to this canvas, and stay in sync
@@ -119,7 +119,7 @@ lib/doc.ts               the document as a value: read, build, change, write
 lib/store.ts             zustand doc state + history
 lib/files.ts             the local file drawer: autosave, recents, prefs
 lib/agent-bridge.ts      window.squig, the same API from the console
-lib/agent/               the hosted workspace: schema, engine, service, db, render
+lib/agent/               local file service, schemas, engine, merge and render
 lib/sketch/              drawing primitives + Phosphor icons
 lib/sketch/paths.ts      primitives to rough.js paths
 lib/sketch/svg.ts        a drawing as SVG, with no DOM in the room
@@ -148,60 +148,56 @@ an issue first.
 
 ## Squig for agents
 
-![Three editable wireframes on the shared Squig canvas](docs/agent-canvas.png)
+![Three editable wireframes on the Squig canvas](docs/agent-canvas.png)
 
-External agents draw on the same Squig canvas as the user. Open a canvas,
-click **Connect agent**, then **Copy for your agent**, and paste the
-invitation into your agent's chat. It carries the canvas link, a key scoped to
-that canvas, and the MCP and REST addresses, so an agent that can call HTTP
-starts over REST with nothing to install; MCP clients can use the same server.
-Watch it add real editable wireframes and notes, and edit alongside it.
-An agent with a workspace key can also create a new canvas and send its
-editable link before drawing. Keep variations side by side on that canvas.
+Bring your own agent and work together on a local `.squig.json` file. The
+companion runs on your computer, opens the full editor at a loopback address,
+and gives agents MCP and HTTP tools for that same file. Human and agent edits
+appear together. Components, batch edits, variations, notes, comments,
+history, text measurement, SVG and PNG rendering all run locally.
 
-- **[Open a canvas](https://squig.sh)** — copy the invitation for your agent.
-- **[Workspace keys](https://squig.sh/connect)** — let an agent create canvases.
-- **[MCP setup](https://squig.sh/docs/mcp)** — Codex, Claude Code, Cursor, and
-  other Streamable HTTP clients. Endpoint: `https://squig.sh/mcp`.
-- **[API documentation](https://squig.sh/docs/api)** and
-  **[OpenAPI](https://squig.sh/openapi.json)** — the same commands over REST.
-- **[Agent-readable docs](https://squig.sh/llms-full.txt)** — the complete
-  workflow, document model, constraints, and setup.
-- **[Plugin](plugins/squig)** — an installable Codex plugin and wireframing skill.
-
-Agent workspaces are saved in Postgres. Ordinary local drawings still work
-without a key or database. Sharing a local canvas creates an online copy.
-Workspace keys grant access to the workspace. Canvas keys and editable links
-grant access to one canvas. Treat keys and invitation links as secrets.
-
-For a self-hosted agent server, set `DATABASE_URL` to your Neon database and
-`SQUIG_PUBLIC_URL` to your instance origin, then run:
+From a clone of this repository, with Node.js 24 and pnpm 10:
 
 ```bash
 pnpm install --frozen-lockfile
-node --env-file=.env.local scripts/agent/migrate.mjs
-pnpm dev
+pnpm build:local
+pnpm squig serve /absolute/path/homepage.squig.json
 ```
 
-The migration is additive and idempotent. Test the command engine with
-`pnpm test:agent`; test MCP and REST against a running server and the real
-database with `node --env-file=.env.local scripts/agent/smoke.mjs`.
-The smoke test creates isolated fixtures and deletes them afterward. Set
-`SQUIG_TEST_URL` to change its default `http://localhost:3001` target.
+Open the local editor URL printed by the command and use **Connect agent**
+for the session's connection details. A missing file is created; an existing
+file is opened. Keep the process running while you work. For an MCP client
+that launches its own process, use the direct Node configuration in
+[the MCP guide](https://squig.sh/docs/mcp). Run one companion per file.
 
-Install the plugin from this repository:
+The website's **Connect agent** also offers instructions for a browser agent
+working in the current tab. To move a browser drawing into a companion session,
+export a `.squig.json` copy first, then open that saved file with the companion.
+Browser storage and a file on disk are separate: a browser-only drawing is
+not automatically linked to a downloaded copy.
+
+There is no signup, cloud canvas storage, or Squig API key. Local history is
+bounded to 50 snapshots and 16 MiB per file. Your agent still uses its own
+model provider and account; its normal data handling and charges apply.
+The Squig website still needs hosting, but agent saves and renders do not use
+a public Squig backend. Existing online canvases have a temporary read-only
+recovery path so their owners can export local copies.
+
+- [Agent guide](docs/agents.md): local files, live MCP sessions and the browser API.
+- [Architecture](docs/agent-architecture.md): persistence, concurrency and local access.
+- [File format](docs/format.md): the portable document model.
+- [Complete agent docs](https://squig.sh/llms-full.txt): tools, setup and limits.
+- [Plugin](plugins/squig): an optional wireframing workflow and local setup skill.
+
+Install the workflow plugin from this repository:
 
 ```bash
 codex plugin marketplace add .
 codex plugin add squig@squig-plugins
 ```
 
-Set `SQUIG_API_KEY` privately in your agent's environment and start a new task.
-No production code is generated or deployed by Squig's tools. Your coding
-agent handles implementation after the human chooses a direction.
-
-Without a workspace, the same file still has two doors: `pnpm squig` writes
-a `.squig.json` from a terminal, and `window.squig` drives an open canvas from
-the console. [docs/agents.md](docs/agents.md) covers both, and
-[docs/format.md](docs/format.md) is the file format for anyone writing one by
-hand.
+The plugin guides the agent through local setup. It does not register a cloud
+server or bundle the application runtime; keep a local Squig checkout and
+configure the companion for the file you want to edit. No npm CLI package is
+published by this repository. Agents without MCP can use the companion's
+local HTTP API, the direct file CLI, or `window.squig` in an open tab.

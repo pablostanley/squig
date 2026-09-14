@@ -20,4 +20,7 @@ jobs:
       - run: pnpm test
       - run: pnpm test:agent
       - run: pnpm build
+      - run: pnpm build:local
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm test:agent:browser
       - run: make build-xdc

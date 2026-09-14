@@ -3,8 +3,8 @@
 squig is a wireframing tool: an infinite canvas where you drag in real UI
 components and everything renders as a hand-drawn sketch through
 [rough.js](https://roughjs.com). A document is a flat map of nodes saved as
-`.squig.json`, kept in the browser's own storage; the canvas itself has no
-backend, no accounts and no sync. This file is for changing the codebase. To
+`.squig.json`, kept in the browser's own storage or in a chosen local file
+through the agent companion. No accounts or public canvas storage are needed. This file is for changing the codebase. To
 *drive* squig from a CLI, an MCP client or the console, read
 [docs/agents.md](docs/agents.md), and for the file format itself
 [docs/format.md](docs/format.md).
@@ -13,8 +13,8 @@ backend, no accounts and no sync. This file is for changing the codebase. To
 
 ```
 app/                     the single page (and /kitchen-sink)
-app/mcp/route.ts         the hosted MCP door at squig.sh/mcp
-app/api/v1/              the same commands over REST
+app/mcp/route.ts         explains the move to local MCP
+app/api/v1/              read-only recovery of old online canvases
 components/canvas/       canvas, interactions, rough.js renderer
 components/chrome/       rail, panels, inspector, ⌘K, menus
 components/agent/        connect an agent to this canvas, and stay in sync
@@ -22,7 +22,7 @@ lib/doc.ts               the document as a value: read, build, change, write
 lib/store.ts             zustand doc state + history
 lib/files.ts             the local file drawer: autosave, recents, prefs
 lib/agent-bridge.ts      window.squig, the same API from the console
-lib/agent/               the hosted workspace: schema, engine, service, db, render
+lib/agent/               local file service, schemas, engine, merge and render
 lib/sketch/              drawing primitives + Phosphor icons
 lib/sketch/paths.ts      primitives to rough.js paths
 lib/sketch/svg.ts        a drawing as SVG, with no DOM in the room
@@ -42,13 +42,17 @@ pnpm test crop text   # just the suites whose names match
 pnpm test:agent       # just the agent engine
 pnpm lint
 pnpm build
+pnpm build:local     # editor assets for the local agent companion
+pnpm test:agent:browser # real local companion + Chromium (build:local first)
 make build-xdc        # the offline webxdc package
 pnpm verify           # lint, test, build, in that order
 ```
 
 All of it green before you push. CI (`.github/workflows/check.yml`) runs lint,
-test, test:agent, build and `make build-xdc`, so the package build is part of
-the bar even though `pnpm verify` stops short of it.
+test, test:agent, build, build:local, the Chromium agent browser checks and
+`make build-xdc`. The local editor and package checks are part of the bar even
+though `pnpm verify` stops short of them. Install Chromium once with
+`pnpm exec playwright install chromium` before running the browser suite.
 
 Tests are plain node scripts: no framework, no globals to learn, just
 `check(name, condition)` and `report(...)` from `scripts/harness.ts`, each
@@ -73,9 +77,11 @@ subject.
   It is a napkin for working out ideas.
 - **Monochrome.** One ink on paper, three fill tones, three ink tones. No
   fourth.
-- **The local canvas needs no backend.** Documents live in the browser's own
-  storage. The agent workspace is the one server-side piece, it is optional,
-  and it is Postgres-backed; see
+- **Keep agent work local.** Browser documents live in browser storage. The
+  optional companion binds to loopback and edits one explicitly selected
+  `.squig.json` file, with bounded local history. Never add public uploads or
+  database dependencies to that workflow. Existing hosted storage is retained
+  only for read-only recovery; see
   [docs/agent-architecture.md](docs/agent-architecture.md).
 - **No emoji in UI copy.**
 - **Keep UI copy concise.** Labels name the control; optional explanation goes
@@ -106,13 +112,13 @@ history and autosave stay honest.
 
 **`lib/doc.ts`** is where a node rule lives, and **`lib/agent/engine.ts`**
 stands on it. The engine keeps only what is its own: zod at the API boundary,
-revisions, variations, and the workspace's policy about locked nodes and
+revisions, variations, and the agent policy about locked nodes and
 status codes. Everything past that boundary is `vouchNode`, `addNodes`,
 `updateNode`, `removeNodes` and `groupNodes`, so a rule that changes changes
 once and the agent's canvas behaves like the one in the browser.
 
 **`lib/sketch/svg.ts`** is the only thing that turns nodes into SVG markup. The
-image export, the CLI, `window.squig` and the workspace's PNG all print through
+image export, the CLI, `window.squig` and the companion's PNG all print through
 it, so a fix to how a node is written out lands everywhere at once.
 
 **`lib/library/defs-*.ts`** are data, not logic. They are long because there

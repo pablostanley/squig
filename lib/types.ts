@@ -332,10 +332,29 @@ export interface Viewport {
   zoom: number
 }
 
+export interface SquigVariation {
+  id: string
+  title: string
+  description: string
+  nodeIds: string[]
+}
+
+export interface SquigComment {
+  id: string
+  text: string
+  author: string
+  nodeId?: string
+  variationId?: string
+  resolved: boolean
+  createdAt: string
+}
+
 export interface SquigDoc {
   fileName: string
   nodes: Record<string, SquigNode>
   order: string[]
+  variations?: SquigVariation[]
+  comments?: SquigComment[]
 }
 
 export function screenToWorld(v: Viewport, sx: number, sy: number): [number, number] {

@@ -95,7 +95,7 @@ export function cleanNode(raw: Record<string, unknown>): SquigNode {
     }),
   )
 }
-export function validateDocument(doc: CanvasDocument): CanvasDocument {
+export function validateDocument(doc: CanvasDocument, maxBytes = 4_000_000): CanvasDocument {
   lookSchema.parse(doc.look)
   if (
     doc.order.length > 5000 ||
@@ -112,8 +112,8 @@ export function validateDocument(doc: CanvasDocument): CanvasDocument {
       throw new AgentError(400, "Order must match node IDs")
     nodes[id] = cleanNode(doc.nodes[id] as unknown as Record<string, unknown>)
   }
-  if (JSON.stringify(doc).length > 4_000_000)
-    throw new AgentError(413, "Document exceeds 4 MB")
+  if (Buffer.byteLength(JSON.stringify(doc)) > maxBytes)
+    throw new AgentError(413, maxBytes === 4_000_000 ? "Document exceeds 4 MB" : `Document exceeds ${Math.round(maxBytes / (1024 * 1024))} MiB`)
   return {
     ...doc,
     // the batch's invariants, kept once at the end rather than after every
@@ -127,6 +127,7 @@ export function validateDocument(doc: CanvasDocument): CanvasDocument {
 export function applyOperations(
   original: CanvasDocument,
   operations: Operation[],
+  maxBytes = 4_000_000,
 ): { document: CanvasDocument; createdIds: string[] } {
   // The batch owns a copy, so a refused operation leaves the caller's
   // document where it was. Steps write into the map and validateDocument
@@ -361,7 +362,7 @@ export function applyOperations(
       }
     }
   }
-  return { document: validateDocument(d), createdIds }
+  return { document: validateDocument(d, maxBytes), createdIds }
 }
 /** Nodes a saved batch created, changed or removed, for a slim edit response. */
 export function diffNodes(

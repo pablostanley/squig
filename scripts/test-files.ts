@@ -260,4 +260,52 @@ function meta(id: string, updatedAt = 20_000, name = "in hand"): FileMeta {
   check("unreadable or malformed shared entries are ignored", ids(listRecentFiles()) === "agent_good")
 }
 
+{
+  const held = new Map<string, string>()
+  ;(globalThis as { window?: unknown }).window = { innerWidth: 1440, innerHeight: 900 }
+  ;(globalThis as { localStorage?: unknown }).localStorage = {
+    getItem: (key: string) => held.get(key) ?? null,
+    setItem: (key: string, value: string) => { held.set(key, value) },
+    removeItem: (key: string) => { held.delete(key) },
+  }
+  const { useSquig } = await import("../lib/store.ts")
+  const { componentNode, emptyDoc, addNodes } = await import("../lib/doc.ts")
+  const drawing = {
+    ...addNodes(emptyDoc("Metadata"), [componentNode("button", { id: "button", x: 0, y: 0 })]),
+    variations: [{ id: "direction", title: "A", description: "Keep this", nodeIds: ["button"] }],
+    comments: [{ id: "feedback", text: "Keep feedback", author: "agent", resolved: false, createdAt: "2026-09-13T00:00:00.000Z" }],
+  }
+  check("browser import accepts portable metadata", useSquig.getState().loadDoc(JSON.stringify(drawing)))
+  useSquig.getState().updateNode("button", { x: 24 })
+  useSquig.getState().saveNow()
+  const importedId = useSquig.getState().docId
+  check("browser editing and autosave preserve feedback", readFile(importedId)?.comments?.[0]?.text === "Keep feedback" && readFile(importedId)?.variations?.[0]?.id === "direction")
+  const exported = JSON.parse(useSquig.getState().serialize())
+  check("browser downloads preserve feedback", exported.comments[0]?.text === "Keep feedback" && exported.variations[0]?.id === "direction")
+  useSquig.getState().newFile()
+  check("a new file clears metadata from the previous drawing", useSquig.getState().comments.length === 0 && useSquig.getState().variations.length === 0)
+  useSquig.getState().openFile(importedId)
+  check("reopening browser storage restores metadata", useSquig.getState().comments[0]?.text === "Keep feedback" && useSquig.getState().variations[0]?.id === "direction")
+  useSquig.getState().loadDoc(JSON.stringify(exported))
+  check("importing an exported copy retains metadata", useSquig.getState().docId !== importedId && useSquig.getState().comments[0]?.text === "Keep feedback")
+  useSquig.getState().saveNow()
+  const { useCanvasSyncIssue } = await import("../lib/agent/sync-status.ts")
+  const guardedId = useSquig.getState().docId
+  useCanvasSyncIssue.setState({ canLeaveLocalFile: () => false })
+  useSquig.getState().newFile()
+  check("pending local saves can block a new drawing", useSquig.getState().docId === guardedId)
+  useSquig.getState().openFile(importedId)
+  check("pending local saves can block switching drawings", useSquig.getState().docId === guardedId)
+  check("pending local saves can block imports", !useSquig.getState().loadDoc(JSON.stringify(drawing)) && useSquig.getState().docId === guardedId)
+  useSquig.getState().deleteFile(guardedId)
+  check("pending local saves can block deleting the active cache", readFile(guardedId) !== null && useSquig.getState().docId === guardedId)
+  useCanvasSyncIssue.setState({ canLeaveLocalFile: null })
+  check("a companion can use a stable cache identity", useSquig.getState().loadDoc(JSON.stringify(drawing), "local_stable"))
+  useSquig.getState().saveNow()
+  const cached = readFile("local_stable")
+  useSquig.getState().loadDoc(JSON.stringify({ ...drawing, fileName: "Reconnected" }), "local_stable")
+  useSquig.getState().saveNow()
+  check("reconnecting updates the same cache without a false stale-file error", !!cached && readFile("local_stable")?.name === "Reconnected" && !useSquig.getState().stale)
+}
+
 report("drawer checks passed")

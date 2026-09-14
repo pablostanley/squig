@@ -1,25 +1,11 @@
 "use client"
-import { useEffect, useState, useRef } from "react"
+import { useEffect, useState, useRef, useCallback } from "react"
 import { useCanvasSyncIssue } from "@/lib/agent/sync-status"
 import { useSquig } from "@/lib/store"
-import { agentRequest, KEY_STORAGE } from "@/lib/agent/client"
-import {
-  canvasConnection,
-  canvasStorage,
-  workspaceKey,
-} from "@/lib/agent/credentials"
-import { agentInvite, mcpConfig } from "@/lib/agent/invite"
-import { prepareCanvas, applyPreparedImages } from "@/lib/agent/prepare-canvas"
-import { unionBox } from "@/lib/types"
-import { nodeVisualBounds } from "@/lib/canvas/line-routing"
-import { fitViewport } from "@/lib/canvas/navigate"
+import { agentRequest } from "@/lib/agent/client"
+import { canvasConnection } from "@/lib/agent/credentials"
 import { Popover } from "@base-ui/react/popover"
-import {
-  CopyIcon,
-  CheckIcon,
-  ShareNetworkIcon,
-  PlugsConnectedIcon,
-} from "@phosphor-icons/react"
+import { CopyIcon, CheckIcon, PlugsConnectedIcon } from "@phosphor-icons/react"
 import { applyLook } from "@/lib/theme"
 import { mergeCanvas, canvasEqual } from "@/lib/agent/merge"
 import "./agent.css"
@@ -42,88 +28,61 @@ const editable = (doc: Snapshot): Snapshot => ({
 })
 const equal = canvasEqual
 
+type LocalSession = { documentId: string; filePath: string; editorUrl: string; mcpUrl: string; token: string }
+
 export function AgentBridge({ hidden = false }: { hidden?: boolean }) {
-  const attaching = useRef<string | null>(null)
-  const invitation = useRef<{ id: string; fragment: string } | null>(null)
-  const [status, setStatus] = useState("")
-  function reportIssue(message: string) {
-    setStatus(message)
-    useCanvasSyncIssue.setState({
-      issue: { docId: useSquig.getState().docId, message },
-    })
-  }
-  function clearIssue() {
-    useCanvasSyncIssue.setState({ issue: null })
-  }
+  const token = useRef("")
+  const downloadedDraft = useRef<Snapshot | null>(null)
+  const [status, setStatusText] = useState("")
+  const setStatus = useCallback((message: string) => {
+    setStatusText(message)
+    const localFile = useCanvasSyncIssue.getState().localFile
+    if (localFile && localFile.docId === useSquig.getState().docId) useCanvasSyncIssue.setState({ localFile: { ...localFile, status: message } })
+  }, [])
+  const [session, setSession] = useState<LocalSession | null>(null)
   const [connected, setConnected] = useState(false)
   const [conflict, setConflict] = useState(false)
-  const [panel, setPanel] = useState<"share" | "agent" | null>(null)
-  const [credentials, setCredentials] = useState({
-    key: "",
-    url: "",
-    id: "",
-  })
+  const [panel, setPanel] = useState(false)
   const [reload, setReload] = useState(0)
-  const [connectError, setConnectError] = useState("")
-  const [connectBusy, setConnectBusy] = useState(false)
+  const reportIssue = useCallback((message: string) => {
+    setStatus(message)
+    useCanvasSyncIssue.setState({ issue: { docId: useSquig.getState().docId, message } })
+  }, [setStatus])
+  function clearIssue() { useCanvasSyncIssue.setState({ issue: null }) }
+
   useEffect(() => {
-    const id = new URLSearchParams(location.search).get("agent")
-    const fragment = location.hash.slice(1)
-    // Scrub before validation or storage access, which can throw. Keep the
-    // candidate in memory until the server confirms it belongs to this canvas.
-    if (location.hash && (id !== null || fragment.startsWith("sq_"))) {
-      history.replaceState(null, "", location.pathname + location.search)
-      if (id !== null) invitation.current = { id, fragment }
+    if (!new URLSearchParams(location.search).has("local")) return
+    const fragment = new URLSearchParams(location.hash.slice(1)).get("token")
+    if (location.hash) history.replaceState(null, "", location.pathname + location.search)
+    try {
+      if (fragment) sessionStorage.setItem("squig:local-session", fragment)
+      token.current = fragment || token.current || sessionStorage.getItem("squig:local-session") || ""
+    } catch { token.current = fragment || token.current }
+    const key = token.current
+    if (!/^[A-Za-z0-9_-]{32,128}$/.test(key)) {
+      reportIssue("Open the full local editor link from your agent or terminal.")
+      return
     }
-    if (id === null) return
-    let active = true,
-      busy = false,
-      initialized = false,
-      stopped = false
-    let baseline: Snapshot,
-      localId = "",
-      rememberedName = "",
-      revision = 0
+    let active = true, busy = false, initialized = false, stopped = false, loading = false
+    let baseline: Snapshot, localId = "", revision = 0, id = ""
     const openingId = useSquig.getState().docId
+    const openingSnapshot = snapshot()
     function detach() {
       active = false
       stopped = true
-      invitation.current = null
       setConnected(false)
       setConflict(false)
-      setCredentials({ key: "", url: "", id: "" })
-      setPanel(null)
+      setSession(null)
+      useCanvasSyncIssue.setState({ localFile: null, canLeaveLocalFile: null })
       clearIssue()
       history.replaceState(null, "", "/")
       setStatus("")
     }
     function watchDocument() {
       return useSquig.subscribe((s) => {
-        if (
-          active &&
-          (initialized || stopped) &&
-          s.docId !== (initialized ? localId : openingId)
-        ) detach()
+        if (active && !loading && s.docId !== (initialized ? localId : openingId)) detach()
+        else if (active && initialized && !stopped && !equal(snapshot(), baseline)) setStatus("Saving to local file…")
       })
-    }
-    let connection: ReturnType<typeof canvasConnection>
-    try {
-      connection = canvasConnection(
-        id,
-        invitation.current?.id === id ? invitation.current.fragment : undefined,
-        localStorage,
-      )
-    } catch (e) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- report invalid browser-only invitations after SSR
-      reportIssue((e as Error).message)
-      stopped = true
-      return watchDocument()
-    }
-    const { key, canvasKey } = connection
-    if (!key) {
-      reportIssue("Open the full canvas invitation link to connect.")
-      stopped = true
-      return watchDocument()
     }
     function apply(doc: Snapshot) {
       const s = useSquig.getState()
@@ -164,57 +123,54 @@ export function AgentBridge({ hidden = false }: { hidden?: boolean }) {
       busy = true
       try {
         if (!initialized) {
-          setStatus("Opening shared canvas…")
-          const row = await agentRequest(`documents/${id}`, key!)
+          setStatus("Opening local file…")
+          const response = await fetch("/api/local/session", {
+            headers: { Authorization: `Bearer ${key}` }, cache: "no-store", redirect: "error",
+          })
+          const session = await response.json()
+          if (!response.ok) throw new Error(session.error || "Could not open the local session.")
+          id = session.documentId
+          const row = await agentRequest(`documents/${id}`, key)
           if (!active) return
-          if (useSquig.getState().docId !== openingId) {
-            detach()
+          if (useSquig.getState().docId !== openingId) { detach(); return }
+          if (!equal(snapshot(), openingSnapshot)) {
+            stopped = true
+            setConflict(true)
+            reportIssue("This drawing changed while the file was opening. Download your draft before loading the file.")
             return
           }
-          if (canvasKey) {
-            try {
-              localStorage.setItem(canvasStorage(id!), canvasKey)
-            } catch {
-              // A private or full browser can still use this tab's invitation.
+          loading = true
+          try {
+            const state = useSquig.getState()
+            if (state.docId === session.documentId && !equal(snapshot(), editable(row.document)) && !equal(snapshot(), downloadedDraft.current)) {
+              const draft = { ...JSON.parse(state.serialize()), fileName: `${state.fileName} — local draft` }
+              state.loadDoc(JSON.stringify(draft), `${session.documentId}_draft`)
+              useSquig.getState().saveNow()
+              if (useSquig.getState().drawerFull || useSquig.getState().stale) {
+                stopped = true
+                setConflict(true)
+                throw new Error("Your previous draft is only in this tab. Download it before loading the file.")
+              }
             }
-            setCredentials({
-              key: canvasKey,
-              url: `${location.origin}/?agent=${id}#${canvasKey}`,
-              id: id!,
-            })
-          }
-          const keepCurrent = attaching.current === id
-          if (!keepCurrent)
-            useSquig.getState().loadDoc(JSON.stringify(row.document))
-          if (!keepCurrent && window.innerWidth > 800) {
-            const nodes = Object.values(useSquig.getState().nodes)
-            if (nodes.length) {
-              const bounds = unionBox(nodes.map(nodeVisualBounds))
-              if (bounds)
-                useSquig
-                  .getState()
-                  .setViewport(
-                    fitViewport(
-                      bounds,
-                      window.innerWidth - 300,
-                      window.innerHeight - 80,
-                      1,
-                    ).viewport,
-                  )
-            }
-          }
-          attaching.current = null
-          useSquig.setState({ docId: `agent_${id}` })
-          useSquig.getState().rememberSharedFile(id!)
-          rememberedName = useSquig.getState().fileName
+            if (!useSquig.getState().loadDoc(JSON.stringify(row.document), session.documentId)) throw new Error("The local file could not be opened. It has not been changed.")
+          } finally { loading = false }
           localId = useSquig.getState().docId
-          baseline = keepCurrent ? editable(row.document) : snapshot()
+          baseline = snapshot()
           revision = row.revision
           initialized = true
+          setSession({ ...session, token: key })
+          useCanvasSyncIssue.setState({
+            localFile: { docId: localId, path: session.filePath, status: "Saved to local file" },
+            canLeaveLocalFile: () => {
+              if (!active || !initialized || equal(snapshot(), baseline) || equal(snapshot(), downloadedDraft.current)) return true
+              reportIssue("This file has unsaved changes. Wait for saving to finish, or download your draft before loading another drawing.")
+              return false
+            },
+          })
           setConnected(true)
           setConflict(false)
           clearIssue()
-          setStatus("Live canvas")
+          setStatus("Saved to local file")
           return
         }
         const s = useSquig.getState()
@@ -232,6 +188,8 @@ export function AgentBridge({ hidden = false }: { hidden?: boolean }) {
           latest.docId !== localId
         )
           return
+        const metadata = { variations: row.document.variations || [], comments: row.document.comments || row.comments || [] }
+        if (!equal(metadata.variations, latest.variations) || !equal(metadata.comments, latest.comments)) useSquig.setState(metadata)
         const current = snapshot(),
           remote = editable(row.document)
         const merged = mergeCanvas(baseline, current, remote)
@@ -239,7 +197,7 @@ export function AgentBridge({ hidden = false }: { hidden?: boolean }) {
           stopped = true
           setConflict(true)
           reportIssue(
-            "You and another editor changed the same field. Your draft is preserved.",
+            "You and your agent changed the same field. Download your draft before loading the file.",
           )
           return
         }
@@ -258,6 +216,7 @@ export function AgentBridge({ hidden = false }: { hidden?: boolean }) {
           const duringSave = snapshot()
           // Apply server normalization too, or the next tick submits the same
           // difference forever (and older servers record a revision each time).
+          useSquig.setState({ variations: saved.document.variations || [], comments: saved.document.comments || [] })
           const canonical = editable(saved.document)
           const next = mergeCanvas(current, duringSave, canonical)
           baseline = canonical
@@ -278,19 +237,14 @@ export function AgentBridge({ hidden = false }: { hidden?: boolean }) {
             apply(next.value)
           else if (!equal(duringSave, next.value)) baseline = current
           clearIssue()
-          setStatus("Live canvas · saved")
+          setStatus("Saved to local file")
         } else {
           if (!equal(current, remote)) apply(remote)
           baseline = remote
           clearIssue()
           setStatus(
-            remoteChanged ? "Live canvas · new changes" : "Live canvas",
+            remoteChanged ? "Local file · new changes" : "Saved to local file",
           )
-        }
-        const latestName = useSquig.getState().fileName
-        if (latestName !== rememberedName) {
-          useSquig.getState().rememberSharedFile(id!)
-          rememberedName = latestName
         }
       } catch (e) {
         if (!active) return
@@ -302,7 +256,7 @@ export function AgentBridge({ hidden = false }: { hidden?: boolean }) {
         if (error.status === 401 || error.status === 403 || error.status === 404) {
           stopped = true
           setConnected(false)
-          setCredentials({ key: "", url: "", id: "" })
+
         }
         // A racing commit is retried against the fresh revision next tick.
         if (error.status !== 409) reportIssue(error.message)
@@ -327,198 +281,80 @@ export function AgentBridge({ hidden = false }: { hidden?: boolean }) {
       clearInterval(timer)
       unsubscribe()
       window.removeEventListener("beforeunload", prevent)
+      useCanvasSyncIssue.setState({ localFile: null, canLeaveLocalFile: null })
     }
-  }, [reload])
+  }, [reload, reportIssue, setStatus])
 
-  const connecting = useRef(false)
-  async function connect() {
-    if (credentials.key || connecting.current) return
-    // An unopened or revoked invitation must never publish the local draft.
-    if (new URLSearchParams(location.search).has("agent") && !connected) {
-      if (!status) reportIssue("Open a valid canvas invitation before sharing.")
+  const recovering = useRef(false)
+  useEffect(() => {
+    const id = new URLSearchParams(location.search).get("agent")
+    if (!id || recovering.current) return
+    let key: string | null | undefined
+    try {
+      const fragment = location.hash.slice(1)
+      history.replaceState(null, "", location.pathname + location.search)
+      key = canvasConnection(id, fragment || undefined, localStorage).key
+    } catch (error) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- report malformed recovery links after browser hydration
+      reportIssue((error as Error).message)
       return
     }
-    connecting.current = true
-    setConnectBusy(true)
-    setConnectError("")
-    clearIssue()
-    setStatus("Connecting this canvas…")
-    const sourceId = useSquig.getState().docId
-    try {
-      const original = JSON.parse(useSquig.getState().serialize())
-      const doc = await prepareCanvas(original)
-      if (useSquig.getState().docId !== sourceId) return
-      let key = workspaceKey(localStorage)
-      if (!key) {
-        const workspace = await agentRequest("workspaces", "", {
-          name: "My Squig canvases",
-        })
-        key = workspace.key
-        localStorage.setItem(KEY_STORAGE, key!)
-      }
-      if (useSquig.getState().docId !== sourceId) return
-      const existing = connected
-        ? new URLSearchParams(location.search).get("agent")
-        : null
-      if (existing) {
-        const result = await agentRequest(
-          "tools/rotate_canvas_link",
-          key!,
-          { documentId: existing },
-        )
-        localStorage.setItem(canvasStorage(existing), result.canvasKey)
-        if (useSquig.getState().docId !== sourceId) return
-        setCredentials({
-          key: result.canvasKey,
-          url: `${location.origin}/?agent=${existing}#${result.canvasKey}`,
-          id: existing,
-        })
-        return
-      }
-      setStatus("Connecting this canvas…")
-      const created = await agentRequest("documents", key!, {
-        name: doc.fileName,
-      })
-      await agentRequest("tools/replace_document", key!, {
-        documentId: created.id,
-        revision: created.revision,
-        document: doc,
-      })
-      localStorage.setItem(canvasStorage(created.id), created.canvasKey)
-      if (useSquig.getState().docId !== sourceId) return
-      // Undo must not reintroduce a legacy SVG into the connected document.
+    if (!key) { reportIssue("Open the original canvas link or use your old workspace key at /connect to recover it."); return }
+    recovering.current = true
+    const openingId = useSquig.getState().docId
+    void agentRequest(`documents/${id}`, key).then((row) => {
+      if (useSquig.getState().docId !== openingId) return
+      if (!useSquig.getState().loadDoc(JSON.stringify({ ...row.document, comments: row.comments }))) throw new Error("This canvas could not be recovered.")
+      history.replaceState(null, "", "/")
+      useSquig.getState().saveNow()
       const state = useSquig.getState()
-      useSquig.setState({
-        nodes: applyPreparedImages(state.nodes, original, doc),
-        past: state.past.map((frame) => ({ ...frame, nodes: applyPreparedImages(frame.nodes, original, doc) })),
-        future: state.future.map((frame) => ({ ...frame, nodes: applyPreparedImages(frame.nodes, original, doc) })),
-      })
-      attaching.current = created.id
-      history.pushState(null, "", `/?agent=${created.id}`)
-      setCredentials({
-        key: created.canvasKey,
-        url: `${location.origin}/?agent=${created.id}#${created.canvasKey}`,
-        id: created.id,
-      })
-      setReload((v) => v + 1)
-    } catch (e) {
-      if (useSquig.getState().docId === sourceId) {
-        const message = (e as Error).message
-        setConnectError(message)
-        reportIssue("Could not connect this canvas. Open Connect agent to try again.")
-      }
-    } finally {
-      connecting.current = false
-      setConnectBusy(false)
-      if (useSquig.getState().docId !== sourceId) {
-        setPanel(null)
-        setStatus("")
-      }
-    }
-  }
+      reportIssue(state.drawerFull || state.stale
+        ? "Recovered in this tab only; browser storage could not save it. Download a local file now. The original online canvas is unchanged."
+        : "Recovered to this browser. Download a copy to keep it as a local file.")
+    }).catch((error) => { recovering.current = false; reportIssue(error.message) })
+  }, [reportIssue])
+
   function preserve() {
-    const url = URL.createObjectURL(
-      new Blob([useSquig.getState().serialize()], {
-        type: "application/json",
-      }),
-    )
+    const state = useSquig.getState()
+    const url = URL.createObjectURL(new Blob([state.serialize()], { type: "application/json" }))
     const a = document.createElement("a")
     a.href = url
-    a.download = "squig-local-draft.json"
+    a.download = `${state.fileName.replace(/[^a-z0-9 _-]/gi, "_") || "canvas"}.squig.json`
     a.click()
+    downloadedDraft.current = snapshot()
     URL.revokeObjectURL(url)
   }
+  const invite = session
+    ? `Work with me on my local Squig file: ${session.filePath}
+The companion is running on this computer. Connect to MCP at ${session.mcpUrl} with Authorization: Bearer ${session.token}. Call squig_get_document for documentId ${session.documentId} before editing; use its current revision. Open ${session.editorUrl} to see the live canvas. Keep this session token on this computer.`
+    : `Help me work on a local Squig file. Follow https://squig.sh/docs/mcp. If Squig is not installed, clone https://github.com/pablostanley/squig, run pnpm install and pnpm build:local. Ask me for the path to my downloaded .squig.json (or a path for a new file), then start pnpm squig serve /absolute/path/canvas.squig.json. Keep the process running and give me its local editor URL. Use the local MCP endpoint or REST tools for the same file; read the current revision before editing. Keep my drawings on this computer. Do not use a public hosted workspace.`
+  const config = session ? JSON.stringify({ mcpServers: { squig: { type: "http", url: session.mcpUrl, headers: { Authorization: `Bearer ${session.token}` } } } }, null, 2) : ""
   return (
     <div className="agent-sync" data-connected={connected}>
-      {conflict && (
-        <>
-          <button onClick={preserve}>Download my draft</button>
-          <button onClick={() => setReload((v) => v + 1)}>
-            Load latest canvas
-          </button>
-        </>
-      )}
-      {(["agent", "share"] as const).map((kind) => (
-        <Popover.Root
-          key={kind}
-          open={panel === kind && !hidden}
-          onOpenChange={(open) => {
-            setPanel(open ? kind : null)
-            if (open) void connect()
-          }}
-        >
-          <Popover.Trigger
-            className="canvas-action"
-            aria-label={kind === "share" ? "Share" : "Connect agent"}
-          >
-            {kind === "share" ? (
-              <ShareNetworkIcon size={16} />
-            ) : (
-              <PlugsConnectedIcon size={16} />
-            )}
-            {kind === "share" ? "Share" : "Connect agent"}
-          </Popover.Trigger>
-          <Popover.Portal>
-            <Popover.Positioner
-              side="bottom"
-              align="end"
-              sideOffset={8}
-              className="z-50"
-            >
-              <Popover.Popup className="agent-connect-panel">
-                <Popover.Title className="text-row font-semibold">
-                  {kind === "share" ? "Share canvas" : "Connect an agent"}
-                </Popover.Title>
-                <Popover.Description>
-                  {kind === "share"
-                    ? "Anyone with this link can view and edit this canvas."
-                    : "Paste the invitation into your agent’s chat."}
-                </Popover.Description>
-                {credentials.key ? (
-                  kind === "share" ? (
-                    <CopyField
-                      label="Editable canvas link"
-                      value={credentials.url}
-                    />
-                  ) : (
-                    <AgentInvite
-                      invite={agentInvite({
-                        origin: location.origin,
-                        id: credentials.id,
-                        key: credentials.key,
-                      })}
-                      config={mcpConfig({
-                        origin: location.origin,
-                        key: credentials.key,
-                      })}
-                    />
-                  )
-                ) : (
-                  <>
-                    <p role={connectError ? "alert" : "status"}>{connectError || status || "Preparing canvas…"}</p>
-                    {connectError && (
-                      <>
-                        <p>Your local canvas is still available to edit and save.</p>
-                        <button type="button" className="agent-invite-copy" disabled={connectBusy} onClick={() => void connect()}>
-                          {connectBusy ? "Connecting…" : "Try again"}
-                        </button>
-                        <a href="/docs/self-hosting" target="_blank" rel="noreferrer">Operator setup guide</a>
-                      </>
-                    )}
-                  </>
-                )}
-              </Popover.Popup>
-            </Popover.Positioner>
-          </Popover.Portal>
-        </Popover.Root>
-      ))}
+      {conflict && <>
+        <button className="canvas-action" onClick={preserve}>Download my draft</button>
+        <button className="canvas-action" onClick={() => setReload((v) => v + 1)}>Load file version</button>
+      </>}
+      <Popover.Root open={panel && !hidden} onOpenChange={setPanel}>
+        <Popover.Trigger className="canvas-action" aria-label="Connect agent"><PlugsConnectedIcon size={16} />Connect agent</Popover.Trigger>
+        <Popover.Portal><Popover.Positioner side="bottom" align="end" sideOffset={8} className="z-50">
+          <Popover.Popup className="agent-connect-panel">
+            <Popover.Title className="text-row font-semibold">{connected ? "Agent on this computer" : "Bring your agent"}</Popover.Title>
+            <Popover.Description>{connected ? "You and your agent edit the same local file." : "Save a file, then let your agent open it with Squig. Your drawings stay on your computer."}</Popover.Description>
+            {session && <p className="agent-local-path">{session.filePath}</p>}
+            {status && <p role="status">{status}</p>}
+            {!connected && <button type="button" className="agent-invite-copy" onClick={preserve}>Download local file</button>}
+            <AgentInvite invite={invite} config={config} />
+            {!connected && <details className="agent-invite-more"><summary>Agent in this browser</summary><p>A browser agent can work directly in this tab using window.squig or WebMCP. Save or download your drawing to keep a disk copy.</p><a href="/docs/webmcp" target="_blank" rel="noreferrer">Browser agent guide</a></details>}
+          </Popover.Popup>
+        </Popover.Positioner></Popover.Portal>
+      </Popover.Root>
     </div>
   )
 }
 
 /**
- * One action: copy the invitation. The MCP config stays one fold away for
- * people who configure a client once, but it is not the first thing you see.
+ * Keep the setup instructions available when clipboard access is unavailable.
  */
 function AgentInvite({
   invite,
@@ -574,7 +410,7 @@ function AgentInvite({
             ? "Copy failed. Select the text and copy it manually."
             : ""}
       </span>
-      <p>Gives your agent editing access to this canvas only.</p>
+      <p>Your agent works on your computer. Its own model settings still apply.</p>
       {error && (
         <p role="alert">
           Copy failed. Open the details below and copy the invitation
@@ -591,7 +427,7 @@ function AgentInvite({
           aria-label="Invitation for your agent"
         />
 
-        <CopyField label="MCP config" value={config} secret />
+        {config && <CopyField label="MCP config" value={config} secret />}
         <a href="/docs/mcp" target="_blank" rel="noreferrer">
           Setup guide ↗
         </a>

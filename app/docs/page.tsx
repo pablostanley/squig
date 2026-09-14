@@ -3,13 +3,13 @@ import Link from "next/link"
 import { AgentShell } from "@/components/agent/shell"
 import { pages } from "@/lib/agent/docs"
 export const metadata: Metadata = {
-  title: "Squig developer docs · MCP, API and agent wireframing",
+  title: "Squig developer docs · Local MCP, files and agent wireframing",
   description:
-    "Connect an AI agent to Squig. Install the MCP server, edit wireframes through the API, compare variations and turn approved layouts into production code.",
+    "Connect your own agent to a local Squig file. Set up MCP, edit and render wireframes on your computer, and refine a design together.",
   alternates: { canonical: "/docs" },
   openGraph: {
     title: "Squig for humans and agents",
-    description: "A shared canvas, from first sketch to a chosen direction.",
+    description: "Local files and your own agent, from first sketch to a chosen direction.",
     url: "/docs",
   },
 }
@@ -23,8 +23,8 @@ export default function Page() {
           as rough sketches.
         </h1>
         <p className="agent-lead">
-          A shared canvas for you and your agent. Everything you need to
-          connect, sketch, revise, and decide what to build.
+          Local files and a canvas for you and your agent. Everything you need
+          to connect, sketch, revise, and decide what to build.
         </p>
         <div className="agent-row" style={{ marginTop: 28 }}>
           <Link className="agent-button" href="/docs/getting-started">

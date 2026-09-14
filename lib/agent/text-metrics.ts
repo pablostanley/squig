@@ -1,5 +1,7 @@
 import { openSync, type Font } from "fontkit"
 import path from "node:path"
+import { existsSync } from "node:fs"
+import { fileURLToPath } from "node:url"
 import type { CanvasDocument } from "./engine"
 import type { TypeStyle, TextMeasurer } from "@/lib/canvas/text-metrics"
 import { wrapText } from "@/lib/canvas/text-metrics"
@@ -15,13 +17,15 @@ function face(mode: CanvasDocument["look"]["font"], bold?: boolean) {
     mode === "hand"
       ? "PatrickHand-Regular"
       : `${mode === "serif" ? "SourceSerif4" : "Geist"}-${bold ? "Bold" : "Regular"}`
-  if (!fonts.has(name))
+  if (!fonts.has(name)) {
+    const local = path.join(path.dirname(fileURLToPath(import.meta.url)), "fonts", `${name}.ttf`)
     fonts.set(
       name,
       openSync(
-        path.join(process.cwd(), "lib/agent/fonts", `${name}.ttf`),
+        existsSync(local) ? local : path.join(process.cwd(), "lib/agent/fonts", `${name}.ttf`),
       ) as Font,
     )
+  }
   return fonts.get(name)!
 }
 
