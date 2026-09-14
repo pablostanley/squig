@@ -61,6 +61,8 @@ try {
   await page.unroute("**/api/v1/**")
   let uploaded
   let revision = 1
+  let saves = 0
+  let reads = 0
   const canvasKey = `sq_canvas_${randomBytes(32).toString("base64url")}`
   const id = "rollout_fixture"
   await page.route("**/api/v1/**", async (route) => {
@@ -71,9 +73,16 @@ try {
     else if (path === "documents") result = { id, revision, canvasKey }
     else if (path === "tools/replace_document") {
       uploaded = body.document
+      saves++
+      for (const node of Object.values(uploaded.nodes)) {
+        if (node.type === "text") node.align ??= "left"
+      }
       revision++
       result = { id, revision, document: uploaded }
-    } else if (path === `documents/${id}`) result = { id, revision, document: uploaded }
+    } else if (path === `documents/${id}`) {
+      reads++
+      result = { id, revision, document: uploaded }
+    }
     else throw new Error(`Unexpected route ${path}`)
     await route.fulfill({ contentType: "application/json", body: JSON.stringify(result) })
   })
@@ -96,8 +105,15 @@ try {
   })
   await expect.poll(() => page.evaluate(() => Object.values(window.squig.doc().nodes).filter((n) => n.type === "image").length)).toBe(2)
   expect(await page.evaluate(() => Object.values(window.squig.doc().nodes).filter((n) => n.type === "image").every((n) => /^data:image\/(png|webp|jpeg|gif);base64,/.test(n.src)))).toBe(true)
+  await expect.poll(() => Object.values(uploaded.nodes).filter((n) => n.type === "image").length).toBe(2)
+  await page.evaluate(() => window.squig.addText("Normalize once", { x: 150, y: 500 }))
+  await expect.poll(() => page.evaluate(() => Object.values(window.squig.doc().nodes).find((n) => n.text === "Normalize once")?.align)).toBe("left")
+  const settledSaves = saves
+  const settledReads = reads
+  await expect.poll(() => reads, { timeout: 10000 }).toBeGreaterThanOrEqual(settledReads + 3)
+  expect(saves).toBe(settledSaves)
   expect(errors).toEqual([])
-  console.log("Browser rollout checks passed: local editing, missing database, schema diagnostic, retry, legacy SVG sharing and SVG paste.")
+  console.log("Browser rollout checks passed: local editing, missing database, schema diagnostic, retry, legacy SVG sharing, SVG paste and normalized saves settle without repeated writes.")
 } finally {
   await browser.close()
 }

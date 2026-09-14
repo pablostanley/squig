@@ -256,8 +256,11 @@ export function AgentBridge({ hidden = false }: { hidden?: boolean }) {
           if (useSquig.getState().docId !== localId) return
           // Edits can continue while the request is in flight. Rebase those too.
           const duringSave = snapshot()
-          const next = mergeCanvas(current, duringSave, merged.value)
-          baseline = editable(saved.document)
+          // Apply server normalization too, or the next tick submits the same
+          // difference forever (and older servers record a revision each time).
+          const canonical = editable(saved.document)
+          const next = mergeCanvas(current, duringSave, canonical)
+          baseline = canonical
           revision = saved.revision
           if (next.conflicts.length) {
             stopped = true

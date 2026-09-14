@@ -1,6 +1,8 @@
 import { ZodError } from "zod"
+import { randomUUID } from "node:crypto"
 import { AgentError } from "./engine"
-import { storageFailure } from "./storage"
+import { errorDiagnostics, storageFailure } from "./storage"
+import type { ToolName } from "./schema"
 export const headers = {
   "Cache-Control": "no-store",
   "X-Content-Type-Options": "nosniff",
@@ -9,24 +11,29 @@ export const headers = {
 export function json(value: unknown, status = 200) {
   return Response.json(value, { status, headers })
 }
-export function failure(error: unknown) {
-  const storage = storageFailure(error)
-  if (storage) {
-    console.error("Agent storage unavailable", storage.code)
-    return json({ error: storage.message, code: storage.code }, storage.status)
-  }
+export function failure(error: unknown, context?: { transport: "rest" | "mcp"; tool?: ToolName }) {
   if (error instanceof ZodError)
     return json({ error: "Invalid input", details: error.issues }, 400)
   if (error instanceof AgentError)
     return json({ error: error.message }, error.status)
-  console.error(
-    "Agent request failed",
-    "Unexpected internal error",
-  )
+  const storage = storageFailure(error)
+  const errorId = randomUUID()
+  console.error(JSON.stringify({
+    event: "agent_request_failed",
+    errorId,
+    ...context,
+    ...errorDiagnostics(error),
+    code: storage?.code ?? "AGENT_INTERNAL_ERROR",
+  }))
+  if (storage) {
+    return json({ error: storage.message, code: storage.code, errorId }, storage.status)
+  }
   return json(
     {
       error:
-        "Agent storage request failed. Retry or contact the instance operator.",
+        "Agent request failed. Retry or contact the instance operator with the error ID.",
+      code: "AGENT_INTERNAL_ERROR",
+      errorId,
     },
     500,
   )

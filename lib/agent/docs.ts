@@ -223,7 +223,11 @@ export const pages: DocPage[] = [
       },
       {
         title: "Storage and access",
-        text: "agent_workspaces stores hashed workspace keys. agent_documents stores current JSON, revision, hashed canvas capabilities. agent_revisions stores immutable canvas versions. agent_comments stores feedback. agent_limits stores one counter per hashed quota key. Canvas saves and revision records are written in one SQL statement. The revision predicate provides compare-and-swap conflict detection across server instances.",
+        text: "agent_workspaces stores hashed workspace keys. agent_documents stores current JSON, revision, hashed canvas capabilities. agent_revisions stores immutable canvas versions. agent_comments stores feedback. agent_limits stores one counter per hashed quota key. Canvas saves and revision records are written in one SQL statement. Saves lock the expected revision before comparing JSON: unchanged content returns the existing revision and timestamp without another history snapshot, while stale revisions still return 409.",
+      },
+      {
+        title: "Storage capacity and failed saves",
+        text: "pnpm db:check also rejects read-only storage and Neon clusters at least 90% full. Monitor capacity continuously through your database provider; the deployment check is only a point-in-time safeguard. Full storage returns AGENT_STORAGE_FULL (SQLSTATE 53100); read-only storage returns AGENT_STORAGE_READ_ONLY (25006). Increase capacity or reclaim backed-up redundant history, then rerun the readiness check and REST/MCP smoke suite. Keep all distinct saved states when removing redundant revisions. Structured failure logs include SQLSTATE and an error ID shared with the response, without database messages, credentials or canvas contents. Revisions still grow with real edits, especially embedded images; choose a paid production allowance and monitor usage before launch.",
       },
       {
         title: "External agents and preview protection",

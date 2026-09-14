@@ -84,12 +84,19 @@ export async function save(
   revision: number,
   document: CanvasDocument,
 ) {
-  const rows = await db()`WITH changed AS (
-    UPDATE agent_documents SET document = ${JSON.stringify(document)}::jsonb, revision = revision + 1, updated_at = now()
-    WHERE id = ${id} AND workspace_id = ${workspace} AND revision = ${revision} RETURNING *
+  // Lock before comparing: an unchanged save must still reject a stale revision.
+  // jsonb equality also ignores object key order and omitted optional fields.
+  const payload = JSON.stringify(document)
+  const rows = await db()`WITH current AS MATERIALIZED (
+    SELECT * FROM agent_documents
+    WHERE id = ${id} AND workspace_id = ${workspace} AND revision = ${revision} FOR UPDATE
+  ), changed AS (
+    UPDATE agent_documents AS target SET document = ${payload}::jsonb, revision = target.revision + 1, updated_at = now()
+    FROM current WHERE target.id = current.id AND current.document IS DISTINCT FROM ${payload}::jsonb RETURNING target.*
   ), recorded AS (
     INSERT INTO agent_revisions (document_id, revision, document) SELECT id, revision, document FROM changed RETURNING revision
-  ) SELECT changed.* FROM changed JOIN recorded USING (revision)`
+  ) SELECT changed.* FROM changed JOIN recorded USING (revision)
+    UNION ALL SELECT current.* FROM current WHERE current.document = ${payload}::jsonb`
   if (!rows.length)
     throw new AgentError(
       409,

@@ -18,6 +18,7 @@ async function handle(
   request: Request,
   context: { params: Promise<{ path: string[] }> },
 ) {
+  let tool: ToolName | undefined
   try {
     checkOrigin(request)
     const { path } = await context.params
@@ -58,10 +59,12 @@ async function handle(
       path.length === 2 &&
       request.method === "POST" &&
       Object.hasOwn(tools, path[1])
-    )
+    ) {
+      tool = path[1] as ToolName
       return json(
-        await execute(path[1] as ToolName, await body(request), workspace),
+        await execute(tool, await body(request), workspace),
       )
+    }
     if (path.join("/") === "catalog" && request.method === "GET")
       return json(
         await execute(
@@ -92,7 +95,7 @@ async function handle(
       )
     throw new AgentError(404, "Endpoint not found. See /docs/api.")
   } catch (error) {
-    return failure(error)
+    return failure(error, { transport: "rest", tool })
   }
 }
 export const GET = handle

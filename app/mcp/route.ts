@@ -82,7 +82,7 @@ export async function POST(request: Request) {
               ],
             }
           } catch (error) {
-            const response = failure(error)
+            const response = failure(error, { transport: "mcp", tool: name })
             return {
               isError: true,
               content: [
@@ -137,7 +137,7 @@ export async function POST(request: Request) {
       await server.close()
     }
   } catch (error) {
-    return failure(error)
+    return failure(error, { transport: "mcp" })
   }
 }
 export async function GET() {

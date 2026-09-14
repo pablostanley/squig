@@ -45,6 +45,11 @@ pan, zoom and surviving selections. Saves wait until a text edit or transform
 finishes. Each mutation uses an expected revision; a single PostgreSQL CTE
 updates the JSON and inserts its immutable history record. A stale writer
 receives 409 and must reconcile with the latest document.
+The save locks the expected revision before comparing JSON. An identical
+document returns that revision and timestamp without writing another snapshot;
+an identical payload with a stale revision still receives 409. Server-normalized
+fields are applied back to the browser after saving, including when local edits
+arrive during the request, so normalization cannot trigger endless resaves.
 
 The editor uses a three-way merge between its last synchronized document,
 local changes and the remote document. Independent objects and fields merge;
@@ -91,6 +96,9 @@ The Webxdc package keeps the offline canvas and excludes hosted connections.
 Before promoting a deployment, run `pnpm db:check` with that deployment's
 `DATABASE_URL` and database role. It is a read-only preflight: required columns
 in all five tables, table privileges and the nullable `review_hash` upgrade.
+It also rejects read-only storage and Neon clusters at least 90% full. The Neon
+check includes every database in the cluster; other Postgres hosts must monitor
+their provider's capacity. This is a point-in-time check, not ongoing monitoring.
 It emits JSON and exits nonzero when storage is not ready. Run `pnpm db:migrate`
 and repeat the check for a schema failure. Both commands accept environment
 variables directly and optionally load `.env.local`. They are intentionally
@@ -105,8 +113,11 @@ hosts can use the same command. Keep migrations additive and compatible with
 the currently serving release. Runtime requests never run migrations.
 
 REST and MCP return sanitized 503 diagnostics with stable `AGENT_STORAGE_*`
-codes for missing configuration, migration, permissions and availability.
-Database error text, credentials and query details are never returned or logged.
+codes for missing configuration, migration, permissions, availability, full
+storage (`53100`) and read-only storage (`25006`). Unexpected errors keep their
+SQLSTATE in structured server logs, alongside the transport, tool name and an
+error ID returned to the caller. Database error text, credentials and query
+details are never returned or logged.
 Failed connections retain the local canvas and show a retry action. Legacy SVG
 images are rasterized in the browser for sharing; failed uploads leave the
 local document unchanged. Newly pasted SVGs are also stored as raster images.

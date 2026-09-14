@@ -137,6 +137,20 @@ try {
   let current = await request(`documents/${doc.id}`, key)
   assert.equal(current.revision, 2)
   checks++
+  const unchanged = await request("tools/replace_document", key, {
+    documentId: doc.id, revision: 2, document: current.document,
+  })
+  assert.equal(unchanged.revision, 2)
+  assert.equal(unchanged.updatedAt, current.updatedAt)
+  const unchangedEdit = await request("tools/edit_document", scoped, {
+    documentId: doc.id, revision: 2,
+    operations: [{ op: "rename", name: current.document.fileName }],
+  })
+  assert.equal(unchangedEdit.revision, 2)
+  assert.deepEqual(unchangedEdit.changed, {})
+  const unchangedHistory = await request("tools/history", key, { documentId: doc.id })
+  assert.deepEqual(unchangedHistory.revisions.map((r) => r.revision), [2, 1])
+  checks += 5
   await request(
     "tools/edit_document",
     key,
