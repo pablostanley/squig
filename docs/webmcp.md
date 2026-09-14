@@ -5,6 +5,14 @@ the canvas store. The local companion MCP server is a separate connection
 for agents that need a selected disk file, rendering and durable local history. It needs no account, API key, server workspace, or
 network request to edit a local document.
 
+For an existing drawing, **Connect agent** copies instructions identifying
+the current document. An agent with access to that existing tab can start
+there immediately. Edits already autosave in browser storage; no download,
+installation or companion is required. A copied website URL does not transfer
+a drawing to another browser profile. Match the invitation's document ID
+with `squig_read_canvas` or `window.squig.documentId()` before editing, and
+keep using the original tab.
+
 ## Readiness assessment
 
 Research baseline: September 13, 2026. WebMCP is still an evolving web API,
@@ -63,7 +71,7 @@ Browser permissions mediate tool discovery and execution. Squig does not
 expose workspace credentials, other local files, or sharing/publication tools.
 In a companion editor, local synchronization handles WebMCP edits like
 manual edits and saves them to the selected disk file. On squig.sh, edits
-remain in browser storage until the user exports a copy.
+autosave in browser storage. Exporting a portable copy is optional.
 
 ## Example with the current draft
 

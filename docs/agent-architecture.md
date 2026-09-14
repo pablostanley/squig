@@ -8,13 +8,19 @@ hosted by Squig.
 
 ## Three places a drawing can live
 
-The ordinary website autosaves drafts in browser storage. A downloaded
-`.squig.json` is a separate portable copy. A companion session reads and writes
-a chosen disk file, so browser edits and agent edits persist to that file.
-Opening a website draft does not give the website access to its downloaded
-copy. The user exports the draft and starts the companion with its file path.
-A browser agent can also edit the open tab through `window.squig` or WebMCP;
-those tools use whichever document the tab currently has open.
+The ordinary website autosaves drafts in browser storage. **Connect agent**
+invites an agent with access to the existing tab to edit that drawing through
+`window.squig` or WebMCP. Those edits use the same undo history and autosave
+as manual edits; connecting requires no download or companion. Invitations
+include the current browser document ID, which agents must match before
+editing. Opening the website in another browser profile cannot access the
+original profile's storage, and a new tab might open a different document.
+
+A downloaded `.squig.json` is a separate portable copy. When the user chooses
+to work with a disk file, a companion reads and writes that file, so browser
+edits and agent edits persist there. Moving a website draft to this workflow
+requires an explicit export and the saved file's path. Opening a website
+draft does not give the website access to any disk copy.
 
 ## Local runtime
 

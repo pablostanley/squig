@@ -83,8 +83,9 @@ pnpm dev
 ```
 
 The local canvas needs no environment variables, database, or accounts — those
-documents live in browser storage. For a live agent session, the local companion
-saves to a chosen file on your computer; see Squig for agents below. `pnpm test` type-checks and runs every
+documents live in browser storage. Browser agents can edit the open tab, and
+the optional local companion saves to a chosen disk file; see Squig for agents
+below. `pnpm test` type-checks and runs every
 suite under `scripts/test-*.ts`, and `pnpm test crop text` runs just the ones
 whose names match. `pnpm verify` is lint, test and build in one go — the thing
 to run before you push.
@@ -150,10 +151,16 @@ an issue first.
 
 ![Three editable wireframes on the Squig canvas](docs/agent-canvas.png)
 
-Bring your own agent and work together on a local `.squig.json` file. The
-companion runs on your computer, opens the full editor at a loopback address,
-and gives agents MCP and HTTP tools for that same file. Human and agent edits
-appear together. Components, batch edits, variations, notes, comments,
+Bring your own agent to the canvas you already have open. **Connect agent**
+copies instructions for an agent with access to that existing browser tab.
+It checks the document ID and edits with `window.squig` or supported WebMCP
+tools. Human and agent edits appear together and save automatically in
+browser storage. No download, installation or companion is needed. Opening
+the website in another browser profile does not bring the drawing with it.
+
+For a chosen `.squig.json` file, the optional companion runs on your computer,
+opens the full editor at a loopback address, and gives agents MCP and HTTP
+tools for that same file. Components, batch edits, variations, notes, comments,
 history, text measurement, SVG and PNG rendering all run locally.
 
 From a clone of this repository, with Node.js 24 and pnpm 10:
@@ -170,8 +177,7 @@ file is opened. Keep the process running while you work. For an MCP client
 that launches its own process, use the direct Node configuration in
 [the MCP guide](https://squig.sh/docs/mcp). Run one companion per file.
 
-The website's **Connect agent** also offers instructions for a browser agent
-working in the current tab. To move a browser drawing into a companion session,
+If you choose to move a browser drawing into a companion session,
 export a `.squig.json` copy first, then open that saved file with the companion.
 Browser storage and a file on disk are separate: a browser-only drawing is
 not automatically linked to a downloaded copy.
@@ -196,8 +202,9 @@ codex plugin marketplace add .
 codex plugin add squig@squig-plugins
 ```
 
-The plugin guides the agent through local setup. It does not register a cloud
-server or bundle the application runtime; keep a local Squig checkout and
-configure the companion for the file you want to edit. No npm CLI package is
-published by this repository. Agents without MCP can use the companion's
-local HTTP API, the direct file CLI, or `window.squig` in an open tab.
+The plugin guides the agent to continue your open canvas or selected local
+file. For a browser invitation, no runtime setup is needed. It does not
+register a cloud server or bundle the application runtime; keep a local
+Squig checkout only when using the companion for a disk file. No npm CLI
+package is published by this repository. Agents without MCP can use the
+companion's local HTTP API, the direct file CLI, or `window.squig` in an open tab.

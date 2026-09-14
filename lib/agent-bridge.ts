@@ -41,6 +41,8 @@ import type { Box, ShapeKind, SquigNode } from "./types"
 
 export interface SquigAgentApi {
   version: 1
+  /** Identify the open canvas before editing an existing browser tab. */
+  documentId(): string
   /** the open document as a value — a copy, not the store's objects */
   doc(): SquigDocument
   serialize(): string
@@ -92,6 +94,7 @@ function current(): SquigDocument {
 
 const api: SquigAgentApi = {
   version: 1,
+  documentId: () => useSquig.getState().docId,
   resizeSpaced(ids, marked, axis, delta) {
     const s = useSquig.getState()
     s.edit(() => s.updateNodes(resizeSpacedNodes(ids.map((id) => s.nodes[id]).filter(Boolean), marked, axis, delta)))

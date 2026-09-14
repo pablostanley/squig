@@ -1,6 +1,6 @@
 {
   "name": "squig",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Sketch, compare and revise local wireframes with your own agent.",
   "author": {
     "name": "Pablo Stanley"
@@ -9,7 +9,7 @@
   "interface": {
     "displayName": "Squig",
     "shortDescription": "Wireframe ideas together before writing code.",
-    "longDescription": "Use a local Squig file with your own agent. Set up the local companion, explore variations, refine the canvas together and hand off the chosen direction.",
+    "longDescription": "Bring your own agent to the Squig canvas you already have open. Explore variations, refine the canvas together and hand off the chosen direction. Changes autosave; a local file companion is optional.",
     "developerName": "Squig",
     "category": "Productivity",
     "capabilities": [

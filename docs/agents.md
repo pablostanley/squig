@@ -6,16 +6,18 @@ a hand-drawn sketch. A document is a flat map of nodes saved as
 
 Choose the connection that matches where the drawing lives.
 
-1. **The local companion.** Human and agent edit one disk file in the full
-   editor, with MCP or HTTP tools and live updates. Use this for working together.
-2. **The file CLI.** You have a shell and want to create or edit a file directly.
-3. **The browser door.** An agent drives the open canvas through WebMCP or
-   `window.squig`. The ordinary website saves to browser storage.
+1. **The browser door.** For a drawing already open in Squig, use **Connect
+   agent** and give its instructions to an agent with access to that same tab.
+   Edits through WebMCP or `window.squig` autosave in browser storage. No
+   download, installation or companion is needed.
+2. **The local companion.** Human and agent edit a chosen disk file in the
+   full editor, with MCP or HTTP tools and live updates.
+3. **The file CLI.** You have a shell and want to create or edit a file directly.
 4. **The library door.** You are writing TypeScript in this repo.
 
 ---
 
-## 1. The local companion
+## The local companion
 
 Clone this repository, use Node.js 24 and pnpm 10, then build the editor once:
 
@@ -33,9 +35,11 @@ files are validated before editing. The selected file is the source of truth.
 Keep the process running. It binds only to `127.0.0.1` and serves the editor,
 HTTP tools and MCP from that local origin. No database or account is involved.
 
-If the drawing is already open on squig.sh, export a `.squig.json` copy and
-start the companion for that file. The website cannot infer its absolute
-path or silently connect a browser draft to a download.
+If the drawing is already open on squig.sh, keep working in that tab using
+the browser door below. Only export a `.squig.json` copy when the user wants
+to move the drawing to a disk file, then start the companion for that file.
+The website cannot infer its absolute path or silently link browser storage
+to a downloaded copy.
 
 ### MCP clients
 
@@ -112,7 +116,7 @@ Do not edit the selected file using the direct CLI at the same time.
 Existing cloud canvas links are for read-only recovery. Export a local copy;
 new workspaces and public editing are retired.
 
-## 2. The file CLI
+## The file CLI
 
 ```bash
 pnpm squig <command> [...]
@@ -164,7 +168,19 @@ one sentence on stderr and exits 1.
 
 ---
 
-## 3. The browser door
+## The browser door
+
+Use **Connect agent** in the current canvas and pass the copied instructions
+to an agent that can access the existing tab. The drawing already autosaves;
+inviting an agent does not require exporting it or creating a disk file.
+
+Find the existing tab and match `window.squig.documentId()` to the document
+ID in the invitation before reading or editing. With WebMCP, read
+`squig_read_canvas` and match its `documentId`. A URL alone does not identify
+a browser drawing. Opening that URL in another browser profile cannot
+access the original profile's storage, and a new tab can open a different
+drawing. If the agent cannot access the original tab, explain that browser
+access is needed; do not silently create or import another canvas.
 
 In a WebMCP-capable browser, squig registers structured canvas tools
 automatically. Start with `squig_read_canvas`; see [WebMCP](webmcp.md) for
@@ -177,6 +193,7 @@ in the undo stack (`⌘Z` takes it back) and autosaves.
 
 ```js
 squig.version                      // the bridge's version
+squig.documentId()                 // the current browser document's identity
 squig.doc()                        // the whole document as a value
 squig.serialize()                  // it as .squig.json text
 squig.load(json)                   // replace the canvas with a document
@@ -208,7 +225,7 @@ squig.zoomToFit()
 
 ---
 
-## 4. The library door
+## The library door
 
 From node or a test inside this repo, [`lib/doc.ts`](../lib/doc.ts) provides
 the shared node operations. It is pure: every function returns

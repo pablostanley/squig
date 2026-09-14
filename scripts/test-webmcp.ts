@@ -27,6 +27,10 @@ useSquig.setState({
 })
 installAgentBridge()
 const api = window.squig!
+check("browser invitation can identify the existing canvas", api.documentId() === "webmcp-test")
+useSquig.setState({ docId: "another-browser-canvas" })
+check("browser identity follows a canvas switch", api.documentId() === "another-browser-canvas")
+useSquig.setState({ docId: "webmcp-test" })
 const tools = createWebMCPTools(api)
 type Result = { isError?: boolean; content: { text: string }[] }
 const run = async (name: string, input: object = {}, signal?: AbortSignal) =>

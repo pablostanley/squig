@@ -41,22 +41,21 @@ export function Connect() {
     } catch (error) { setError((error as Error).message) }
   }
   return <AgentShell><div className="agent-content">
-    <h1>Bring your agent. Keep your files.</h1>
+    <h1>Bring your agent to the canvas.</h1>
     <p className="agent-lead">Squig works on your computer. No account, hosted workspace, or Squig API key.</p>
     <div className="agent-split">
       <section>
-        <h2>Open a local file together</h2>
-        <p>Use Connect agent in the editor to download your drawing and copy setup instructions for your agent. It starts a local companion and gives you a link to the live editor.</p>
-        <p>You and your agent edit the same <code>.squig.json</code> file. Saving, history, rendering, and measurement run on your computer.</p>
-        <div className="agent-row"><Link className="agent-button" href="/">Open Squig</Link><Link href="/docs/mcp">Local MCP setup</Link></div>
-        <details><summary>Set it up yourself</summary>
+        <h2>Work in the canvas you already have</h2>
+        <p>Open Connect agent in the editor and copy the invitation to your agent. It joins your existing browser tab. Changes appear live, support undo, and save automatically in this browser.</p>
+        <p>Your agent needs access to that browser tab through its browser tools or WebMCP. An agent in a separate browser or on another computer cannot access this drawing from a website link alone.</p>
+        <div className="agent-row"><Link className="agent-button" href="/">Open Squig</Link><Link href="/docs/webmcp">Browser agent guide</Link></div>
+        <details><summary>Working with a file on disk?</summary>
+          <p>The local companion opens a <code>.squig.json</code> file with the full editor and MCP tools. Changes save automatically to that file.</p>
           <p>In a checkout of the <a href="https://github.com/pablostanley/squig">Squig repository</a>, install and build once:</p>
           <pre className="agent-code">{"pnpm install\npnpm build:local\npnpm squig serve /absolute/path/canvas.squig.json"}</pre>
           <p>Keep the command running. Open the local editor URL it prints. Your agent can use its local MCP endpoint, or configure a stdio server using the setup guide.</p>
+          <Link href="/docs/mcp">Local MCP setup</Link>
         </details>
-        <h2>Agent in your browser</h2>
-        <p>A browser agent can also edit the open tab with <code>window.squig</code> or WebMCP. These drawings stay in browser storage until you download a file.</p>
-        <Link href="/docs/webmcp">Browser agent guide</Link>
       </section>
       <section>
         <h2>Recover an online canvas</h2>
