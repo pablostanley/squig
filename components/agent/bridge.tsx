@@ -406,10 +406,9 @@ The companion is running on this computer. Connect to MCP at ${session.mcpUrl} w
         <Popover.Trigger className="canvas-action" aria-label="Connect agent"><PlugsConnectedIcon size={16} />Connect agent</Popover.Trigger>
         <Popover.Portal><Popover.Positioner side="bottom" align="end" sideOffset={8} className="z-50">
           <Popover.Popup className="agent-connect-panel">
-            <Popover.Title className="text-row font-semibold">{connected ? "Agent on this computer" : "Bring your agent"}</Popover.Title>
-            <Popover.Description>{connected ? "You and your agent edit this canvas. Changes save automatically to your local file." : "Invite your agent to this canvas. Changes save automatically in this browser."}</Popover.Description>
-            {connected && session && <p className="agent-local-path">{session.filePath}</p>}
-            {status && <p role="status">{status}</p>}
+            <Popover.Title className="text-row font-semibold">Connect agent</Popover.Title>
+            <Popover.Description>Paste this invitation into your agent.</Popover.Description>
+            {syncIssue && status && <p role="status">{status}</p>}
             <AgentInvite invite={invite} config={config} local={connected && !!session} />
           </Popover.Popup>
         </Popover.Positioner></Popover.Portal>
@@ -468,7 +467,7 @@ function AgentInvite({
         ) : (
           <CopyIcon size={16} />
         )}
-        {copied ? "Copied" : "Copy for your agent"}
+        {copied ? "Copied" : "Copy invitation"}
       </button>
       <span className="sr-only" role="status">
         {copied
@@ -477,15 +476,14 @@ function AgentInvite({
             ? "Copy failed. Select the text and copy it manually."
             : ""}
       </span>
-      <p>{local ? "Your agent works on your computer." : "Your agent needs access to this browser tab."} Its own model settings still apply.</p>
       {error && (
         <p role="alert">
-          Copy failed. Open the details below and copy the invitation
-          manually.
+          Couldn’t copy. Select the invitation below.
         </p>
       )}
       <details className="agent-invite-more" open={error || undefined}>
         <summary>Connection details</summary>
+        <p>{local ? "Connects to the local file on this computer." : "Your agent needs access to this browser tab."} Its model settings still apply.</p>
         <textarea
           readOnly
           rows={5}

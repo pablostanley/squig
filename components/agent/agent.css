@@ -415,5 +415,3 @@
   margin-top: 8px;
   font-size: var(--text-label);
 }
-
-.agent-local-path { overflow-wrap: anywhere; font-family: var(--font-mono); }
