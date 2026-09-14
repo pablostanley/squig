@@ -224,10 +224,12 @@ async function run(command: string | undefined, args: string[]): Promise<void> {
     case "new": {
       const file = need(args[0], "a file to write")
       if (existsSync(resolve(file)) && !flag.force) throw new DocError(`${resolve(file)} is already there — pass --force to replace it`)
-      const store = await createLocalStore(file)
+      const replacement = { document: emptyDocument(flag.name ?? (basename(file).replace(/\.squig\.json$/, "") || "untitled scribbles")), comments: [] }
+      const store = await createLocalStore(file, flag.force ? { replaceInvalidWith: replacement } : {})
       try {
         const before = await store.read()
-        await store.mutate(before.revision, () => ({ document: emptyDocument(flag.name ?? (basename(file).replace(/\.squig\.json$/, "") || "untitled scribbles")), comments: [] }))
+        await store.mutate(before.revision, () => replacement)
+        if (store.replacedFilePath) console.log(`preserved previous bytes at ${store.replacedFilePath}`)
       } finally { await store.close() }
       console.log(`wrote ${resolve(file)}`)
       return

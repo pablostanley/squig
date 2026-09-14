@@ -34,6 +34,12 @@ export interface LocalSnapshot extends LocalContent {
   revision: number
   updatedAt: string
 }
+interface DiskFile {
+  raw: Buffer
+  signature: string
+  mode: number
+  updatedAt: string
+}
 interface DiskSnapshot extends LocalSnapshot {
   signature: string
   mode: number
@@ -42,6 +48,7 @@ export interface LocalStore {
   documentId: string
   filePath: string
   historyPath: string
+  replacedFilePath?: string
   read(): Promise<LocalSnapshot>
   mutate(revision: number | undefined, change: (current: LocalSnapshot) => LocalContent): Promise<LocalSnapshot>
   history(): Promise<Array<{ revision: number; createdAt: string; name: string }>>
@@ -105,7 +112,7 @@ function localFailure(error: unknown): never {
 
 /** One companion owns one selected file. The sibling lock also excludes a second
  * MCP process, so two independent in-memory queues cannot overwrite each other. */
-export async function createLocalStore(selectedPath: string): Promise<LocalStore> {
+export async function createLocalStore(selectedPath: string, options: { replaceInvalidWith?: LocalContent } = {}): Promise<LocalStore> {
   const requested = resolve(selectedPath)
   await mkdir(dirname(requested), { recursive: true })
   let filePath: string
@@ -155,7 +162,7 @@ export async function createLocalStore(selectedPath: string): Promise<LocalStore
       if (codeOf(error) !== "ENOENT") throw error
     }
   }
-  async function disk(): Promise<DiskSnapshot> {
+  async function diskFile(): Promise<DiskFile> {
     let handle
     try {
       // A replaced symlink must never redirect a live session to another file.
@@ -163,9 +170,8 @@ export async function createLocalStore(selectedPath: string): Promise<LocalStore
       const info = await handle.stat()
       if (!info.isFile()) throw new AgentError(400, "Choose a regular .squig.json file.")
       if (info.size > LOCAL_FILE_BYTES) throw new AgentError(413, "Local document exceeds 16 MiB.")
-      const raw = await handle.readFile("utf8")
-      const hash = signature(raw)
-      return { ...decode(raw), signature: hash, revision: revisionOf(hash), updatedAt: info.mtime.toISOString(), mode: info.mode & 0o777 }
+      const raw = await handle.readFile()
+      return { raw, signature: signature(raw), updatedAt: info.mtime.toISOString(), mode: info.mode & 0o777 }
     } catch (error) {
       if (codeOf(error) === "ENOENT") throw new AgentError(404, "The local file was moved or removed. Reopen its new path to continue.")
       if (codeOf(error) === "ELOOP") throw new AgentError(409, "The local file was replaced with a link. Reopen the file to continue.")
@@ -174,7 +180,11 @@ export async function createLocalStore(selectedPath: string): Promise<LocalStore
       await handle?.close()
     }
   }
-  async function atomic(raw: string, previous?: DiskSnapshot) {
+  async function disk(): Promise<DiskSnapshot> {
+    const { raw, ...file } = await diskFile()
+    return { ...decode(raw.toString("utf8")), ...file, revision: revisionOf(file.signature) }
+  }
+  async function atomic(raw: string, previous?: Pick<DiskFile, "mode" | "signature">) {
     const temporary = join(dirname(filePath), `.${basename(filePath)}.${randomUUID()}.tmp`)
     let handle
     try {
@@ -184,7 +194,7 @@ export async function createLocalStore(selectedPath: string): Promise<LocalStore
       await handle.close()
       handle = undefined
       if (previous) {
-        const latest = await disk()
+        const latest = await diskFile()
         if (latest.signature !== previous.signature)
           throw new AgentError(409, "The local file changed outside Squig. Read the latest revision and reconcile before saving.")
         await rename(temporary, filePath)
@@ -317,7 +327,30 @@ export async function createLocalStore(selectedPath: string): Promise<LocalStore
       if (codeOf(error) !== "ENOENT") throw error
       await atomic(encode({ document: emptyDocument(basename(filePath).replace(/\.squig\.json$/, "") || "Untitled"), comments: [] }))
     }
-    await disk()
+    try {
+      await disk()
+    } catch (error) {
+      if (!options.replaceInvalidWith || !(error instanceof z.ZodError || error instanceof AgentError && error.status === 400)) throw error
+      const replacement = encode(options.replaceInvalidWith)
+      decode(replacement)
+      const previous = await diskFile()
+      // --force is explicit replacement authority. Preserve unreadable bytes
+      // separately because they cannot enter the validated revision history.
+      const backupPath = `${filePath}.before-replace-${randomUUID()}.bak`
+      const backup = await open(backupPath, "wx", 0o600)
+      try {
+        await backup.writeFile(previous.raw)
+        await backup.sync()
+      } catch (error) {
+        await unlink(backupPath).catch(() => {})
+        throw error
+      } finally {
+        await backup.close()
+      }
+      await atomic(replacement, previous)
+      store.replacedFilePath = backupPath
+      await disk()
+    }
     await pruneHistory()
     return store
   } catch (error) {

@@ -60,7 +60,7 @@ const RESERVED_IDS = new Set(["__proto__", "constructor", "prototype"])
 const RASTER_SRC = /^data:image\/(png|jpeg|webp|gif);base64,/i
 const MAX_FONT_SIZE = 1000
 /** Keeps a typo'd coordinate from putting a node a light-year off the sheet. */
-const MAX_COORD = 1_000_000
+export const MAX_COORD = 1_000_000
 
 export const newId = () => nanoid(8)
 export const newSeed = () => Math.floor(Math.random() * 2 ** 31)

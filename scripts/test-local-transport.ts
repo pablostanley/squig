@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, readFile, rm, symlink, writeFile, access, realpath } from "node:fs/promises"
+import { mkdtemp, mkdir, readFile, readdir, rm, symlink, writeFile, access, realpath } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { request } from "node:http"
@@ -7,7 +7,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { createLocalStore } from "../lib/agent/local-store"
-import { startLocalServer, localEditorRoot, LOCAL_REQUEST_BYTES, type LocalSession } from "../lib/agent/local-server"
+import { startLocalServer, localEditorRoot, LOCAL_REQUEST_BYTES, LOCAL_MCP_RESPONSE_BYTES, type LocalSession } from "../lib/agent/local-server"
 import { check, report } from "./harness.ts"
 
 const directory = await mkdtemp(join(tmpdir(), "squig-transport-"))
@@ -108,6 +108,27 @@ try {
   const browserUrl = new URL(stdioInfo.editorUrl)
   const browserInfo = await fetch(`${browserUrl.origin}/api/local/session`, { headers: { Authorization: `Bearer ${new URLSearchParams(browserUrl.hash.slice(1)).get("token")}` } })
   check("stdio sessions include a functioning authenticated browser companion", browserInfo.status === 200)
+  const stdioDrawing = JSON.parse(await readFile(stdioFile, "utf8"))
+  await writeFile(stdioFile, JSON.stringify({ ...stdioDrawing, attachment: "x".repeat(6 * 1024 * 1024) }))
+  const singleExport = await stdio.callTool({ name: "squig_export_document", arguments: { documentId: stdioInfo.documentId } })
+  const exportedDrawing = decode(singleExport)
+  check("MCP export includes one copy of a large portable canvas", !singleExport.isError && !Object.hasOwn(exportedDrawing, "document") && exportedDrawing.file.attachment.length === 6 * 1024 * 1024)
+
+  await writeFile(stdioFile, JSON.stringify({ ...stdioDrawing, attachment: "x".repeat(11 * 1024 * 1024) }))
+  const largeRevision = decode(await stdio.callTool({ name: "squig_documents", arguments: {} })).documents[0].revision
+  for (const name of ["squig_get_document", "squig_export_document"]) {
+    const result = await stdio.callTool({ name, arguments: { documentId: stdioInfo.documentId } })
+    const handoff = decode(result)
+    check(`${name} hands off oversized output without closing the default stdio client`, result.isError === true && handoff.status === 413 && handoff.filePath === await realpath(stdioFile) && handoff.revision === largeRevision && handoff.editorUrl === stdioInfo.editorUrl && Buffer.byteLength(JSON.stringify(result)) < LOCAL_MCP_RESPONSE_BYTES)
+  }
+  const savedLarge = await stdio.callTool({ name: "squig_replace_document", arguments: { documentId: stdioInfo.documentId, revision: largeRevision, document: { ...stdioDrawing, fileName: "Saved despite a bounded response" } } })
+  const savedHandoff = decode(savedLarge)
+  const afterLarge = decode(await stdio.callTool({ name: "squig_documents", arguments: {} })).documents[0]
+  check("an oversized mutation response identifies the committed revision", savedLarge.isError === true && savedHandoff.status === 413 && savedHandoff.revision === afterLarge.revision && savedHandoff.revision !== largeRevision && JSON.parse(await readFile(stdioFile, "utf8")).fileName === "Saved despite a bounded response")
+  const invalidLarge = await stdio.callTool({ name: "squig_local_session", arguments: { ["x".repeat(11 * 1024 * 1024)]: true } })
+  const invalidHandoff = decode(invalidLarge)
+  check("SDK validation errors are bounded without claiming an edit completed", invalidLarge.isError === true && invalidHandoff.status === 413 && invalidHandoff.error.includes("request failed") && !invalidHandoff.error.includes("operation completed") && decode(await stdio.callTool({ name: "squig_documents", arguments: {} })).documents[0].revision === afterLarge.revision)
+  check("stdio tools remain usable after oversized responses", !(await stdio.callTool({ name: "squig_catalog", arguments: { query: "button" } })).isError)
   await stdio.close()
   check("stdio shutdown releases its local lock", !await exists(`${stdioFile}.lock`))
 
@@ -118,6 +139,18 @@ try {
   const cli = spawnSync(process.execPath, ["--experimental-strip-types", "--import", "./scripts/register-loader.mjs", "scripts/squig.ts", "text", file, "CLI addition", "--x", "50", "--y", "100"], { encoding: "utf8" })
   const afterCli = JSON.parse(await readFile(file, "utf8"))
   check("existing CLI mutations retain variations and comments", cli.status === 0 && afterCli.variations[0].id === "direction" && afterCli.comments[0].id === "feedback" && afterCli.order.length === 2, cli.stderr)
+
+  const brokenFile = join(directory, "broken.squig.json")
+  const brokenBytes = Buffer.from('{"nodes":{ interrupted\xff', "latin1")
+  await writeFile(brokenFile, brokenBytes)
+  const forced = spawnSync(process.execPath, ["--experimental-strip-types", "--import", "./scripts/register-loader.mjs", "scripts/squig.ts", "new", brokenFile, "--force", "--name", "Recovered blank"], { encoding: "utf8" })
+  const backups = (await readdir(directory)).filter((name) => name.startsWith("broken.squig.json.before-replace-") && name.endsWith(".bak"))
+  check("CLI force can replace corrupt JSON while preserving its exact bytes", forced.status === 0 && JSON.parse(await readFile(brokenFile, "utf8")).fileName === "Recovered blank" && backups.length === 1 && (await readFile(join(directory, backups[0]))).equals(brokenBytes) && forced.stdout.includes(join(directory, backups[0])), forced.stderr)
+  const heldStore = await createLocalStore(brokenFile)
+  try {
+    const lockedForce = spawnSync(process.execPath, ["--experimental-strip-types", "--import", "./scripts/register-loader.mjs", "scripts/squig.ts", "new", brokenFile, "--force"], { encoding: "utf8" })
+    check("CLI force still refuses a file owned by a live companion", lockedForce.status !== 0 && lockedForce.stderr.includes("already has a local Squig session") && (await heldStore.read()).document.fileName === "Recovered blank")
+  } finally { await heldStore.close() }
 } finally {
   await Promise.allSettled(clients.map((client) => client.close()))
   await session?.close()

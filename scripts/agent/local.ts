@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url"
 import { parseArgs } from "node:util"
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { createLocalStore } from "../../lib/agent/local-store"
-import { createLocalMcpServer, localEditorRoot, startLocalServer, LOCAL_REQUEST_BYTES } from "../../lib/agent/local-server"
+import { boundedLocalTransport, createLocalMcpServer, localEditorRoot, startLocalServer, LOCAL_REQUEST_BYTES } from "../../lib/agent/local-server"
 
 export async function runLocalAgent(mode: "serve" | "mcp", file: string, options: { port?: number; editorRoot?: string } = {}): Promise<void> {
   const editorRoot = await localEditorRoot(options.editorRoot)
@@ -30,7 +30,7 @@ export async function runLocalAgent(mode: "serve" | "mcp", file: string, options
   if (mcp) {
     process.stdin.once("end", signal)
     process.stdin.once("close", signal)
-    try { await mcp.connect(new StdioServerTransport(process.stdin, process.stdout, { maxBufferSize: LOCAL_REQUEST_BYTES })) }
+    try { await mcp.connect(boundedLocalTransport(new StdioServerTransport(process.stdin, process.stdout, { maxBufferSize: LOCAL_REQUEST_BYTES }), session)) }
     catch (error) { await stop(); throw error }
     mcp.server.onclose = signal
   }

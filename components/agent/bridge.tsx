@@ -8,6 +8,7 @@ import { Popover } from "@base-ui/react/popover"
 import { CopyIcon, CheckIcon, PlugsConnectedIcon } from "@phosphor-icons/react"
 import { applyLook } from "@/lib/theme"
 import { mergeCanvas, canvasEqual } from "@/lib/agent/merge"
+import { listFiles, listRecentFiles, MAX_FILES, readFile, saveFile, type StoredDoc } from "@/lib/files"
 import "./agent.css"
 
 const snapshot = () => {
@@ -27,6 +28,19 @@ const editable = (doc: Snapshot): Snapshot => ({
   look: doc.look,
 })
 const equal = canvasEqual
+const cachedSnapshot = (doc: StoredDoc) => ({
+  fileName: doc.name, nodes: doc.nodes, order: doc.order, look: doc.look,
+  variations: doc.variations ?? [], comments: doc.comments ?? [],
+})
+const portableSnapshot = () => {
+  const state = useSquig.getState()
+  return { ...snapshot(), variations: state.variations, comments: state.comments }
+}
+function hasUncachedDrawing() {
+  const state = useSquig.getState(), cached = readFile(state.docId)
+  if (!state.order.length && !state.variations.length && !state.comments.length && !cached) return false
+  return !cached || !equal(portableSnapshot(), cachedSnapshot(cached))
+}
 
 type LocalSession = { documentId: string; filePath: string; editorUrl: string; mcpUrl: string; token: string }
 
@@ -44,6 +58,9 @@ export function AgentBridge({ hidden = false }: { hidden?: boolean }) {
   const [conflict, setConflict] = useState(false)
   const [panel, setPanel] = useState(false)
   const [reload, setReload] = useState(0)
+  const [recoveryReload, setRecoveryReload] = useState(0)
+  const [recoveryRetry, setRecoveryRetry] = useState(false)
+  const recoveryCredential = useRef<{ id: string; key: string } | null>(null)
   const reportIssue = useCallback((message: string) => {
     setStatus(message)
     useCanvasSyncIssue.setState({ issue: { docId: useSquig.getState().docId, message } })
@@ -143,13 +160,33 @@ export function AgentBridge({ hidden = false }: { hidden?: boolean }) {
           try {
             const state = useSquig.getState()
             if (state.docId === session.documentId && !equal(snapshot(), editable(row.document)) && !equal(snapshot(), downloadedDraft.current)) {
-              const draft = { ...JSON.parse(state.serialize()), fileName: `${state.fileName} — local draft` }
-              state.loadDoc(JSON.stringify(draft), `${session.documentId}_draft`)
-              useSquig.getState().saveNow()
-              if (useSquig.getState().drawerFull || useSquig.getState().stale) {
+              const draftId = `${session.documentId}_draft`
+              const draft = { ...portableSnapshot(), fileName: `${state.fileName} — local draft` }
+              const existing = readFile(draftId)
+              if (existing && !equal(draft, cachedSnapshot(existing))) {
                 stopped = true
                 setConflict(true)
-                throw new Error("Your previous draft is only in this tab. Download it before loading the file.")
+                throw new Error("A previous local draft is already saved. Download your current draft before loading the file.")
+              }
+              if (!existing || !listFiles().some((file) => file.id === draftId)) {
+                // A backup must not replace an earlier draft or trim another
+                // drawing from a full drawer. Keep the current canvas in place.
+                const saved = listFiles().length < MAX_FILES && saveFile({
+                  ...draft, id: draftId, name: draft.fileName, updatedAt: Date.now(),
+                }, null)
+                if (!saved || saved.full || saved.stale) {
+                  stopped = true
+                  setConflict(true)
+                  throw new Error("Your draft is only in this tab. Download it before loading the file.")
+                }
+                useSquig.setState({ files: listRecentFiles() })
+              }
+            } else if (state.docId !== session.documentId && !equal(snapshot(), downloadedDraft.current)) {
+              if (hasUncachedDrawing()) state.saveNow()
+              if (hasUncachedDrawing()) {
+                stopped = true
+                setConflict(true)
+                throw new Error("This drawing could not be saved in this browser. Download your draft before loading the file.")
               }
             }
             if (!useSquig.getState().loadDoc(JSON.stringify(row.document), session.documentId)) throw new Error("The local file could not be opened. It has not been changed.")
@@ -285,34 +322,55 @@ export function AgentBridge({ hidden = false }: { hidden?: boolean }) {
     }
   }, [reload, reportIssue, setStatus])
 
-  const recovering = useRef(false)
   useEffect(() => {
     const id = new URLSearchParams(location.search).get("agent")
-    if (!id || recovering.current) return
+    if (!id) return
+    let active = true
     let key: string | null | undefined
     try {
       const fragment = location.hash.slice(1)
       history.replaceState(null, "", location.pathname + location.search)
-      key = canvasConnection(id, fragment || undefined, localStorage).key
+      let saved: string | null = null
+      try { saved = sessionStorage.getItem(`squig:recovery-session:${id}`) } catch { /* The in-memory key still permits retry. */ }
+      const held = recoveryCredential.current?.id === id ? recoveryCredential.current.key : null
+      const connection = canvasConnection(id, fragment || held || saved || undefined, localStorage)
+      key = connection.key
+      if (connection.canvasKey) {
+        recoveryCredential.current = { id, key: connection.canvasKey }
+        try { sessionStorage.setItem(`squig:recovery-session:${id}`, connection.canvasKey) } catch { /* Retry can use the in-memory key. */ }
+      }
     } catch (error) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- report malformed recovery links after browser hydration
       reportIssue((error as Error).message)
       return
     }
     if (!key) { reportIssue("Open the original canvas link or use your old workspace key at /connect to recover it."); return }
-    recovering.current = true
     const openingId = useSquig.getState().docId
+    const openingSnapshot = snapshot()
     void agentRequest(`documents/${id}`, key).then((row) => {
-      if (useSquig.getState().docId !== openingId) return
+      if (!active || useSquig.getState().docId !== openingId) return
+      if (!equal(snapshot(), downloadedDraft.current)) {
+        if (!equal(snapshot(), openingSnapshot)) throw new Error("This drawing changed while the canvas was recovering. Download your draft before retrying recovery.")
+        if (hasUncachedDrawing()) useSquig.getState().saveNow()
+        if (hasUncachedDrawing()) throw new Error("This drawing could not be saved in this browser. Download your draft before retrying recovery.")
+      }
       if (!useSquig.getState().loadDoc(JSON.stringify({ ...row.document, comments: row.comments }))) throw new Error("This canvas could not be recovered.")
       history.replaceState(null, "", "/")
+      setRecoveryRetry(false)
+      recoveryCredential.current = null
+      try { sessionStorage.removeItem(`squig:recovery-session:${id}`) } catch { /* Recovery already completed. */ }
       useSquig.getState().saveNow()
       const state = useSquig.getState()
       reportIssue(state.drawerFull || state.stale
         ? "Recovered in this tab only; browser storage could not save it. Download a local file now. The original online canvas is unchanged."
         : "Recovered to this browser. Download a copy to keep it as a local file.")
-    }).catch((error) => { recovering.current = false; reportIssue(error.message) })
-  }, [reportIssue])
+    }).catch((error) => {
+      if (!active) return
+      setRecoveryRetry(true)
+      reportIssue(error.message)
+    })
+    return () => { active = false }
+  }, [recoveryReload, reportIssue])
 
   function preserve() {
     const state = useSquig.getState()
@@ -335,6 +393,10 @@ The companion is running on this computer. Connect to MCP at ${session.mcpUrl} w
         <button className="canvas-action" onClick={preserve}>Download my draft</button>
         <button className="canvas-action" onClick={() => setReload((v) => v + 1)}>Load file version</button>
       </>}
+      {recoveryRetry && <>
+        <button className="canvas-action" onClick={preserve}>Download my draft</button>
+        <button className="canvas-action" onClick={() => setRecoveryReload((v) => v + 1)}>Retry recovery</button>
+      </>}
       <Popover.Root open={panel && !hidden} onOpenChange={setPanel}>
         <Popover.Trigger className="canvas-action" aria-label="Connect agent"><PlugsConnectedIcon size={16} />Connect agent</Popover.Trigger>
         <Popover.Portal><Popover.Positioner side="bottom" align="end" sideOffset={8} className="z-50">
@@ -343,7 +405,7 @@ The companion is running on this computer. Connect to MCP at ${session.mcpUrl} w
             <Popover.Description>{connected ? "You and your agent edit the same local file." : "Save a file, then let your agent open it with Squig. Your drawings stay on your computer."}</Popover.Description>
             {session && <p className="agent-local-path">{session.filePath}</p>}
             {status && <p role="status">{status}</p>}
-            {!connected && <button type="button" className="agent-invite-copy" onClick={preserve}>Download local file</button>}
+            <button type="button" className="agent-invite-copy" onClick={preserve}>{connected ? "Download a copy" : "Download local file"}</button>
             <AgentInvite invite={invite} config={config} />
             {!connected && <details className="agent-invite-more"><summary>Agent in this browser</summary><p>A browser agent can work directly in this tab using window.squig or WebMCP. Save or download your drawing to keep a disk copy.</p><a href="/docs/webmcp" target="_blank" rel="noreferrer">Browser agent guide</a></details>}
           </Popover.Popup>

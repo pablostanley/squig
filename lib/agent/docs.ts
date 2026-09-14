@@ -91,6 +91,10 @@ export const pages: DocPage[] = [
         text: "Local tools are squig_local_session, squig_catalog, squig_documents, squig_get_document, squig_edit_document, squig_replace_document, squig_history, squig_restore, squig_comment, squig_resolve_comment, squig_export_document, squig_measure_text and squig_render_document. There are no workspace creation, document deletion or key-rotation tools. The guide resource squig://guides/wireframing and wireframe-first prompt describe the workflow. All node types, grouping, layout, locks, variations and notes use the shared canvas engine.",
       },
       {
+        title: "Large results",
+        text: "Portable files may use up to 16 MiB including comments, but MCP responses are capped at 8 MiB including their protocol envelope. A larger tool result or validation error returns isError with status 413, filePath, editorUrl and the revision when available. The error says whether the operation completed or the request failed. If it completed, the edit remains saved. Read the selected filePath from disk and use squig_documents for the current revision before editing again. Do not retry the mutation blindly. For a large render, inspect the editor or export an image from the browser. Local HTTP reads can still retrieve the complete file.",
+      },
+      {
         title: "Troubleshooting",
         text: "A missing editor build means run pnpm build:local in the checkout. A file lock means another companion already owns this file; use that session or stop it first. A 409 means the file changed: read and reconcile before retrying. A stopped process makes its editor URL unavailable, but the file remains on disk. A missing or invalid HTTP token returns 401; an unexpected Host or browser Origin returns 403. Check that your agent runs on the same computer: a remote cloud agent cannot reach your loopback address.",
       },
@@ -137,7 +141,7 @@ window.squig.zoomToFit()`,
     sections: [
       {
         title: "One command model",
-        text: "The companion exposes POST /api/v1/tools/{name}; MCP uses squig_{name} with the same JSON input. Use the loopback origin returned by your running session. The public squig.sh server does not accept new canvas writes. /openapi.json describes the local API shapes; tools are discovered from the running MCP server.",
+        text: "The companion exposes POST /api/v1/tools/{name}; MCP uses squig_{name} with the same JSON input. Session discovery uses squig_local_session over MCP or GET /api/local/session over HTTP. Use the loopback origin returned by your running session. The public squig.sh server does not accept new canvas writes. /openapi.json describes the local API shapes; tools are discovered from the running MCP server.",
       },
       {
         title: "Connect to the selected file",
@@ -162,7 +166,7 @@ window.squig.zoomToFit()`,
       },
       {
         title: "Persistence and limits",
-        text: "The companion writes atomically to the selected file and detects external edits. It preserves variation and comment metadata when the browser saves editable fields. Limits include 5000 nodes, 100 operations per batch, 1000 nodes per add and 16 MiB for the portable file including comments. HTTP and stdio request envelopes allow an additional 64 KiB. History keeps at most 50 entries and 16 MiB per file; expired revisions cannot be restored. Use separate backups for permanent history. Invalid inputs, filesystem failures and revision conflicts return actionable tool errors.",
+        text: "The companion writes atomically to the selected file and detects external edits. It preserves variation and comment metadata when the browser saves editable fields. Limits include 5000 nodes, 100 operations per batch, 1000 nodes per add and 16 MiB for the portable file including comments. HTTP and stdio request envelopes allow an additional 64 KiB. MCP responses have a separate 8 MiB cap: larger tool results or validation errors return a bounded error with the selected filePath and revision when available. If the error says the operation completed, the edit remains saved; inspect the file before retrying a mutation. History keeps at most 50 entries and 16 MiB per file; expired revisions cannot be restored. Use separate backups for permanent history. Invalid inputs, filesystem failures and revision conflicts return actionable tool errors.",
       },
       {
         title: "Recovering an old online canvas",
@@ -217,7 +221,7 @@ window.squig.zoomToFit()`,
       },
       {
         title: "Install from a checkout",
-        text: "Clone this repository, then add its local marketplace to Codex and install Squig. Start a new task or reconnect after installation. Use the checked-out branch containing the local companion until that version is merged. Other agents can read the same skill as Markdown.",
+        text: "Clone this repository, then run these commands from the checkout to add its local marketplace to Codex and install Squig. Start a new task or reconnect after installation. Other agents can read the same skill as Markdown.",
         code: "codex plugin marketplace add .\ncodex plugin add squig@squig-plugins",
       },
       {
@@ -258,7 +262,7 @@ window.squig.zoomToFit()`,
       },
       {
         title: "Verify the workflow",
-        text: "Run pnpm lint, pnpm test, pnpm test:agent, pnpm build, pnpm build:local and make build-xdc. Verify browser edits reach the selected disk file, agent edits appear in the editor, stale writes preserve drafts, metadata survives, and restarting the companion reopens the saved content. Check bounded history and stdio/HTTP transport access with temporary local files. No paid service is required for these checks.",
+        text: "Run pnpm lint, pnpm test, pnpm test:agent, pnpm build, pnpm build:local, pnpm test:agent:browser and make build-xdc. Install Chromium once with pnpm exec playwright install chromium. Verify browser edits reach the selected disk file, agent edits appear in the editor, stale writes preserve drafts, metadata survives, and restarting the companion reopens the saved content. Check bounded history and stdio/HTTP transport access with temporary local files. No paid service is required for these checks.",
       },
     ],
   },

@@ -74,7 +74,7 @@ MCP prefixes tool names with `squig_`. The local HTTP equivalent is
 `POST /api/v1/tools/{name}` with the same JSON input and the session's bearer
 token. Use the actual loopback URL printed by the companion, never squig.sh.
 
-- `local_session`: the editor URL, selected file path and connection addresses.
+- `squig_local_session` over MCP, or `GET /api/local/session` over HTTP: the editor URL, selected file path and connection addresses.
 - `catalog`, `documents`, `get_document`: discover components and read the file.
 - `edit_document`, `replace_document`: validated, atomic edits using the current revision.
 - `history`, `restore`: bounded local snapshots and revision-checked restoration.
@@ -89,6 +89,15 @@ No-op saves add no snapshots. The companion keeps at most 50 history entries
 and 16 MiB of history beside the file in a `.squig.json.history` directory;
 older history expires. Save a separate copy or
 use your own backup tools for versions you must keep.
+
+Portable files may use up to 16 MiB, including comments. MCP responses are
+capped at 8 MiB, including their protocol envelope. Larger results return an
+`isError` tool result with `status: 413`, `filePath`, `editorUrl` and the
+revision when available. The error says whether the operation completed or
+the request failed. If it completed, the edit remains saved. Read the selected
+`filePath` from disk and use `documents` for
+the current revision before editing again; do not retry the mutation blindly.
+For a large render, inspect the editor or export an image from the browser.
 
 The full engine supports all six node types, layouts, grouping, connector
 bindings, locks, variations and notes. Put feedback the user must see on the
@@ -116,7 +125,7 @@ tell `-40` from a flag: `--x=-40`, not `--x -40`.
 |---|---|
 | `components [query]` | the library, one line each: kind, name, group, default size |
 | `describe <kind>` | that component's default size, default props and legal prop values |
-| `new <file>` | a blank document |
+| `new <file> [--force]` | a blank document; `--force` replaces an existing file |
 | `ls <file>` | what is on the sheet, bottom to top |
 | `add <file> <kind>` | place a component |
 | `text <file> "<words>"` | place a text layer |
@@ -126,6 +135,11 @@ tell `-40` from a flag: `--x=-40`, not `--x -40`.
 | `rm\|group\|front\|back <file> <id...>` | remove, group, reorder |
 | `render <file>` | the drawing as SVG |
 | `validate <file>` | does squig still read this file |
+
+Before `new --force` replaces an invalid file, it preserves the original bytes
+in `<file>.before-replace-<uuid>.bak` and prints that backup path. Valid files
+use the normal bounded revision history. Replacement still respects the
+per-file lock and 16 MiB file limit.
 
 ```bash
 pnpm squig components card                 # kinds matching "card"

@@ -17,8 +17,8 @@ When the two disagree, the code is right.
   "version": 1,
   "fileName": "sign in",
   "look": { "theme": "internet-blue", "paper": "subtle", "font": "hand", "grid": true },
-  "nodes": { "<id>": { ... } },
-  "order": ["<id>", "<id>"]
+  "nodes": {},
+  "order": []
 }
 ```
 
@@ -72,7 +72,7 @@ canvas, variations and comments; copy retained history separately if needed.
 
 | field | type | meaning |
 |---|---|---|
-| `id` | string | letters, digits, `-` and `_`, up to 64. Matches its key in `nodes`. |
+| `id` | string | letters, digits, `-` and `_`, up to 80. Matches its key in `nodes`. |
 | `type` | string | `component`, `shape`, `text`, `arrow`, `draw` or `image`. |
 | `x`, `y` | number | top left in world pixels. y points down. Keep within ±1,000,000. |
 | `w`, `h` | number | the box, in world pixels. |
@@ -95,8 +95,8 @@ values, merged over the def's defaults on the way in.
 { "type": "component", "kind": "button", "props": { "label": "Sign in", "variant": "filled" } }
 ```
 
-`squig components` lists every kind; `squig describe <kind>` gives that one's
-default size, default props, and the controls that say which values are legal.
+`pnpm squig components` lists every kind; `pnpm squig describe <kind>` gives
+that one's default size, default props, and the controls that say which values are legal.
 A `kind` this build does not have is not a document squig can draw.
 
 ### shape
@@ -216,5 +216,5 @@ the button.
 }
 ```
 
-Save that as `anything.squig.json` and `squig validate anything.squig.json`
-will tell you whether squig agrees.
+Save that as `anything.squig.json`. From the checkout, run
+`pnpm squig validate anything.squig.json` to check it.

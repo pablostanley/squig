@@ -1,7 +1,8 @@
 import { z } from "zod"
+import { MAX_COORD } from "../doc"
 
 export const id = z.string().regex(/^[a-zA-Z0-9_-]{1,80}$/)
-const finite = z.number().finite().min(-100000).max(100000)
+const finite = z.number().finite().min(-MAX_COORD).max(MAX_COORD)
 const point = z.tuple([finite, finite])
 export const nodeFields = z
   .object({

@@ -60,6 +60,14 @@ Restoration creates a new current state after checking the expected revision.
 The engine still enforces node counts, request/document sizes, operation
 limits, locks and valid geometry.
 
+Portable files are capped at 16 MiB including comments. MCP responses are
+capped separately at 8 MiB including the protocol envelope. Larger tool results
+or validation errors return a bounded error with the selected file path and
+revision when available. The error distinguishes a completed operation from
+a failed request. A completed mutation remains saved; read that disk file and
+check the current revision before editing again. Local HTTP document reads
+remain available for the full file.
+
 ## Synchronization
 
 The local editor checks for incoming changes while connected. It preserves
@@ -116,7 +124,8 @@ neither supplies nor pays for that model.
 ## Verification
 
 Run `pnpm lint`, `pnpm test`, `pnpm test:agent`, `pnpm build`,
-`pnpm build:local` and `make build-xdc`. Test the local companion from outside
+`pnpm build:local`, `pnpm test:agent:browser` and `make build-xdc`. Install
+Chromium once with `pnpm exec playwright install chromium`. Test the local companion from outside
 the repository directory too: assets, fonts and loaders must resolve from
 the installation. Verify live browser-to-file and agent-to-browser edits,
 stale writes, external edits, lock contention, metadata, history limits and

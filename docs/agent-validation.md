@@ -56,6 +56,12 @@ from the installation even when the command starts in another project.
 Connect with the official MCP SDK over stdio and local Streamable HTTP.
 Stdio stdout must contain only protocol messages. Invalid Host, browser Origin,
 missing tokens, traversal attempts, and oversized requests must be rejected.
+Exercise files close to the 16 MiB limit and MCP results above 8 MiB. Both
+MCP transports must return a bounded error identifying the selected disk
+file, preserve completed edits, and stay usable for the next call. Check that
+oversized validation errors report failure without claiming a completed edit.
+For completed edits, confirm the returned revision matches the saved file
+before retrying any mutation.
 Static file serving must expose only built editor assets. Public hosted tools
 must reject writes, while authenticated legacy recovery can still read/export.
 
@@ -82,6 +88,13 @@ canvas and `/kitchen-sink` for rendering regressions. Verify popup keyboard
 access, copy feedback, mobile layout and errors as well as type safety.
 
 ## Practical limits
+
+After deploying, verify the website with
+`SQUIG_TEST_URL=https://squig.sh node scripts/agent/release-browser.mjs`.
+It checks browser-local persistence, setup and documentation, response headers,
+and retired hosted endpoints. It confirms retirement before testing any formerly
+mutating route. For a protected preview, provide its temporary access URL in
+`SQUIG_PREVIEW_ACCESS_URL`; keep that URL out of logs and source control.
 
 The companion must keep running for live updates. A local link is accessible
 only on the same computer; it is not a public invitation. Browser WebMCP

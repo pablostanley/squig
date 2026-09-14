@@ -78,6 +78,12 @@ Old cloud canvas links are for read-only recovery and export.
    everything. On conflict, read and reconcile. Preserve human edits and
    unrelated objects. Locked nodes require explicit unlock. Use the companion
    while it is active instead of writing directly to the file.
+   MCP results above 8 MiB return an error with `status: 413`, `filePath` and
+   the revision when available. The error says whether the operation completed
+   or the request failed. If it completed, the edit remains saved. Read the
+   selected file from disk and use `squig_documents`
+   for the current revision before editing again. Do not retry blindly. The
+   portable file limit remains 16 MiB including comments.
 5. Use `squig_measure_text` for text overflow and missing glyphs. Inspect the
    editor or `squig_render_document` for clipping and layout problems, then
    revise the actual canvas. Rendering, font measurement and file saves run

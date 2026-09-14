@@ -4,6 +4,7 @@ import { join } from "node:path"
 import { AgentError } from "../lib/agent/engine.ts"
 import { createLocalStore, LOCAL_HISTORY_BYTES, LOCAL_HISTORY_LIMIT, type LocalStore } from "../lib/agent/local-store.ts"
 import { executeLocal, localTools } from "../lib/agent/local-service.ts"
+import { MAX_COORD, addNodes, emptyDoc, serializeDoc, shapeNode } from "../lib/doc.ts"
 import { check, report } from "./harness.ts"
 
 async function refused(run: () => Promise<unknown>, status?: number) {
@@ -96,6 +97,17 @@ try {
   await writeFile(invalidPath, "{ invalid")
   check("opening an invalid existing file never replaces it", await refused(() => createLocalStore(invalidPath), 400) && await readFile(invalidPath, "utf8") === "{ invalid")
   check("failed opens release their lock", !(await readdir(folder)).includes("invalid.squig.json.lock"))
+
+  const coordinatePath = join(folder, "coordinates.squig.json")
+  await writeFile(coordinatePath, serializeDoc(addNodes(emptyDoc("Far from the origin"), [
+    shapeNode("rect", { id: "far", seed: 1, x: MAX_COORD, y: -MAX_COORD, w: 100, h: 100 }),
+  ])))
+  const coordinates = await open("coordinates.squig.json")
+  const atEdge = await coordinates.read()
+  await executeLocal("replace_document", { documentId: coordinates.documentId, revision: atEdge.revision, document: { ...atEdge.document, fileName: "Saved at the shared coordinate boundary" } }, coordinates)
+  check("valid document coordinates remain editable through the companion", (await coordinates.read()).document.nodes.far.x === MAX_COORD && (await coordinates.read()).document.fileName === "Saved at the shared coordinate boundary")
+  const coordinateRevision = (await coordinates.read()).revision
+  check("coordinates beyond the shared document boundary are still refused", await refused(() => executeLocal("edit_document", { documentId: coordinates.documentId, revision: coordinateRevision, operations: [{ op: "update", patches: [{ id: "far", patch: { x: MAX_COORD + 1 } }] }] }, coordinates), 400) && (await coordinates.read()).revision === coordinateRevision)
 
   const linked = await open("linked.squig.json")
   const outside = join(folder, "outside")
