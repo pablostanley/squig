@@ -112,6 +112,7 @@ A `kind` this build does not have is not a document squig can draw.
 | `stroke` | `light`, `regular` (absent) or `heavy`. |
 | `ink` | `ink` (absent), `muted` or `faint`. |
 | `dashed` | boolean. |
+| `corners` | rects only: `none`, `small` (absent), `large` or `full`. `full` is a pill, ends rounded to half the shorter side. |
 
 `paper` is the opaque sheet colour, for a box that has to hide what it sits on.
 `light` and `strong` are the two wash tones.
@@ -133,7 +134,7 @@ will settle it on the next edit.
 | `ink` | `ink` (absent), `muted`, `faint`. |
 | `bold`, `italic`, `underline` | booleans. |
 | `boxed` | give the words their own surface. Still one text node, never a rectangle plus a label. |
-| `boxFill`, `boxBorder`, `boxStroke`, `boxInk`, `boxDashed` | that surface's settings, kept separate from `ink`, which colours the words. |
+| `boxFill`, `boxBorder`, `boxStroke`, `boxInk`, `boxDashed`, `boxCorners` | that surface's settings, kept separate from `ink`, which colours the words. |
 | `link` | where this text points. Wireframe metadata, drawn as an underline. |
 
 ### arrow

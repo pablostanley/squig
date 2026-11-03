@@ -61,6 +61,38 @@ export function normalizeFill(v: unknown): FillTone {
   return "none"
 }
 
+/**
+ * How round a box's corners are. Four presets rather than a number: a napkin
+ * box is square, softened, round, or a pill, and nobody sketching a search
+ * field wants to type 14 versus 16. Absent means `small`, the softening every
+ * box was drawn with before this existed.
+ */
+export type CornerRadius = "none" | "small" | "large" | "full"
+
+/** Older documents have no corners at all, and imports can say anything. */
+export function normalizeCorners(v: unknown): CornerRadius {
+  return v === "none" || v === "large" || v === "full" ? v : "small"
+}
+
+const CORNER_PX: Record<Exclude<CornerRadius, "full">, number> = { none: 0, small: 6, large: 16 }
+
+/** The radius a preset draws at for a box this size; `full` ends in a semicircle. */
+export function cornerRadius(c: CornerRadius | undefined, w: number, h: number): number {
+  const half = Math.min(Math.abs(w), Math.abs(h)) / 2
+  const corners = normalizeCorners(c)
+  return corners === "full" ? half : Math.min(CORNER_PX[corners], half)
+}
+
+/**
+ * The preset closest to a drawn radius — how a component's pill button keeps
+ * its ends when it is broken apart into plain shapes.
+ */
+export function cornersFor(r: number, w: number, h: number): CornerRadius {
+  if (r < 1) return "none"
+  if (r >= Math.min(Math.abs(w), Math.abs(h)) / 2 - 0.5) return "full"
+  return r >= (CORNER_PX.small + CORNER_PX.large) / 2 ? "large" : "small"
+}
+
 export interface BaseNode {
   id: string
   x: number
@@ -106,6 +138,8 @@ export interface ShapeNode extends BaseNode, Outlined {
   shape: ShapeKind
   /** older documents wrote a boolean here — read it through normalizeFill */
   fill: FillTone
+  /** rects only — an ellipse has no corners to round. `small` when absent */
+  corners?: CornerRadius
 }
 
 export interface DrawNode extends BaseNode, Outlined {
@@ -169,6 +203,8 @@ export interface TextNode extends BaseNode {
   boxStroke?: StrokeWeight
   boxInk?: InkTone
   boxDashed?: boolean
+  /** the surface's corners — `small` when absent, `full` for a search-field pill */
+  boxCorners?: CornerRadius
   /** where this text points — wireframe metadata, drawn as an underline */
   link?: string
 }

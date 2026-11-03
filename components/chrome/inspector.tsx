@@ -18,8 +18,8 @@ import { useEffect } from "react"
 
 import { useSquig } from "@/lib/store"
 import { arrangement } from "@/lib/canvas/arrange"
-import type { ArrowNode, ComponentNode, FillTone, ImageNode, InkTone, LineStyle, ShapeNode, SquigNode, StrokeWeight, TextNode } from "@/lib/types"
-import { normalizeFill, normalizeInk, normalizeStroke } from "@/lib/types"
+import type { ArrowNode, ComponentNode, CornerRadius, FillTone, ImageNode, InkTone, LineStyle, ShapeNode, SquigNode, StrokeWeight, TextNode } from "@/lib/types"
+import { normalizeCorners, normalizeFill, normalizeInk, normalizeStroke } from "@/lib/types"
 import { isCropped, trueShapePatch } from "@/lib/canvas/crop"
 import { getDef } from "@/lib/library/registry"
 import { lockedIds, selectionSummary, shared, sharedControls, sharedNumber, unionBounds } from "@/lib/selection"
@@ -137,6 +137,23 @@ type TextBoxBorder = "none" | StrokeWeight
 const TEXT_BOX_BORDER_OPTIONS: readonly SegmentOption<TextBoxBorder>[] = [
   { value: "none", label: "No border", content: <ToneChip slash /> },
   ...STROKE_OPTIONS,
+]
+
+/** A corner, drawn: the top-left of a box bent to the radius it selects. */
+function CornerChip({ radius }: { radius: string }) {
+  return (
+    <span
+      className="block size-3.5 border-t-[1.5px] border-l-[1.5px] border-current"
+      style={{ borderTopLeftRadius: radius }}
+    />
+  )
+}
+
+const CORNER_OPTIONS: readonly SegmentOption<CornerRadius>[] = [
+  { value: "none", label: "Square", content: <CornerChip radius="0" /> },
+  { value: "small", label: "Soft", content: <CornerChip radius="3px" /> },
+  { value: "large", label: "Round", content: <CornerChip radius="7px" /> },
+  { value: "full", label: "Pill", content: <CornerChip radius="14px" /> },
 ]
 
 /** "A" set in one tone — the ink previewed on the thing it will colour. */
@@ -344,6 +361,11 @@ function SelectionEditor({ selected }: { selected: SquigNode[] }) {
   const arrows = selected.filter((n): n is ArrowNode => n.type === "arrow")
   const texts = selected.filter((n): n is TextNode => n.type === "text")
   const images = selected.filter((n): n is ImageNode => n.type === "image")
+  // whatever draws a box: a rectangle, or text that has been given a surface.
+  // An ellipse has no corners, and a component's are part of its design.
+  const cornered = selected.filter(
+    (n): n is ShapeNode | TextNode => (n.type === "shape" && n.shape === "rect") || (n.type === "text" && !!n.boxed)
+  )
   // components draw their own strokes from authored prims — a pen weight set
   // here would have nothing to apply to without rewriting the whole library
   const outlined = selected.filter((n) => n.type === "shape" || n.type === "draw" || n.type === "arrow")
@@ -420,6 +442,27 @@ function SelectionEditor({ selected }: { selected: SquigNode[] }) {
               onGestureStart={startGesture}
               onCommit={(v) => live(() => ({ rotation: normalizeRotation(v) || undefined }))}
               onStep={(d) => live((n) => ({ rotation: normalizeRotation((n.rotation ?? 0) + d) || undefined }))} />
+          </Row>
+        )}
+
+        {/* beside rotation, where Figma keeps its corner radius */}
+        {cornered.length > 0 && (
+          <Row label="Corners" help="Pill rounds the ends fully, for search fields and tags.">
+            <Segmented
+              ariaLabel="Corners"
+              options={CORNER_OPTIONS}
+              shared={shared(cornered.map((n) => normalizeCorners(n.type === "shape" ? n.corners : n.boxCorners)))}
+              onChange={(corners) => {
+                const value = corners === "small" ? undefined : corners
+                patch((n) =>
+                  n.type === "shape" && n.shape === "rect"
+                    ? ({ corners: value } as Partial<SquigNode>)
+                    : n.type === "text" && n.boxed
+                      ? ({ boxCorners: value } as Partial<SquigNode>)
+                      : null
+                )
+              }}
+            />
           </Row>
         )}
 

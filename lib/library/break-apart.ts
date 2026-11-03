@@ -5,9 +5,9 @@
 
 import { rotateNodes } from "@/lib/canvas/rotation"
 import { nanoid } from "nanoid"
-import type { ComponentNode, FillTone, SquigNode } from "@/lib/types"
+import { cornersFor, type ComponentNode, type FillTone, type SquigNode } from "@/lib/types"
 import { measureTextWidth } from "@/lib/canvas/text-metrics"
-import { mirrorPrims, type PrimOpts } from "@/lib/sketch/kit"
+import { HAND, mirrorPrims, type PrimOpts } from "@/lib/sketch/kit"
 import { anchorFactor, textBlockHeight } from "@/lib/sketch/text-layout"
 import { renderComponent } from "./registry"
 
@@ -38,14 +38,18 @@ export function breakApart(node: ComponentNode): SquigNode[] {
   const out: SquigNode[] = []
   for (const p of prims) {
     switch (p.t) {
-      case "rect":
+      case "rect": {
+        // a pill button should still be a pill once it is loose on the sheet
+        const corners = cornersFor(p.r ?? p.o?.r ?? HAND.radius, p.w, p.h)
         out.push({
           id: nanoid(8), type: "shape", shape: "rect",
           x: node.x + p.x, y: node.y + p.y, w: p.w, h: p.h,
           fill: fillToneOf(p.o),
+          ...(corners === "small" ? {} : { corners }),
           seed: seed(),
         })
         break
+      }
       case "ellipse":
         out.push({
           id: nanoid(8), type: "shape", shape: "ellipse",

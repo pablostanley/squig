@@ -25,7 +25,7 @@ import { createLocalStore } from "@/lib/agent/local-store"
 import { executeLocal } from "@/lib/agent/local-service"
 import type { Operation } from "@/lib/agent/schema"
 import { loadIconsFor, renderSvg } from "@/lib/sketch/svg"
-import type { InkTone, LineStyle, ShapeKind, SquigNode, TextAlign } from "@/lib/types"
+import type { CornerRadius, InkTone, LineStyle, ShapeKind, SquigNode, TextAlign } from "@/lib/types"
 
 const USAGE = `squig — draw wireframes from a terminal
 
@@ -37,7 +37,7 @@ const USAGE = `squig — draw wireframes from a terminal
   ls <file>                                   what's on the sheet, bottom to top
   add <file> <kind> --x N --y N [--w N] [--h N] [--props '{"label":"Go"}'] [--id ID]
   text <file> "<words>" --x N --y N [--size N] [--w N] [--align left|center|right] [--bold] [--ink ink|muted|faint]
-  shape <file> rect|ellipse --x N --y N --w N --h N [--fill none|light|strong|paper] [--dashed]
+  shape <file> rect|ellipse --x N --y N --w N --h N [--fill none|light|strong|paper] [--corners none|small|large|full] [--dashed]
   arrow <file> --from <id|x,y> --to <id|x,y> [--no-head] [--style straight|elbow|curved]
   set <file> <id> --patch '{"w":320}'         change one node
   rm|group|front|back <file> <id...>          remove, group, reorder
@@ -48,7 +48,7 @@ const str = { type: "string" } as const
 const bool = { type: "boolean" } as const
 const OPTIONS = {
   name: str, id: str, x: str, y: str, w: str, h: str, props: str, size: str, align: str,
-  ink: str, fill: str, from: str, to: str, style: str, patch: str, out: str,
+  ink: str, fill: str, corners: str, from: str, to: str, style: str, patch: str, out: str,
   port: str,
   force: bool, bold: bool, dashed: bool, "no-head": bool, transparent: bool,
 } as const
@@ -153,6 +153,7 @@ function arrowEnd(raw: string, which: string): ArrowEnd {
 const INKS = ["ink", "muted", "faint"] as const satisfies readonly InkTone[]
 const ALIGNS = ["left", "center", "right"] as const satisfies readonly TextAlign[]
 const FILLS = ["none", "paper", "light", "strong"] as const
+const CORNERS = ["none", "small", "large", "full"] as const satisfies readonly CornerRadius[]
 const STYLES = ["straight", "elbow", "curved"] as const satisfies readonly LineStyle[]
 const SHAPES = ["rect", "ellipse"] as const satisfies readonly ShapeKind[]
 
@@ -183,6 +184,7 @@ function built(command: string, args: string[], doc: SquigDocument): SquigNode {
       w: num(flag.w, "--w"),
       h: num(flag.h, "--h"),
       fill: one(flag.fill, FILLS, "fill"),
+      corners: one(flag.corners, CORNERS, "corners"),
       ink: one(flag.ink, INKS, "ink"),
       dashed: flag.dashed,
     })

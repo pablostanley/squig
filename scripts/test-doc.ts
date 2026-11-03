@@ -39,6 +39,8 @@ import {
   type SquigDocument,
 } from "../lib/doc.ts"
 import type { ArrowNode, ComponentNode, ShapeNode, SquigNode, TextNode } from "../lib/types.ts"
+import { cornerRadius, cornersFor } from "../lib/types.ts"
+import { nodePrims } from "../lib/sketch/node-prims.ts"
 import type { TextMeasurer } from "../lib/canvas/text-metrics.ts"
 import type { Look } from "../lib/theme.ts"
 import { check, report } from "./harness.ts"
@@ -474,6 +476,44 @@ const button = (id: string, x = 0, y = 0) => componentNode("button", { id, seed:
   check("shape builders carry rotation", shapeNode("rect", { x: 0, y: 0, w: 20, h: 10, rotation: 30 }).rotation === 30)
   check("text builders carry rotation", textNode("hi", { x: 0, y: 0, rotation: 30 }).rotation === 30)
   check("component builders carry rotation", componentNode("button", { x: 0, y: 0, rotation: 30 }).rotation === 30)
+}
+
+{
+  // corners are four presets, and the only one that depends on the box is the pill
+  check("a box with no corners keeps the softening it always had", cornerRadius(undefined, 200, 40) === 6)
+  check("square is square", cornerRadius("none", 200, 40) === 0)
+  check("pill rounds to half the shorter side", cornerRadius("full", 200, 40) === 20)
+  check("…whichever side that is", cornerRadius("full", 30, 120) === 15)
+  check("round never overshoots a small box", cornerRadius("large", 20, 12) === 6)
+
+  const radiusOf = (n: SquigNode) => {
+    const p = nodePrims(n)[0]
+    return p.t === "rect" ? p.r : undefined
+  }
+  const pill = shapeNode("rect", { id: "search", seed: 1, x: 0, y: 0, w: 240, h: 36, corners: "full" })
+  check("a pill rect draws with its ends round", pill.corners === "full" && radiusOf(pill) === 18)
+  check("the default preset is written by leaving it out", !("corners" in shapeNode("rect", { x: 0, y: 0, w: 9, h: 9, corners: "small" })))
+  check("an ellipse has no corners to keep", !("corners" in shapeNode("ellipse", { x: 0, y: 0, w: 9, h: 9, corners: "full" })))
+  const box = textNode("Search", { id: "q", seed: 1, x: 0, y: 0, boxed: true, boxCorners: "full" })
+  check("boxed text can be a pill too", box.boxCorners === "full" && radiusOf(box) === box.h / 2)
+
+  const clean = sanitizeDoc(
+    {
+      odd: { id: "odd", seed: 1, type: "shape", shape: "rect", x: 0, y: 0, w: 10, h: 10, fill: "none", corners: "blobby" },
+      egg: { id: "egg", seed: 1, type: "shape", shape: "ellipse", x: 0, y: 0, w: 10, h: 10, fill: "none", corners: "full" },
+      tag: { id: "tag", seed: 1, type: "shape", shape: "rect", x: 0, y: 0, w: 10, h: 10, fill: "none", corners: "large" },
+    },
+    []
+  )
+  check("a corner preset squig doesn't have reads as the default", (clean.nodes.odd as ShapeNode).corners === undefined)
+  check("an ellipse drops corners it can't draw", (clean.nodes.egg as ShapeNode).corners === undefined)
+  check("a real preset survives the sanitizer", (clean.nodes.tag as ShapeNode).corners === "large")
+
+  // break-apart reads a drawn radius back into the nearest preset
+  check("a pill-shaped prim breaks apart into a pill", cornersFor(18, 240, 36) === "full")
+  check("a hairline radius breaks apart as the default", cornersFor(3, 240, 36) === "small")
+  check("a generous radius breaks apart round", cornersFor(14, 240, 80) === "large")
+  check("a sharp prim breaks apart square", cornersFor(0, 240, 36) === "none")
 }
 
 report("document checks passed")

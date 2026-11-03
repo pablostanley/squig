@@ -16,7 +16,7 @@
 // ---------------------------------------------------------------------------
 
 import type { SquigNode, TextNode } from "./types"
-import { normalizeArrowAnchors, normalizeBind, normalizeCrop, normalizeLineStyle } from "./types"
+import { normalizeArrowAnchors, normalizeBind, normalizeCorners, normalizeCrop, normalizeLineStyle } from "./types"
 import { normalizeRotation } from "./canvas/rotation"
 import { normalizeGroupIds } from "./canvas/groups"
 
@@ -104,6 +104,11 @@ function validPoint(v: unknown): v is [number, number] {
   return Array.isArray(v) && v.length === 2 && num(v[0]) && num(v[1])
 }
 
+function leanCorners(v: unknown) {
+  const corners = normalizeCorners(v)
+  return corners === "small" ? undefined : corners
+}
+
 /**
  * A node we're willing to put on the canvas, or null.
  *
@@ -127,6 +132,8 @@ export function validNode(v: unknown): SquigNode | null {
       break
     case "shape":
       if (n.shape !== "rect" && n.shape !== "ellipse") return null
+      // an ellipse has nothing to round, and `small` is spelled by leaving it out
+      n.corners = n.shape === "rect" ? leanCorners(n.corners) : undefined
       break
     case "draw":
       if (!validPoints(n.points)) return null
@@ -155,6 +162,7 @@ export function validNode(v: unknown): SquigNode | null {
       break
     case "text":
       if (!str(n.text) || !num(n.fontSize)) return null
+      n.boxCorners = leanCorners(n.boxCorners)
       break
     case "image":
       // the only scheme this app ever writes, and the only one it will read:
