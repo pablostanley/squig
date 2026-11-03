@@ -11,6 +11,7 @@ import { textAnchorX, textBaseline, textBoxPadding, textContentWidth, textVertic
 import { wrapText, type TextMeasurer } from "@/lib/canvas/text-metrics"
 import { localArrowRoute, localRouteEndTangent } from "@/lib/canvas/line-routing"
 import {
+  cornerRadius,
   normalizeFill,
   normalizeInk,
   normalizeStroke,
@@ -68,7 +69,7 @@ export function basePrims(node: SquigNode, measureText?: TextMeasurer): Prim[] {
     case "shape": {
       const o = outline(node, HAND.strokeWidth, FILL_OPTS[normalizeFill(node.fill)])
       if (node.shape === "ellipse") return [{ t: "ellipse", x: 0, y: 0, w: node.w, h: node.h, o }]
-      return [{ t: "rect", x: 0, y: 0, w: node.w, h: node.h, r: 6, o }]
+      return [{ t: "rect", x: 0, y: 0, w: node.w, h: node.h, r: cornerRadius(node.corners, node.w, node.h), o }]
     }
     case "draw":
       // freehand is already the user's own line — barely roughen it.
@@ -153,7 +154,7 @@ export function basePrims(node: SquigNode, measureText?: TextMeasurer): Prim[] {
         y: 0,
         w: node.w,
         h: node.h,
-        r: 6,
+        r: cornerRadius(node.boxCorners, node.w, node.h),
         o: {
           ...(FILL_OPTS[normalizeFill(node.boxFill)] ?? {}),
           strokeWidth: node.boxBorder === false ? 0 : HAND.strokeWidth * PEN_SCALE[normalizeStroke(node.boxStroke)],

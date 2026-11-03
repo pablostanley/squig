@@ -117,7 +117,7 @@ export const NodeSketch = memo(function NodeSketch({
       case "component":
         return `c:${node.kind}:${node.w}:${node.h}:${flip}:${catalogVersion}:${JSON.stringify(node.props)}`
       case "shape":
-        return `s:${node.shape}:${node.w}:${node.h}:${flip}:${node.fill}:${pen}`
+        return `s:${node.shape}:${node.w}:${node.h}:${flip}:${node.fill}:${node.corners ?? ""}:${pen}`
       case "draw":
         return `d:${node.points.length}:${node.w}:${node.h}:${flip}:${node.points[0]?.join()}:${node.points.at(-1)?.join()}:${pen}`
       case "arrow":
@@ -125,7 +125,7 @@ export const NodeSketch = memo(function NodeSketch({
       case "text":
         // w and align place the anchor, so a resize or a realignment is a
         // different set of marks even when the words haven't changed
-        return `t:${node.text}:${node.fontSize}:${node.w}:${node.h}:${node.fixedW ? 1 : 0}:${node.fixedH ? 1 : 0}:${node.align ?? ""}:${node.verticalAlign ?? ""}:${flip}:${node.bold ? 1 : 0}${node.italic ? 1 : 0}${node.underline || node.link ? 1 : 0}:${node.ink ?? ""}:${node.boxed ? 1 : 0}:${node.boxFill ?? ""}:${node.boxBorder === false ? 0 : 1}:${node.boxStroke ?? ""}:${node.boxInk ?? ""}:${node.boxDashed ? 1 : 0}`
+        return `t:${node.text}:${node.fontSize}:${node.w}:${node.h}:${node.fixedW ? 1 : 0}:${node.fixedH ? 1 : 0}:${node.align ?? ""}:${node.verticalAlign ?? ""}:${flip}:${node.bold ? 1 : 0}${node.italic ? 1 : 0}${node.underline || node.link ? 1 : 0}:${node.ink ?? ""}:${node.boxed ? 1 : 0}:${node.boxFill ?? ""}:${node.boxBorder === false ? 0 : 1}:${node.boxStroke ?? ""}:${node.boxInk ?? ""}:${node.boxDashed ? 1 : 0}:${node.boxCorners ?? ""}`
       case "image":
         // the src doesn't shape a single mark — only the frame's box does
         return `i:${node.w}:${node.h}:${flip}`

@@ -17,6 +17,7 @@ import type {
   ArrowNode,
   Box,
   ComponentNode,
+  CornerRadius,
   FillTone,
   InkTone,
   LineStyle,
@@ -249,6 +250,7 @@ export interface TextAt extends NodeAt {
   ink?: InkTone
   boxed?: boolean
   boxFill?: FillTone
+  boxCorners?: CornerRadius
   link?: string
 }
 
@@ -283,6 +285,7 @@ export function textNode(text: string, at: TextAt, measureText?: TextMeasurer): 
     ...(at.ink && at.ink !== "ink" ? { ink: at.ink } : {}),
     ...(at.boxed ? { boxed: true } : {}),
     ...(at.boxed && at.boxFill ? { boxFill: at.boxFill } : {}),
+    ...(at.boxed && at.boxCorners && at.boxCorners !== "small" ? { boxCorners: at.boxCorners } : {}),
     ...(at.link ? { link: at.link } : {}),
     ...(at.locked ? { locked: true } : {}),
   }
@@ -296,6 +299,8 @@ export interface ShapeAt extends NodeAt {
   stroke?: StrokeWeight
   ink?: InkTone
   dashed?: boolean
+  /** rects only; `small` when absent */
+  corners?: CornerRadius
 }
 
 export function shapeNode(shape: ShapeKind, at: ShapeAt): ShapeNode {
@@ -314,6 +319,7 @@ export function shapeNode(shape: ShapeKind, at: ShapeAt): ShapeNode {
     ...(at.stroke && at.stroke !== "regular" ? { stroke: at.stroke } : {}),
     ...(at.ink && at.ink !== "ink" ? { ink: at.ink } : {}),
     ...(at.dashed ? { dashed: true } : {}),
+    ...(shape === "rect" && at.corners && at.corners !== "small" ? { corners: at.corners } : {}),
     ...(at.locked ? { locked: true } : {}),
   }
 }

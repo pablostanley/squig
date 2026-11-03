@@ -200,7 +200,7 @@ squig.load(json)                   // replace the canvas with a document
 squig.add(nodes)                   // nodes built by hand, in one undo step
 squig.addComponent(kind, { x, y, w, h, props })
 squig.addText("the happy path", { x, y, fontSize, w, align, bold, ink })
-squig.addShape("rect", { x, y, w, h, fill, dashed })
+squig.addShape("rect", { x, y, w, h, fill, corners, dashed })
 squig.addArrow({ from, to, head, lineStyle })
 squig.update(id, patch)
 squig.remove(ids)

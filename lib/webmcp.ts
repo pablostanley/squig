@@ -64,13 +64,14 @@ const textAt = at
       ink: true,
       boxed: true,
       boxFill: true,
+      boxCorners: true,
       link: true,
     }).shape
   )
   .omit({ h: true })
 const shapeAt = at
   .extend(
-    nodeFields.pick({ fill: true, stroke: true, ink: true, dashed: true }).shape
+    nodeFields.pick({ fill: true, stroke: true, ink: true, dashed: true, corners: true }).shape
   )
   .extend({ w: finite.nonnegative(), h: finite.nonnegative() })
 const arrowEnd = z.union([id, z.tuple([finite, finite])])

@@ -104,16 +104,19 @@ function roundRectPath(
   const rr = Math.max(0, Math.min(r, Math.abs(w) / 2, Math.abs(h) / 2))
   if (rr < 0.5)
     return `M${x} ${y} L${x + w} ${y} L${x + w} ${y + h} L${x} ${y + h} Z`
+  // Cubic quarter-circles, not quadratics: at a 6px corner nobody can tell,
+  // but a pill's ends are all corner, and a quadratic bends them into a lump.
+  const k = rr * (1 - 0.5523)
   return [
     `M${x + rr} ${y}`,
     `L${x + w - rr} ${y}`,
-    `Q${x + w} ${y} ${x + w} ${y + rr}`,
+    `C${x + w - k} ${y} ${x + w} ${y + k} ${x + w} ${y + rr}`,
     `L${x + w} ${y + h - rr}`,
-    `Q${x + w} ${y + h} ${x + w - rr} ${y + h}`,
+    `C${x + w} ${y + h - k} ${x + w - k} ${y + h} ${x + w - rr} ${y + h}`,
     `L${x + rr} ${y + h}`,
-    `Q${x} ${y + h} ${x} ${y + h - rr}`,
+    `C${x + k} ${y + h} ${x} ${y + h - k} ${x} ${y + h - rr}`,
     `L${x} ${y + rr}`,
-    `Q${x} ${y} ${x + rr} ${y}`,
+    `C${x} ${y + k} ${x + k} ${y} ${x + rr} ${y}`,
     "Z",
   ].join(" ")
 }
