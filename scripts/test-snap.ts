@@ -24,6 +24,23 @@ const rect = (id: string, x: number, y: number, w = 40, h = 40) => makeSnapRect(
   check("a target outside the magnetic zone is left alone", computeSnap(rect("far", 70, 80, 20, 20), [rect("target", 0, 0, 100, 40)], 6).dx === 0)
 }
 
+{
+  const row = Array.from({ length: 256 }, (_, index) => rect(`row-${index}`, 100, index * 10))
+  const duplicate = rect("row-0", 100, -500)
+  const snap = computeSnap(rect("drag", 96, 48, 8, 8), [...row, duplicate], 6)
+  const guide = snap.guides.find((g) => g.axis === "x" && g.position === 100)
+  check("a crowded alignment extends across all unique matches using the first rectangle for each id",
+    snap.dx === 0 && guide?.start === 0 && guide.end === 2590)
+}
+
+{
+  const drag = rect("drag", 100, 85, 30, 20)
+  const before = rect("before", 98, -40, 50, 20)
+  const after = rect("after", 102, 160, 80, 20)
+  check("equal and opposite alignment deltas still prefer the first candidate",
+    computeSnap(drag, [before, after], 3).dx === -2 && computeSnap(drag, [after, before], 3).dx === 2)
+}
+
 // -- equal-spacing insertion ----------------------------------------------
 
 {
