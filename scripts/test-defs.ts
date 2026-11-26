@@ -13,7 +13,7 @@
 // of its options, shows up as a blank or wrong-looking field in the panel.
 // ---------------------------------------------------------------------------
 
-import { ALL_DEFS, type ComponentDef } from "../lib/library/registry.ts"
+import { ALL_DEFS, renderComponent, searchDefs, type ComponentDef } from "../lib/library/registry.ts"
 import type { Prim } from "../lib/sketch/kit.ts"
 import { resolveIconName } from "../lib/sketch/icons.ts"
 import { check, report } from "./harness.ts"
@@ -171,6 +171,59 @@ for (const def of ALL_DEFS) {
   }
   check(`${def.kind} stays inside its box`, over <= OVERHANG, worst)
 }
+
+// -- text placeholder -------------------------------------------------------
+
+const textBars = (w: number, h: number, size = 12, align?: string) =>
+  renderComponent("text-placeholder", { size, align }, w, h).filter(p => p.t === "rect")
+
+check("text placeholder appears in library search",
+  searchDefs("components", "dummy text").some(def => def.kind === "text-placeholder"))
+
+const short = textBars(320, 16)
+const tall = textBars(320, 80)
+check("text placeholder uses the page's light shade",
+  short.length > 0 && short.every(bar => bar.o?.fill === "shade" && bar.o.fillColor === "faint"))
+check("text placeholder adds rows as height grows",
+  short.length > 1 && short.every(bar => bar.y === 0) && tall.some(bar => bar.y >= 16))
+check("text placeholder keeps its first line when adding rows",
+  JSON.stringify(tall.filter(bar => bar.y === 0)) === JSON.stringify(short))
+
+const narrow = textBars(72, 80)
+check("narrow text placeholder reflows the same sequence of words",
+  narrow.some(bar => bar.y > 0) && narrow.every((bar, i) => bar.w === tall[i]?.w))
+check("text placeholder bars stay inside their rows",
+  narrow.every((bar, i) => {
+    const previous = narrow[i - 1]
+    return bar.x + bar.w <= 72 && bar.y + bar.h <= 80 &&
+      (!previous || (bar.y === previous.y ? bar.x > previous.x + previous.w : bar.y > previous.y + previous.h))
+  }))
+
+for (const w of [72, 320]) {
+  const left = textBars(w, 80)
+  const rowWidths = new Map(left.map(bar => [bar.y, bar.x + bar.w]))
+  for (const [align, factor] of [["center", 0.5], ["right", 1]] as const) {
+    const aligned = textBars(w, 80, 12, align)
+    check(`text placeholder ${align} aligns each row at width ${w}`,
+      aligned.length === left.length && aligned.every((bar, i) => {
+        const source = left[i]
+        const rowWidth = rowWidths.get(source.y)!
+        return bar.y === source.y && bar.w === source.w && bar.h === source.h &&
+          Math.abs(bar.x - source.x - (w - rowWidth) * factor) < 1e-8
+      }))
+  }
+}
+
+const small = textBars(320, 80, 8)
+const large = textBars(320, 80, 24)
+check("bar size changes width, height and density",
+  small[0]?.h === 8 && large[0]?.h === 24 && small[0].w < large[0].w && small.length > large.length)
+
+const tiny = textBars(8, 8, 64)
+check("very small text placeholder still draws within the box",
+  tiny.length === 1 && tiny[0].w === 8 && tiny[0].h === 8)
+check("invalid bar size uses the default", textBars(320, 64, NaN)[0]?.h === 12)
+check("extreme resize bounds the drawing work", textBars(50000, 50000, 4).length === 1024)
 
 // -- controls ---------------------------------------------------------------
 
