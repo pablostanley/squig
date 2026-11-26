@@ -3,7 +3,8 @@
 // ---------------------------------------------------------------------------
 
 import type { Prim } from "@/lib/sketch/kit"
-import { rect, ellipse, line, text, poly, icon, loremLines, truncate, textWidth } from "@/lib/sketch/kit"
+import { rect, ellipse, line, text, poly, icon, loremLines, truncate, textWidth, place } from "@/lib/sketch/kit"
+import { anchorFactor } from "@/lib/sketch/text-layout"
 import type { ComponentDef, Props } from "./registry"
 
 const str = (p: Props, k: string, fallback = ""): string => String(p[k] ?? fallback)
@@ -164,6 +165,66 @@ export const paragraphDef: ComponentDef = {
     const n = Math.max(1, Math.min(fit, num(p, "lines", 4)))
     const gap = Math.max(12, (h - y - 6) / n)
     prims.push(...loremLines(0, y + 4, w, n, gap))
+    return prims
+  },
+}
+
+// Keep the mock words stable while they move between lines during a resize.
+const PLACEHOLDER_WORDS = [2, 5, 3, 8, 7, 11, 6, 10, 4, 6, 5, 8, 7, 3, 5, 9, 6, 4, 12, 7, 2, 5, 8, 4]
+const MIN_BAR_SIZE = 4
+const MAX_BAR_SIZE = 64
+const DEFAULT_BAR_SIZE = 12
+// A very large box can otherwise generate thousands of rough paths per frame.
+const MAX_PLACEHOLDER_BARS = 1024
+
+const textPlaceholderDef: ComponentDef = {
+  kind: "text-placeholder",
+  name: "Text placeholder",
+  category: "components",
+  group: "Display",
+  keywords: ["dummy text", "lorem ipsum", "word bars", "text block", "skeleton"],
+  size: { w: 320, h: 64 },
+  defaults: { size: DEFAULT_BAR_SIZE, align: "left" },
+  controls: [
+    { key: "size", label: "Bar size", help: "Height in pixels. Width and spacing scale with it.", type: "number", min: MIN_BAR_SIZE, max: MAX_BAR_SIZE, quick: true },
+    { key: "align", label: "Align", type: "select", options: ["left", "center", "right"], quick: true },
+  ],
+  render(p, w, h) {
+    if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) return []
+
+    const size = typeof p.size === "number" && Number.isFinite(p.size)
+      ? Math.min(MAX_BAR_SIZE, Math.max(MIN_BAR_SIZE, p.size))
+      : DEFAULT_BAR_SIZE
+    const barHeight = Math.min(h, size)
+    const gap = Math.max(4, Math.round(size / 12) * 4)
+    const anchor = anchorFactor(p.align === "center" || p.align === "right" ? p.align : "left")
+    const prims: Prim[] = []
+    let row: Prim[] = []
+    let rowWidth = 0
+    let y = 0
+    const finishRow = () => {
+      const offset = (w - rowWidth) * anchor
+      prims.push(...(offset ? place(row, offset, 0) : row))
+      row = []
+      rowWidth = 0
+    }
+
+    for (let word = 0; word < MAX_PLACEHOLDER_BARS; word++) {
+      const barWidth = Math.min(w, PLACEHOLDER_WORDS[word % PLACEHOLDER_WORDS.length] * size * 0.44)
+      if (row.length && rowWidth + gap + barWidth > w) {
+        finishRow()
+        y += barHeight + gap
+      }
+      if (y + barHeight > h) break
+      const x = row.length ? rowWidth + gap : 0
+      row.push(rect(x, y, barWidth, barHeight, {
+        r: Math.min(4, barHeight / 4, barWidth / 4),
+        fill: "shade", fillColor: "faint",
+        strokeWidth: 1, roughness: 0.5,
+      }))
+      rowWidth = x + barWidth
+    }
+    finishRow()
     return prims
   },
 }
@@ -609,6 +670,7 @@ export const DISPLAY_DEFS: ComponentDef[] = [
   cardDef,
   imageDef,
   paragraphDef,
+  textPlaceholderDef,
   dividerDef,
   tableDef,
   tabsDef,
