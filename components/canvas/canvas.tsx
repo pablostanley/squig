@@ -76,6 +76,19 @@ import { resizeCursor, rotateCursor, type CornerHandle } from "@/lib/canvas/hand
 import { SMALL_NUDGE } from "@/lib/nudge"
 import { constrainMoveTo45, constrainSnapToDirection, type DragDirection } from "@/lib/canvas/move"
 
+// Store edits replace nodes. Keeping bounds by identity lets pan and snapping
+// reuse the exact same geometry, including rotated boxes and routed arrows.
+const visualBoundsCache = new WeakMap<SquigNode, ReturnType<typeof nodeVisualBounds>>()
+
+function visualBounds(node: SquigNode) {
+  let bounds = visualBoundsCache.get(node)
+  if (!bounds) {
+    bounds = nodeVisualBounds(node)
+    visualBoundsCache.set(node, bounds)
+  }
+  return bounds
+}
+
 /**
  * A gesture's zoom floor is not a constant: ⇧1 is allowed below MIN_ZOOM to
  * show a board that big, and once you're down there the next scroll up has to
@@ -562,7 +575,7 @@ export function Canvas() {
         if (skip.has(id)) continue
         const n = all[id]
         if (!n) continue
-        const b = nodeVisualBounds(n)
+        const b = visualBounds(n)
         out.push(makeSnapRect(id, b.x * v.zoom + v.x, b.y * v.zoom + v.y, b.w * v.zoom, b.h * v.zoom))
       }
       return out
@@ -2002,15 +2015,16 @@ export function Canvas() {
         // indistinguishable from a wedged app. What it draws is different too
         // — see the hint below
         const target = canvasTarget(cur.nodes, cur.order, cur.selection, wx, wy, cur.viewport.zoom, readMods(e))
-        if (target.kind === "selection") {
-          setHover({ id: cur.selection[0], soft: false, locked: false })
-        } else if (target.kind === "node") {
-          setHover({ id: target.id, soft: false, locked: false })
-        } else {
-          const id = target.softHitId ?? pickAt(cur.nodes, cur.order, wx, wy, cur.viewport.zoom, { locked: true })
+        const soft = target.kind === "marquee"
+        const id = target.kind === "selection" ? cur.selection[0]
+          : target.kind === "node" ? target.id
+          : target.softHitId ?? pickAt(cur.nodes, cur.order, wx, wy, cur.viewport.zoom, { locked: true })
             ?? pickSoftAt(cur.nodes, cur.order, wx, wy, { locked: true })
-          setHover(id ? { id, soft: true, locked: !!cur.nodes[id]?.locked } : null)
-        }
+        const locked = soft && !!(id && cur.nodes[id]?.locked)
+        setHover((previous) =>
+          !id ? null : previous?.id === id && previous.soft === soft && previous.locked === locked
+            ? previous : { id, soft, locked }
+        )
       })
     },
     [st, toWorld, hover, isSpacebarHeld]
@@ -2475,7 +2489,7 @@ export function Canvas() {
   const cropNode = cropTarget(nodes, selection, croppingId)
   const hoverNode = hover && !selection.includes(hover.id) && !cropNode ? nodes[hover.id] : null
   const hoverBounds = hoverNode ? unionBounds(groupPickForHit(hoverNode.id, selection, st().selectionGroupId, nodes, order)
-    .ids.map((id) => nodeVisualBounds(nodes[id]))) ?? nodeVisualBounds(hoverNode) : null
+    .ids.map((id) => visualBounds(nodes[id]))) ?? visualBounds(hoverNode) : null
   const bindNode = bindHint ? nodes[bindHint.id] : null
   /**
    * The world worth drawing. Recomputed on every pan and zoom, which is
@@ -2484,6 +2498,20 @@ export function Canvas() {
    * allowed to affect.
    */
   const view = useMemo(() => visibleBox(v, stage.w, stage.h), [v, stage.w, stage.h])
+  const cropId = cropNode?.id
+  const hiddenText = editing?.hidden
+  // Hover and guides can change without changing which marks are on the glass.
+  const marks = useMemo(() => order.map((id) => {
+    const node = nodes[id]
+    if (!node || id === cropId) return null
+    // Keep the marks under an active inline editor even outside the viewport.
+    if (id !== editingId && !inViewBox(visualBounds(node), view)) return null
+    return (
+      <g key={id} transform={`translate(${node.x} ${node.y})`}>
+        <NodeSketch node={node} hiddenText={id === editingId ? hiddenText : undefined} />
+      </g>
+    )
+  }), [order, nodes, cropId, editingId, hiddenText, view])
 
   // a soft hover keeps the default cursor: a click there selects, but a drag
   // marquees, and a move cursor would promise a drag this press won't do
@@ -2555,19 +2583,7 @@ export function Canvas() {
         {/* past the gesture floor the pen would print thinner than a pixel and
             the whole board would fade out — see the rule in app/globals.css */}
         <g data-squig-far={v.zoom < MIN_ZOOM ? "" : undefined} transform={`translate(${v.x} ${v.y}) scale(${v.zoom})`}>
-          {order.map((id) => {
-            const n = nodes[id]
-            if (!n || id === cropNode?.id) return null
-            // off the glass, so no paths for it — except for the one being
-            // edited, which the editor is standing over and whose runs the
-            // renderer has to keep agreeing with
-            if (id !== editingId && !inViewBox(nodeVisualBounds(n), view)) return null
-            return (
-              <g key={id} transform={`translate(${n.x} ${n.y})`}>
-                <NodeSketch node={n} hiddenText={id === editingId ? editing?.hidden : undefined} />
-              </g>
-            )
-          })}
+          {marks}
           {cropNode && <CropStage node={cropNode} />}
           {livePoints && livePoints.length > 1 && (
             <polyline
