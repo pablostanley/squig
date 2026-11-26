@@ -42,6 +42,7 @@ function CommitInput({
   ariaLabel,
   ariaDescription,
   unstyled = false,
+  multiline = false,
 }: {
   value: string
   placeholder?: string
@@ -54,9 +55,10 @@ function CommitInput({
   ariaDescription?: string
   /** the caller draws the box; render a bare input inside it */
   unstyled?: boolean
+  multiline?: boolean
 }) {
   const [draft, setDraft] = useState<string | null>(null)
-  const ref = useRef<HTMLInputElement>(null)
+  const ref = useRef<HTMLInputElement | HTMLTextAreaElement>(null)
   // blur() fires focusout synchronously, so the onBlur that runs is the one
   // from the CURRENT render — it still sees the pre-setDraft value. Without
   // this latch, Escape's blur commits the draft it just threw away, and
@@ -73,7 +75,7 @@ function CommitInput({
     const onDown = (e: PointerEvent) => {
       const el = ref.current
       if (!el || document.activeElement !== el) return
-      if ((e.target as HTMLElement)?.closest?.("input") === el) return
+      if (e.target === el) return
       const { draft: d, value: v, onCommit: commit } = stateRef.current
       if (d !== null && d !== v) commit(d)
       setDraft(null)
@@ -97,14 +99,12 @@ function CommitInput({
   }
 
   const shared = {
-    ref,
-    type,
-    inputMode: type === "number" ? ("decimal" as const) : undefined,
+    ref: (el: HTMLInputElement | HTMLTextAreaElement | null) => { ref.current = el },
     "aria-label": ariaLabel,
     "aria-description": ariaDescription,
     value: draft ?? value,
     placeholder,
-    onChange: (e: React.ChangeEvent<HTMLInputElement>) => setDraft(e.target.value),
+    onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setDraft(e.target.value),
     onFocus: () => setDraft(value),
     onBlur: () => {
       if (handledRef.current) {
@@ -113,11 +113,13 @@ function CommitInput({
       }
       flush(draft)
     },
-    onKeyDown: (e: React.KeyboardEvent<HTMLInputElement>) => {
+    onKeyDown: (e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
       // the canvas ignores keys from inputs, but stop them regardless so no
       // future global handler starts eating characters mid-word
       e.stopPropagation()
-      if (e.key === "Enter") {
+      if (e.nativeEvent.isComposing || (e.key === "Enter" && e.nativeEvent.keyCode === 229)) return
+      if (e.key === "Enter" && (!multiline || e.metaKey || e.ctrlKey)) {
+        e.preventDefault()
         settle(true)
       } else if (e.key === "Escape") {
         settle(false)
@@ -131,8 +133,15 @@ function CommitInput({
     },
   }
 
-  if (unstyled) return <input {...shared} className={cn(FIELD_INPUT, className)} />
-  return <Input {...shared} className={className} />
+  if (multiline) {
+    return <textarea {...shared} rows={3} className={cn(
+      "w-full min-w-0 resize-y rounded-chrome-sm border border-input bg-transparent px-2.5 py-2 text-label outline-none placeholder:text-muted-foreground focus-visible:border-[var(--sq-ink)] focus-visible:ring-2 focus-visible:ring-[var(--sq-ink)]/15",
+      className,
+    )} />
+  }
+  const input = { ...shared, type, inputMode: type === "number" ? ("decimal" as const) : undefined }
+  if (unstyled) return <input {...input} className={cn(FIELD_INPUT, className)} />
+  return <Input {...input} className={className} />
 }
 
 /**
@@ -408,6 +417,7 @@ export function MixedTextField({
   ariaLabel,
   ariaDescription,
   placeholder,
+  multiline = false,
 }: {
   shared: Shared<string>
   onCommit: (v: string) => void
@@ -416,12 +426,14 @@ export function MixedTextField({
   ariaDescription?: string
   /** shown when the field is genuinely empty — a dash still wins for mixed */
   placeholder?: string
+  multiline?: boolean
 }) {
   return (
     <CommitInput
       ariaLabel={ariaLabel}
       ariaDescription={ariaDescription}
-      className={cn("h-ctl rounded-chrome-sm px-2.5 text-label", className)}
+      multiline={multiline}
+      className={multiline ? className : cn("h-ctl rounded-chrome-sm px-2.5 text-label", className)}
       value={shared.mixed ? "" : shared.value}
       placeholder={shared.mixed ? MIXED_LABEL : placeholder}
       onCommit={(raw) => {

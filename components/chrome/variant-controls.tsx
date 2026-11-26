@@ -17,6 +17,7 @@ import { MixedNumberField, MixedSwitch, MixedTextField } from "./mixed-fields"
 import { Row, StackRow } from "@/components/ui/panel"
 import { Segmented } from "@/components/ui/segmented"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { stickyNoteTextPatch } from "@/lib/sketch/sticky-note"
 
 function asShared<T>(s: Shared<unknown>, coerce: (v: unknown) => T): Shared<T> {
   return s.mixed ? s : { mixed: false, value: coerce(s.value) }
@@ -51,7 +52,9 @@ export function VariantControl({
   const setValue = (next: unknown, opts?: { checkpoint?: boolean }) => {
     const patches: Record<string, Partial<SquigNode>> = {}
     for (const n of nodes) {
-      patches[n.id] = { props: { ...n.props, [control.key]: next } } as Partial<SquigNode>
+      patches[n.id] = n.kind === "sticky" && control.key === "label" && typeof next === "string"
+        ? stickyNoteTextPatch(n, next)
+        : { props: { ...n.props, [control.key]: next } }
     }
     st().updateNodes(patches, { checkpoint: opts?.checkpoint ?? true })
   }
@@ -81,7 +84,6 @@ export function VariantControl({
 
   if (control.type === "select") {
     const options = control.options ?? []
-
     if (fitsSegments(options)) {
       const segments = (
         <Segmented
@@ -162,6 +164,7 @@ export function VariantControl({
       <MixedTextField
         ariaLabel={control.label}
         ariaDescription={control.help}
+        multiline={control.key === "label" && nodes.every((n) => n.kind === "sticky")}
         shared={asShared(current, (v) => String(v ?? ""))}
         onCommit={(v) => setValue(v)}
       />

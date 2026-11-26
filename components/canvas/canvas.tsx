@@ -362,6 +362,7 @@ export function Canvas() {
   const order = useSquig((s) => s.order)
   const selection = useSquig((s) => s.selection)
   const viewport = useSquig((s) => s.viewport)
+  const font = useSquig((s) => s.font)
   const tool = useSquig((s) => s.tool)
   const grid = useSquig((s) => s.grid)
 
@@ -382,10 +383,23 @@ export function Canvas() {
    * way in never sets one, so both open on the first control as before.
    */
   const [aim, setAim] = useState<{ id: string; key: string } | null>(null)
+  const [noteDraft, setNoteDraft] = useState<{ id: string; height: number } | null>(null)
+  const setNoteDraftHeight = useCallback((id: string, height: number | null) => {
+    setNoteDraft((draft) => {
+      if (height === null) return draft?.id === id ? null : draft
+      return draft?.id === id && draft.height === height ? draft : { id, height }
+    })
+  }, [])
+  const previewNote = useMemo(() => {
+    if (!editingNode || !noteDraft || noteDraft.id !== editingNode.id) return null
+    // Keep long drafts scrollable without letting the preview take over the board.
+    const height = Math.min(noteDraft.height, 320 / viewport.zoom)
+    return height > editingNode.h ? { ...editingNode, h: height } : null
+  }, [editingNode, noteDraft, viewport.zoom])
   const editing = useMemo(() => {
     if (!editingNode) return null
-    return editTarget(editingNode, aim?.id === editingNode.id ? aim.key : undefined)
-  }, [editingNode, aim])
+    return editTarget(previewNote ?? editingNode, aim?.id === editingNode.id ? aim.key : undefined)
+  }, [editingNode, previewNote, aim])
 
   /** marquee box in WORLD units — screen conversion happens at render time */
   const [marquee, setMarquee] = useState<Bounds | null>(null)
@@ -501,6 +515,7 @@ export function Canvas() {
     const el = containerRef.current
     if (!el) return
     const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey && (e.target as HTMLElement)?.closest?.("[data-squig-note-editor]")) return
       e.preventDefault()
       const v = st().viewport
       if (e.ctrlKey || e.metaKey) {
@@ -2556,7 +2571,7 @@ export function Canvas() {
             the whole board would fade out — see the rule in app/globals.css */}
         <g data-squig-far={v.zoom < MIN_ZOOM ? "" : undefined} transform={`translate(${v.x} ${v.y}) scale(${v.zoom})`}>
           {order.map((id) => {
-            const n = nodes[id]
+            const n = previewNote?.id === id ? previewNote : nodes[id]
             if (!n || id === cropNode?.id) return null
             // off the glass, so no paths for it — except for the one being
             // edited, which the editor is standing over and whose runs the
@@ -2564,7 +2579,11 @@ export function Canvas() {
             if (id !== editingId && !inViewBox(nodeVisualBounds(n), view)) return null
             return (
               <g key={id} transform={`translate(${n.x} ${n.y})`}>
-                <NodeSketch node={n} hiddenText={id === editingId ? editing?.hidden : undefined} />
+                <NodeSketch
+                  node={n}
+                  hiddenText={id === editingId ? editing?.hidden : undefined}
+                  noteFont={n.type === "component" && n.kind === "sticky" ? font : undefined}
+                />
               </g>
             )
           })}
@@ -2682,7 +2701,12 @@ export function Canvas() {
       {/* keyed by the prop as well as the layer: aiming at a different label
           is a different edit, and the editor starts over on its words */}
       {editingNode && editing && (
-        <TextEditOverlay key={`${editingNode.id}:${editing.propKey ?? ""}`} node={editingNode} target={editing} />
+        <TextEditOverlay
+          key={`${editingNode.id}:${editing.propKey ?? ""}`}
+          node={editingNode}
+          target={editing}
+          setNoteDraftHeight={setNoteDraftHeight}
+        />
       )}
 
       {/* context row */}

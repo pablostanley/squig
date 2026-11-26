@@ -6,6 +6,7 @@
 import type { Prim } from "@/lib/sketch/kit"
 import { rect, ellipse, line, text, poly, icon, truncate, textWidth, loremLines, normalizeIconWeight } from "@/lib/sketch/kit"
 import { resolveIconName } from "@/lib/sketch/icons"
+import { stickyNoteLines, stickyNoteTextBox } from "@/lib/sketch/sticky-note"
 import type { ComponentDef, Props } from "./registry"
 
 const str = (p: Props, k: string, fallback = ""): string => String(p[k] ?? fallback)
@@ -67,7 +68,7 @@ export const stickyDef: ComponentDef = {
     { key: "size", label: "Text size", type: "select", options: ["sm", "md", "lg"], quick: true },
     { key: "fold", label: "Folded corner", type: "toggle", quick: true },
   ],
-  render(p, w, h) {
+  render(p, w, h, measureText) {
     const fold = bool(p, "fold")
     const f = Math.min(22, w * 0.18, h * 0.18)
     const prims: Prim[] = []
@@ -89,24 +90,11 @@ export const stickyDef: ComponentDef = {
     } else {
       prims.push(rect(0, 0, w, h, { fill: "shade", fillColor: "muted", r: 2 }))
     }
-    // wrap the note text by hand — sticky notes are always a bit cramped
-    const sizeName = str(p, "size", "md")
-    const size = sizeName === "sm" ? 12 : sizeName === "lg" ? 20 : 14
-    const maxChars = Math.max(4, Math.floor((w - 24) / (size * 0.46)))
-    const words = str(p, "label", "").split(/\s+/).filter(Boolean)
-    const lines: string[] = []
-    let cur = ""
-    for (const word of words) {
-      const next = cur ? `${cur} ${word}` : word
-      if (next.length > maxChars && cur) {
-        lines.push(cur)
-        cur = word
-      } else cur = next
-    }
-    if (cur) lines.push(cur)
-    const maxLines = Math.max(1, Math.floor((h - 24) / (size * 1.35)))
-    lines.slice(0, maxLines).forEach((l, i) => {
-      prims.push(text(12, 12 + size + i * size * 1.35, l, size))
+    const box = stickyNoteTextBox(p, w, h)
+    const lines = stickyNoteLines(str(p, "label"), box, measureText)
+    const maxLines = Math.max(1, Math.floor(box.height / box.lineHeight))
+    lines.slice(0, maxLines).forEach((label, i) => {
+      if (label.trim()) prims.push(text(box.x, box.baseline + i * box.lineHeight, label, box.fontSize))
     })
     return prims
   },
