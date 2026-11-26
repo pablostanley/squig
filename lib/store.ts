@@ -9,6 +9,7 @@ import { remapBinds, settleBinds } from "./canvas/arrow-binding"
 import { nodeVisualBounds } from "./canvas/line-routing"
 import { cropTarget, isCropped, trueShapePatch, uncropPatch } from "./canvas/crop"
 import {
+  actualSizeViewport,
   clampGestureZoom,
   fitViewport,
   revealViewport,
@@ -270,7 +271,7 @@ interface SquigState {
   pasteNodes: (nodes: readonly SquigNode[], at?: [number, number]) => void
 
   zoomBy: (factor: number, center?: [number, number]) => void
-  zoomTo100: () => void
+  zoomTo100: (pointer?: [number, number]) => void
   zoomToFit: () => void
   zoomToSelection: () => void
   /** bring the selection into view, moving the viewport only if it has to */
@@ -1639,11 +1640,11 @@ export const useSquig = create<SquigState>((set, get) => ({
     set({ viewport: { zoom, x: cx - (cx - v.x) * k, y: cy - (cy - v.y) * k } })
   },
 
-  zoomTo100: () => {
-    const v = get().viewport
-    const [cx, cy] = [window.innerWidth / 2, window.innerHeight / 2]
-    const k = 1 / v.zoom
-    set({ viewport: { zoom: 1, x: cx - (cx - v.x) * k, y: cy - (cy - v.y) * k } })
+  zoomTo100: (pointer) => {
+    const { nodes, selection, viewport } = get()
+    if (viewport.zoom === 1) return
+    const bounds = unionBox(selection.map((id) => nodes[id]).filter(Boolean).map(nodeVisualBounds))
+    set({ viewport: actualSizeViewport(viewport, window.innerWidth, window.innerHeight, pointer, bounds) })
   },
 
   zoomToFit: () => {
