@@ -216,7 +216,7 @@ export function CanvasContextMenu() {
       { label: "Redo", hint: kbd("mod+shift+z"), icon: ArrowUUpRightIcon, run: () => st().redo() },
       { separator: true },
       { label: "Zoom to fit", hint: kbd("shift+1"), icon: ArrowsOutIcon, run: () => st().zoomToFit() },
-      { label: "Zoom to 100%", hint: kbd("shift+0"), icon: NumberSquareOneIcon, run: () => st().zoomTo100() },
+      { label: "Zoom to 100%", hint: kbd("shift+0"), icon: NumberSquareOneIcon, run: () => st().zoomTo100([menu.x, menu.y]) },
       {
         label: "Reset zoom",
         hint: kbd("mod+0"),

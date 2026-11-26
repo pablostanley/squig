@@ -12,6 +12,7 @@
 // ---------------------------------------------------------------------------
 
 import {
+  actualSizeViewport,
   clampGestureZoom,
   fitViewport,
   revealViewport,
@@ -95,6 +96,30 @@ function allOnScreen(v: Viewport, b: Box, vw = VW, vh = VH): boolean {
   check("…and zooming further out holds where it is", close(clampGestureZoom(0.04, 0.02), 0.04))
   check("the floor follows you down", close(zoomFloor(0.04), 0.04))
   check("…and never above MIN_ZOOM", close(zoomFloor(2), MIN_ZOOM))
+}
+
+// -- actual size ------------------------------------------------------------
+{
+  const panned: Viewport = { zoom: 0.125, x: -173, y: 58 }
+  const pointer: [number, number] = [520, 280]
+  const worldPoint: [number, number] = [(520 - panned.x) / panned.zoom, (280 - panned.y) / panned.zoom]
+  const atPointer = actualSizeViewport(panned, VW, VH, pointer)
+  const [px, py] = toScreen(atPointer, ...worldPoint)
+  check("actual size keeps the world point under the pointer", atPointer.zoom === 1 && close(px, 520) && close(py, 280))
+
+  const atCenter = actualSizeViewport(panned, VW, VH)
+  const wx = (VW / 2 - panned.x) / panned.zoom
+  const wy = (VH / 2 - panned.y) / panned.zoom
+  const [cx, cy] = toScreen(atCenter, wx, wy)
+  check("actual size without a pointer keeps the current view centred", atCenter.zoom === 1 && close(cx, VW / 2) && close(cy, VH / 2))
+
+  const selected = box(4100, -630, 280, 120)
+  const atSelection = actualSizeViewport(panned, VW, VH, pointer, selected)
+  const [sx, sy] = toScreen(atSelection, 4240, -570)
+  check("actual size centres a selection even when the pointer is elsewhere",
+    atSelection.zoom === 1 && close(sx, VW / 2) && close(sy, VH / 2))
+  check("resetting an already actual-size view leaves the pan alone",
+    actualSizeViewport(atPointer, VW, VH, pointer, selected) === atPointer)
 }
 
 // -- the reveal -------------------------------------------------------------

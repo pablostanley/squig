@@ -26,7 +26,7 @@
 // with room over. Past that we clamp and say so out loud rather than pretend.
 // ---------------------------------------------------------------------------
 
-import type { Box, Viewport } from "../types"
+import { screenToWorld, type Box, type Viewport } from "../types"
 
 /** Where a gesture — wheel, pinch, ⌘± — stops zooming out. */
 export const MIN_ZOOM = 0.1
@@ -73,6 +73,28 @@ export function zoomFloor(current: number): number {
 /** Clamp a gesture's new zoom, letting a fit's small zoom stay where it is. */
 export function clampGestureZoom(current: number, next: number): number {
   return clamp(next, zoomFloor(current), MAX_ZOOM)
+}
+
+/** Keep the working area in view when returning to actual size. */
+export function actualSizeViewport(
+  viewport: Viewport,
+  width: number,
+  height: number,
+  pointer?: [number, number],
+  selection?: Box | null,
+): Viewport {
+  if (viewport.zoom === 1) return viewport
+  const center: [number, number] = [width / 2, height / 2]
+  if (selection) {
+    return {
+      zoom: 1,
+      x: center[0] - (selection.minX + selection.maxX) / 2,
+      y: center[1] - (selection.minY + selection.maxY) / 2,
+    }
+  }
+  const [x, y] = pointer ?? center
+  const [worldX, worldY] = screenToWorld(viewport, x, y)
+  return { zoom: 1, x: x - worldX, y: y - worldY }
 }
 
 export interface Fit {

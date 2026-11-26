@@ -357,6 +357,8 @@ export function Canvas() {
   const hoverRafRef = useRef<number | null>(null)
   /** last world position of the pointer — ⌘V pastes here */
   const pointerWorld = useRef<[number, number] | null>(null)
+  // Keep the pointer anchor stable when the viewport pans or zooms.
+  const pointerScreen = useRef<[number, number] | null>(null)
 
   const nodes = useSquig((s) => s.nodes)
   const order = useSquig((s) => s.order)
@@ -506,6 +508,7 @@ export function Canvas() {
       if (e.ctrlKey || e.metaKey) {
         const r = el.getBoundingClientRect()
         const [sx, sy] = [e.clientX - r.left, e.clientY - r.top]
+        pointerScreen.current = [sx, sy]
         const factor = Math.exp(-e.deltaY * 0.01)
         const zoom = clampGestureZoom(v.zoom, v.zoom * factor)
         const scale = zoom / v.zoom
@@ -1975,7 +1978,9 @@ export function Canvas() {
   const onPointerMoveLocal = useCallback(
     (e: React.PointerEvent) => {
       const s = st()
-      pointerWorld.current = toWorld(e)
+      const position = toLocal(e)
+      pointerScreen.current = position
+      pointerWorld.current = screenToWorld(s.viewport, ...position)
       // the ghost is driven at the window level instead — see below
       if (s.placing) return
       if (gestureRef.current || isSpacebarHeld || s.editingId || (s.tool !== "select" && s.tool !== "arrow")) {
@@ -2013,10 +2018,11 @@ export function Canvas() {
         }
       })
     },
-    [st, toWorld, hover, isSpacebarHeld]
+    [st, toLocal, toWorld, hover, isSpacebarHeld]
   )
 
   const onPointerLeave = useCallback(() => {
+    pointerScreen.current = null
     if (hoverRafRef.current !== null) cancelAnimationFrame(hoverRafRef.current)
     hoverRafRef.current = null
     setHover(null)
@@ -2277,7 +2283,7 @@ export function Canvas() {
         switch (e.code) {
           case "Digit0":
             e.preventDefault()
-            s.zoomTo100()
+            s.zoomTo100(pointerScreen.current ?? undefined)
             return
           case "Digit1":
             e.preventDefault()

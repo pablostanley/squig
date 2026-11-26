@@ -190,9 +190,9 @@ export function ZoomPill() {
       <button
         type="button"
         className="h-ctl min-w-12 rounded-chrome-sm px-1 text-center text-label text-muted-foreground tabular-nums hover:bg-accent"
-        onClick={() => st().setViewport({ x: 0, y: 0, zoom: 1 })}
-        title="reset view (⌘0)"
-        aria-label={`Zoom ${Math.round(zoom * 100)}%, reset view`}
+        onClick={() => st().zoomTo100()}
+        title={`Zoom to 100% (${kbd("shift+0")})`}
+        aria-label={`Zoom ${Math.round(zoom * 100)}%, set to 100%`}
       >
         {Math.round(zoom * 100)}%
       </button>
