@@ -81,6 +81,18 @@ const gs = (svg: string) => (svg.match(/<g transform="translate\(/g) ?? []).leng
   check("asked for transparent, nothing is painted", !renderSvg([box], LOOK, "transparent").includes("<rect"))
 }
 
+// -- multiline notes --------------------------------------------------------
+
+{
+  const note = componentNode("sticky", { id: "note", seed: 15, x: 0, y: 0 })
+  note.props = { ...note.props, label: "First line\n\nSecond line" }
+  const svg = renderSvg([note], LOOK, "transparent")
+  check("sticky note exports its paragraphs separately",
+    svg.includes(">First line</text>") && svg.includes(">Second line</text>"))
+  check("sticky note keeps the page palette fill and ink",
+    svg.includes(`fill="${paletteOf(LOOK.theme).shadeStrong}"`) && svg.includes(`fill="${paletteOf(LOOK.theme).ink}"`))
+}
+
 // -- somebody's label is not markup -----------------------------------------
 
 {

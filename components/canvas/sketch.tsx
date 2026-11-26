@@ -15,6 +15,7 @@ import { INK, type Prim } from "@/lib/sketch/kit"
 import { imagePlacement, mirrorBox, mirrorGlyphs, primsToPaths } from "@/lib/sketch/paths"
 import { useIconCatalogVersion } from "@/lib/sketch/use-icon-catalog"
 import { nodePrims } from "@/lib/sketch/node-prims"
+import type { FontMode } from "@/lib/theme"
 import type { ImageNode, SquigNode } from "@/lib/types"
 
 export const SketchPrims = memo(function SketchPrims({
@@ -94,10 +95,12 @@ export const SketchPrims = memo(function SketchPrims({
 export const NodeSketch = memo(function NodeSketch({
   node,
   hiddenText,
+  noteFont,
 }: {
   node: SquigNode
   /** see SketchPrims — the run the inline editor has taken over */
   hiddenText?: "all" | number
+  noteFont?: FontMode
 }) {
   // components can draw icons whose paths stream in from the lazy catalog —
   // the version bump is what redraws them once the real weight lands
@@ -115,7 +118,7 @@ export const NodeSketch = memo(function NodeSketch({
         : ""
     switch (node.type) {
       case "component":
-        return `c:${node.kind}:${node.w}:${node.h}:${flip}:${catalogVersion}:${JSON.stringify(node.props)}`
+        return `c:${node.kind}:${node.w}:${node.h}:${flip}:${catalogVersion}:${noteFont ?? ""}:${JSON.stringify(node.props)}`
       case "shape":
         return `s:${node.shape}:${node.w}:${node.h}:${flip}:${node.fill}:${node.corners ?? ""}:${pen}`
       case "draw":
@@ -130,7 +133,7 @@ export const NodeSketch = memo(function NodeSketch({
         // the src doesn't shape a single mark — only the frame's box does
         return `i:${node.w}:${node.h}:${flip}`
     }
-  }, [node, catalogVersion])
+  }, [node, catalogVersion, noteFont])
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const prims = useMemo<Prim[]>(() => nodePrims(node), [shapeKey, node.type])

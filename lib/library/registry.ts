@@ -4,6 +4,7 @@
 // ---------------------------------------------------------------------------
 
 import type { Prim } from "@/lib/sketch/kit"
+import type { TextMeasurer } from "@/lib/canvas/text-metrics"
 import { BASIC_DEFS } from "./defs-basic"
 import { DISPLAY_DEFS } from "./defs-display"
 import { NAV_DEFS } from "./defs-nav"
@@ -52,7 +53,7 @@ export interface ComponentDef {
   size: { w: number; h: number }
   defaults: Props
   controls: ControlDef[]
-  render: (props: Props, w: number, h: number) => Prim[]
+  render: (props: Props, w: number, h: number, measureText?: TextMeasurer) => Prim[]
 }
 
 const SOURCES: ComponentDef[][] = [
@@ -87,10 +88,10 @@ export function getDef(kind: string): ComponentDef | undefined {
   return Object.hasOwn(REGISTRY, kind) ? REGISTRY[kind] : undefined
 }
 
-export function renderComponent(kind: string, props: Props, w: number, h: number): Prim[] {
+export function renderComponent(kind: string, props: Props, w: number, h: number, measureText?: TextMeasurer): Prim[] {
   const def = getDef(kind)
   if (!def) return []
-  return def.render({ ...def.defaults, ...props }, w, h)
+  return def.render({ ...def.defaults, ...props }, w, h, measureText)
 }
 
 export function matches(d: ComponentDef, q: string): boolean {

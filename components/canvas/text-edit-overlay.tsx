@@ -21,6 +21,7 @@ import type { ComponentNode, SquigNode, TextNode } from "@/lib/types"
 import type { EditTarget } from "@/lib/canvas/edit-target"
 import { fontMetrics, measureLinesWidth, wrapText } from "@/lib/canvas/text-metrics"
 import { fitTextBox } from "@/lib/canvas/text-reflow"
+import { stickyNoteTextPatch } from "@/lib/sketch/sticky-note"
 import { TEXT_LINE_HEIGHT, anchorFactor, textBoxPadding, textContentWidth } from "@/lib/sketch/text-layout"
 
 /**
@@ -33,13 +34,28 @@ import { TEXT_LINE_HEIGHT, anchorFactor, textBoxPadding, textContentWidth } from
  */
 const CARET_PAD = 8
 
-export function TextEditOverlay({ node, target }: { node: SquigNode; target: EditTarget }) {
+export function TextEditOverlay({ node, target, setNoteDraftHeight }: {
+  node: SquigNode
+  target: EditTarget
+  setNoteDraftHeight: (id: string, height: number | null) => void
+}) {
   const v = useSquig((s) => s.viewport)
   const st = useSquig.getState
 
   const isText = node.type === "text"
+  const noteBox = target.noteBox
+  const isNote = !!noteBox
   const [value, setValue] = useState(target.value)
   const taRef = useRef<HTMLTextAreaElement>(null)
+  useEffect(() => {
+    if (isNote) return () => setNoteDraftHeight(node.id, null)
+  }, [isNote, node.id, setNoteDraftHeight])
+
+  const patchFor = (text: string): Partial<SquigNode> | null => {
+    if (isText) return text.trim() ? fitTextBox(node as TextNode, text.replace(/\s+$/, "")) : null
+    if (noteBox && node.type === "component") return stickyNoteTextPatch(node, text)
+    return target.propKey ? { props: { ...(node as ComponentNode).props, [target.propKey]: text } } : null
+  }
 
   const commit = () => {
     const s = st()
@@ -61,13 +77,8 @@ export function TextEditOverlay({ node, target }: { node: SquigNode; target: Edi
     }
     // commitText decides whether this is its own undo step or part of the
     // click that placed the layer a moment ago — see the note in lib/store
-    if (isText) {
-      s.commitText(node.id, fitTextBox(node as TextNode, value.replace(/\s+$/, "")) as Partial<SquigNode>)
-    } else if (target.propKey) {
-      s.commitText(node.id, {
-        props: { ...(node as ComponentNode).props, [target.propKey]: value },
-      } as Partial<SquigNode>)
-    }
+    const patch = patchFor(value)
+    if (patch) s.commitText(node.id, patch)
     s.setEditing(null)
   }
 
@@ -105,7 +116,7 @@ export function TextEditOverlay({ node, target }: { node: SquigNode; target: Edi
     return () => window.removeEventListener("pointerdown", onDown, true)
   }, [])
 
-  const placeholder = isText ? "say something" : "label"
+  const placeholder = noteBox ? "Write a note" : isText ? "say something" : "label"
 
   /**
    * Put the textarea's first baseline on the renderer's.
@@ -130,6 +141,22 @@ export function TextEditOverlay({ node, target }: { node: SquigNode; target: Edi
     const style = { size, bold: target.bold, italic: target.italic }
     const lineHeight = size * TEXT_LINE_HEIGHT
     const { ascent, descent } = fontMetrics(style)
+    const baselineOffset = (lineHeight - (ascent + descent)) / 2 + ascent
+    const anchorX = (node.x + target.x) * v.zoom + v.x
+    const baselineY = (node.y + target.baseline) * v.zoom + v.y
+    if (noteBox) {
+      const top = Math.max(node.y * v.zoom + v.y, baselineY - baselineOffset)
+      const bottom = baselineY + (noteBox.height - target.fontSize) * v.zoom
+      return {
+        left: anchorX,
+        top,
+        width: noteBox.width * v.zoom,
+        height: Math.max(1, bottom - top),
+        padding: 0,
+        fontSize: size,
+        lineHeight: `${lineHeight}px`,
+      }
+    }
 
     // an empty run still needs somewhere to show its placeholder
     const lineCount = fixed
@@ -139,29 +166,36 @@ export function TextEditOverlay({ node, target }: { node: SquigNode; target: Edi
       ? contentWidth * v.zoom
       : measureLinesWidth(value ? value.split("\n") : [placeholder], style)
     const padY = size * 0.35
-    const anchorX = (node.x + target.x) * v.zoom + v.x
-    const baselineY = (node.y + target.baseline) * v.zoom + v.y
 
     return {
       left: fixed
         ? (node.x + contentInsetX) * v.zoom + v.x - CARET_PAD
         : anchorX - CARET_PAD - anchorFactor(target.align) * run,
-      top: baselineY - ((lineHeight - (ascent + descent)) / 2 + ascent) - padY,
+      top: baselineY - baselineOffset - padY,
       width: run + CARET_PAD * 2,
       height: lineCount * lineHeight + padY * 2,
       padding: `${padY}px ${CARET_PAD}px`,
       fontSize: size,
       lineHeight: `${lineHeight}px`,
     }
-  }, [node.x, node.y, target, value, v, placeholder, fixed, contentWidth, contentInsetX])
+  }, [node.x, node.y, target, value, v, placeholder, fixed, contentWidth, contentInsetX, noteBox])
+  const wrap = fixed || !!noteBox
 
   return (
     <textarea
       ref={taRef}
       value={value}
-      wrap={fixed ? "soft" : "off"}
+      wrap={wrap ? "soft" : "off"}
+      aria-label={noteBox ? "Edit note" : undefined}
+      data-squig-note-editor={noteBox ? "" : undefined}
       spellCheck={false}
-      onChange={(e) => setValue(target.multiline ? e.target.value : e.target.value.replace(/\n/g, ""))}
+      onChange={(e) => {
+        const next = target.multiline ? e.target.value : e.target.value.replace(/\n/g, "")
+        setValue(next)
+        if (isNote && node.type === "component") {
+          setNoteDraftHeight(node.id, stickyNoteTextPatch(node, next).h)
+        }
+      }}
       onBlur={() => {
         if (!settled.current) {
           requestAnimationFrame(() => taRef.current?.focus())
@@ -177,6 +211,7 @@ export function TextEditOverlay({ node, target }: { node: SquigNode; target: Edi
       }}
       onKeyDown={(e) => {
         e.stopPropagation()
+        if (e.nativeEvent.isComposing || (e.key === "Enter" && e.nativeEvent.keyCode === 229)) return
         if (e.key === "Escape") {
           // stop editing, keep the words — Escape here means "I'm done",
           // not "undo what I typed"
@@ -184,11 +219,12 @@ export function TextEditOverlay({ node, target }: { node: SquigNode; target: Edi
           commit()
           return
         }
-        if (e.key === "Enter" && (e.metaKey || !target.multiline)) {
+        if (e.key === "Enter" && (e.metaKey || (isNote && e.ctrlKey) || !target.multiline)) {
           e.preventDefault()
           commit()
         }
       }}
+      onDoubleClick={noteBox ? (e) => e.stopPropagation() : undefined}
       className="absolute resize-none overflow-hidden border-0 outline-none"
       style={{
         transform: node.rotation ? `rotate(${-node.rotation}deg)` : undefined,
@@ -206,15 +242,17 @@ export function TextEditOverlay({ node, target }: { node: SquigNode; target: Edi
         fontStyle: target.italic ? "italic" : undefined,
         textDecoration: target.underline ? "underline" : undefined,
         textAlign: target.align,
-        whiteSpace: fixed ? "pre-wrap" : "pre",
+        whiteSpace: wrap ? "pre-wrap" : "pre",
         // long words break where the canvas breaks them — mid-word, only when
         // the word alone is wider than the box; see wrapText
-        overflowWrap: fixed ? "break-word" : undefined,
+        overflowWrap: wrap ? "break-word" : undefined,
+        overflowY: noteBox ? "auto" : undefined,
+        overscrollBehavior: noteBox ? "contain" : undefined,
         color: target.color,
         caretColor: "var(--sq-ink)",
         // the one tell that this run is live: a wash the width of the words,
         // rather than a field the words have been moved into
-        background: "color-mix(in srgb, var(--sq-select) 12%, transparent)",
+        background: noteBox ? "transparent" : "color-mix(in srgb, var(--sq-select) 12%, transparent)",
         borderRadius: 2,
       }}
       placeholder={placeholder}

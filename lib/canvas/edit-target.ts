@@ -27,6 +27,7 @@
 import { INK, type Prim } from "@/lib/sketch/kit"
 import { measureTextWidth, wrapText } from "@/lib/canvas/text-metrics"
 import { nodePrims } from "@/lib/sketch/node-prims"
+import { stickyNoteTextBox } from "@/lib/sketch/sticky-note"
 import { anchorFactor, textAnchorX, textBaseline, textBoxPadding, textContentWidth, textVerticalOffset } from "@/lib/sketch/text-layout"
 import { getDef } from "@/lib/library/registry"
 import { normalizeInk } from "@/lib/types"
@@ -49,8 +50,10 @@ export interface EditTarget {
   underline: boolean
   /** the ink this run prints in, as a css colour */
   color: string
-  /** a text node takes Return; a component label is one line */
+  /** Return inserts a newline in prose and finishes a single-line label. */
   multiline: boolean
+  /** A note edits inside the same bounds as its rendered paragraphs. */
+  noteBox?: { width: number; height: number }
   /** which drawn run the editor stands in for, so the canvas can hide it */
   hidden: "all" | number
   /** for a component, the prop the edited string lives in */
@@ -334,6 +337,24 @@ export function editTarget(node: SquigNode, controlKey?: string): EditTarget | n
   const key = controlKey && keys.includes(controlKey) ? controlKey : keys[0]
   if (!key) return null
   const value = currentValue(node, key)
+  if (node.kind === "sticky") {
+    const box = stickyNoteTextBox(node.props, node.w, node.h)
+    return {
+      value,
+      x: box.x,
+      baseline: box.baseline,
+      fontSize: box.fontSize,
+      align: node.flipX ? "right" : "left",
+      bold: false,
+      italic: false,
+      underline: false,
+      color: INK.ink,
+      multiline: true,
+      noteBox: { width: box.width, height: box.height },
+      hidden: "all",
+      propKey: key,
+    }
+  }
   // A control that prints in several places is edited as the one string it
   // is, so the editor stands on the first of its runs: there the words in the
   // box start with the words it covers. Standing it on the third column name

@@ -65,7 +65,7 @@ function outline(node: Outlined, baseWidth: number, o?: PrimOpts): PrimOpts {
 export function basePrims(node: SquigNode, measureText?: TextMeasurer): Prim[] {
   switch (node.type) {
     case "component":
-      return renderComponent(node.kind, node.props, node.w, node.h)
+      return renderComponent(node.kind, node.props, node.w, node.h, measureText)
     case "shape": {
       const o = outline(node, HAND.strokeWidth, FILL_OPTS[normalizeFill(node.fill)])
       if (node.shape === "ellipse") return [{ t: "ellipse", x: 0, y: 0, w: node.w, h: node.h, o }]

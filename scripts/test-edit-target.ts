@@ -19,6 +19,8 @@ import {
 } from "../lib/canvas/edit-target.ts"
 import { ALL_DEFS, getDef } from "../lib/library/registry.ts"
 import { nodePrims } from "../lib/sketch/node-prims.ts"
+import { INK } from "../lib/sketch/kit.ts"
+import { stickyNoteTextPatch } from "../lib/sketch/sticky-note.ts"
 import type { Prim } from "../lib/sketch/kit.ts"
 import type { ComponentNode, SquigNode, TextNode } from "../lib/types.ts"
 import { check, report } from "./harness.ts"
@@ -165,6 +167,28 @@ function aimAt(node: ComponentNode, text: string, nth = 0): string | null {
 }
 
 // -- the defs that only ever had one label ----------------------------------
+
+{
+  const label = "First line\n\nSecond line"
+  const note = drop("sticky", { label })
+  const [first, second] = runs(note)
+  const target = editTarget(note)!
+  is("sticky note: prints both paragraphs", runs(note).map((p) => p.text).join("|"), "First line|Second line")
+  check("sticky note: keeps the blank line between paragraphs", Math.abs(second.y - first.y - 2 * first.size * 1.35) < 1e-6)
+  is("sticky note: edits the entire value", target.value, label)
+  is("sticky note: uses the rendered text's baseline", target.baseline, first.y)
+  is("sticky note: constrains the editor to the text area", target.noteBox?.width, 136)
+  is("sticky note: edits in the page ink", target.color, INK.ink)
+  is("sticky note: Return inserts a newline", target.multiline, true)
+  is("sticky note: hides every committed line while editing", target.hidden, "all")
+  is("sticky note: an empty note still opens at the text inset", editTarget(drop("sticky", { label: "" }))?.x, 12)
+
+  const shortNote = { ...note, h: 48 }
+  const patch = stickyNoteTextPatch(shortNote, label)
+  check("sticky note: grows to expose the last paragraph", patch.h > shortNote.h && runs({ ...shortNote, ...patch }).at(-1)?.text === "Second line")
+  is("sticky note: shorter copy keeps existing height", stickyNoteTextPatch(note, "Short").h, note.h)
+  is("sticky note: clearing a compact note keeps its height", stickyNoteTextPatch({ ...note, h: 24 }, "").h, 24)
+}
 
 {
   // One control means there is nothing to choose between: no aim is taken (and
