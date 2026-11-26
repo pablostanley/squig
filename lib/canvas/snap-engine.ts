@@ -88,7 +88,7 @@ type SnapAxis = "x" | "y"
 
 interface AlignmentMatch {
   pos: number
-  rects: SnapRect[]
+  rects: Map<string, SnapRect>
 }
 
 interface AlignmentResult {
@@ -156,7 +156,10 @@ function computeAlignment(
   for (const dragPos of dragEdges) {
     for (const cand of candidates) {
       if (cand.id === dragged.id) continue
-      for (const candPos of getEdges(cand)[axis]) {
+      for (let edge = 0; edge < 3; edge++) {
+        const candPos = edge === 0 ? axisStart(cand, axis)
+          : edge === 1 ? (axis === "x" ? cand.cx : cand.cy)
+          : axisEnd(cand, axis)
         const delta = candPos - dragPos
         const absDelta = Math.abs(delta)
         if (absDelta > threshold) continue
@@ -168,9 +171,9 @@ function computeAlignment(
 
         const existing = matches.find((match) => Math.abs(match.pos - candPos) <= EPSILON)
         if (existing) {
-          if (!existing.rects.some((r) => r.id === cand.id)) existing.rects.push(cand)
+          if (!existing.rects.has(cand.id)) existing.rects.set(cand.id, cand)
         } else {
-          matches.push({ pos: candPos, rects: [cand] })
+          matches.push({ pos: candPos, rects: new Map([[cand.id, cand]]) })
         }
       }
     }
@@ -343,10 +346,9 @@ export function computeSnap(
 
   for (const match of xAlign && Math.abs(xAlign.delta - dx) <= EPSILON ? xAlign.matches : []) {
     // Compute the vertical extent of the guide line
-    const allRects = [...match.rects, snappedDragged]
-    let minY = Infinity
-    let maxY = -Infinity
-    for (const r of allRects) {
+    let minY = snappedDragged.top
+    let maxY = snappedDragged.top + snappedDragged.height
+    for (const r of match.rects.values()) {
       minY = Math.min(minY, r.top)
       maxY = Math.max(maxY, r.top + r.height)
     }
@@ -360,10 +362,9 @@ export function computeSnap(
 
   // Build guide lines for Y matches (horizontal lines)
   for (const match of yAlign && Math.abs(yAlign.delta - dy) <= EPSILON ? yAlign.matches : []) {
-    const allRects = [...match.rects, snappedDragged]
-    let minX = Infinity
-    let maxX = -Infinity
-    for (const r of allRects) {
+    let minX = snappedDragged.left
+    let maxX = snappedDragged.left + snappedDragged.width
+    for (const r of match.rects.values()) {
       minX = Math.min(minX, r.left)
       maxX = Math.max(maxX, r.left + r.width)
     }
